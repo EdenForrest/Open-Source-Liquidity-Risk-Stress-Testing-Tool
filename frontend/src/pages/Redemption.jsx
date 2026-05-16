@@ -10,14 +10,14 @@ function eur(v) {
 
 function Flag({ yes }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${yes ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+    <span className="text-xs font-semibold" style={{ color: yes ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)' }}>
       {yes ? 'Yes' : 'No'}
     </span>
   )
 }
 function Alert({ triggered }) {
   return (
-    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${triggered ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}`}>
+    <span className="text-xs font-semibold" style={{ color: triggered ? 'var(--kpi-red-text)' : 'var(--text-muted)' }}>
       {triggered ? 'Triggered' : '—'}
     </span>
   )
