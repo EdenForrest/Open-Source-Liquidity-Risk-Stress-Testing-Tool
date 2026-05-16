@@ -19,7 +19,7 @@ export default function Uploader() {
   }
 
   return (
-    <div className="flex flex-wrap items-end gap-3 p-4 bg-white border-b border-slate-200">
+    <div className="flex flex-wrap items-end gap-3">
       <FileInput label="Holdings CSV" accept=".csv" onChange={setHoldings} />
       <FileInput label="NAV CSV" accept=".csv" onChange={setNav} />
       <FileInput label="Market Data (optional)" accept=".csv" onChange={setMkt} />

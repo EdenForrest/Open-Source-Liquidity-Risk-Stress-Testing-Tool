@@ -12,14 +12,37 @@ import Charts from './pages/Charts'
 import RiskStory from './pages/RiskStory'
 import AllPortfolios from './pages/AllPortfolios'
 
+// SVG icon components — 16×16, stroke-based, professional
+function IconPortfolios() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="14" height="10" rx="1.5"/><path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><line x1="1" y1="8" x2="15" y2="8"/></svg>
+}
+function IconDashboard() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+}
+function IconStress() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1,12 5,7 8,10 11,5 15,8"/><line x1="11" y1="5" x2="15" y2="5"/><line x1="15" y1="5" x2="15" y2="8"/></svg>
+}
+function IconRedemption() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5"/><polyline points="11,1 14,4 11,7"/><line x1="14" y1="4" x2="8" y2="4"/></svg>
+}
+function IconWaterfall() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="9" width="3" height="5" rx="0.5"/><rect x="5" y="6" width="3" height="8" rx="0.5"/><rect x="9" y="3" width="3" height="11" rx="0.5"/><rect x="13" y="7" width="2" height="7" rx="0.5"/></svg>
+}
+function IconCharts() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="1,11 5,6 9,9 15,3"/><line x1="1" y1="14" x2="15" y2="14"/></svg>
+}
+function IconRiskStory() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><line x1="4" y1="6" x2="12" y2="6"/><line x1="4" y1="9" x2="12" y2="9"/><line x1="4" y1="12" x2="8" y2="12"/></svg>
+}
+
 const NAV_ITEMS = [
-  { to: '/portfolios',  label: 'All Portfolios', icon: '🗂️' },
-  { to: '/dashboard',   label: 'Dashboard',      icon: '📊' },
-  { to: '/stress',      label: 'Stress Tests',   icon: '⚡' },
-  { to: '/redemption',  label: 'Redemption',     icon: '🔄' },
-  { to: '/waterfall',   label: 'Waterfall',      icon: '💧' },
-  { to: '/charts',      label: 'Charts',         icon: '📈' },
-  { to: '/risk-story',  label: 'Risk Story',     icon: '📝' },
+  { to: '/portfolios',  label: 'All Portfolios', Icon: IconPortfolios },
+  { to: '/dashboard',   label: 'Dashboard',      Icon: IconDashboard  },
+  { to: '/stress',      label: 'Stress Tests',   Icon: IconStress     },
+  { to: '/redemption',  label: 'Redemption',     Icon: IconRedemption },
+  { to: '/waterfall',   label: 'Waterfall',      Icon: IconWaterfall  },
+  { to: '/charts',      label: 'Charts',         Icon: IconCharts     },
+  { to: '/risk-story',  label: 'Risk Story',     Icon: IconRiskStory  },
 ]
 
 function Sidebar() {
@@ -35,7 +58,7 @@ function Sidebar() {
         </div>
       </div>
       <nav className="flex-1 py-4 space-y-0.5 px-2">
-        {NAV_ITEMS.map(({ to, label, icon }) => (
+        {NAV_ITEMS.map(({ to, label, Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -48,7 +71,7 @@ function Sidebar() {
               (isActive ? 'font-semibold' : 'hover:bg-[var(--nav-hover-bg)] hover:text-[var(--nav-hover-text)]')
             }
           >
-            <span className="text-base leading-none">{icon}</span>
+            <Icon />
             {label}
           </NavLink>
         ))}
