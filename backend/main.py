@@ -27,6 +27,10 @@ _cors_origins_env = os.getenv("CORS_ORIGINS", "")
 _extra_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip()]
 _allowed_origins = ["http://localhost:5173", "http://127.0.0.1:5173"] + _extra_origins
 
+import logging as _logging
+_logging.basicConfig(level=_logging.INFO)
+_logging.getLogger(__name__).info("CORS allowed origins: %s", _allowed_origins)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
@@ -39,6 +43,10 @@ app.include_router(portfolio.router, prefix="/api")
 app.include_router(analysis.router, prefix="/api")
 
 
+@app.get("/")
+def root():
+    return {"message": "Liquidity Risk Tool API"}
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "cors_origins": _allowed_origins}
