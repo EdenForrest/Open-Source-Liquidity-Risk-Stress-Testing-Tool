@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { useAnalysis } from '../AnalysisContext'
+import InfoModal from './InfoModal'
 
 export default function Uploader() {
   const { upload, markError, status } = useAnalysis()
@@ -22,6 +23,7 @@ export default function Uploader() {
       <FileInput label="Holdings CSV" accept=".csv" onChange={setHoldings} />
       <FileInput label="NAV CSV" accept=".csv" onChange={setNav} />
       <FileInput label="Market Data (optional)" accept=".csv" onChange={setMkt} />
+      <InfoModal />
       <button
         onClick={handleRun}
         disabled={!holdings || !nav || busy}
