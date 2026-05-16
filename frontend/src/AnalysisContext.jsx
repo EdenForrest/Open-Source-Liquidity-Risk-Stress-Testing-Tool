@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useRef } from 'react'
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react'
 import client from './api/client'
 
 const AnalysisContext = createContext(null)
@@ -79,6 +79,46 @@ export function AnalysisProvider({ children }) {
     setStatus('error')
     setError(msg)
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    let pollTimer = null
+
+    async function loadDemo() {
+      try {
+        setStatus('running')
+        const res = await client.post('/demo')
+        const id = res.data.run_id
+        if (cancelled) return
+        setRunId(id)
+
+        pollTimer = setInterval(async () => {
+          try {
+            const s = await client.get(`/run/${id}/status`)
+            if (cancelled) return
+            if (s.data.status === 'complete') {
+              clearInterval(pollTimer)
+              await fetchPortfolios(id)
+            } else if (s.data.status === 'error') {
+              clearInterval(pollTimer)
+              markError(s.data.error ?? 'Demo run failed')
+            }
+          } catch (e) {
+            clearInterval(pollTimer)
+            if (!cancelled) markError(e.message)
+          }
+        }, 1500)
+      } catch (e) {
+        if (!cancelled) markError(e.message)
+      }
+    }
+
+    loadDemo()
+    return () => {
+      cancelled = true
+      if (pollTimer) clearInterval(pollTimer)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <AnalysisContext.Provider
