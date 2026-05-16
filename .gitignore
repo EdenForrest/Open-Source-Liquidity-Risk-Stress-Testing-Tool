@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Output files
+output/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Data files — never commit raw or real data ──────────────────────────────
+# All CSV/Excel/JSON in data/ are local only; use data/sample/ for public demos
+data/*.csv
+data/*.xlsx
+data/*.json
+data/real/
+data/cache/
+# Allow the synthetic sample directory
+!data/sample/
+!data/sample/**
+
+# Generated output reports and charts
+output/
+liquidity_risk_tool/output/
+
+# Refinitiv / LSEG licensed data — keep private
+# The extractor code lives in integrations/refinitiv/ (safe to commit)
+# but its outputs, cache files, and any real data must never be committed.
+data/fetch_market_data.py
+data/README_fetch_market_data.md
+data/market_data_cache.csv
+data/market_data_ALL.csv
+data/market_data_ERRORS.csv
+integrations/refinitiv/.env
+integrations/refinitiv/secrets.py
+
+# Local tooling
+.claude/
+liquidity_risk_tool/.claude/

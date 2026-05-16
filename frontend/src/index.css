@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+* { box-sizing: border-box; }
+
+/* ── Light theme (default) ─────────────────────────────────────────────────── */
+:root {
+  --bg-base:    #f1f5f9;
+  --bg-panel:   #ffffff;
+  --bg-surface: #f8fafc;
+  --bg-hover:   #f1f5f9;
+  --border:     #e2e8f0;
+
+  --text-primary:   #1e293b;
+  --text-secondary: #64748b;
+  --text-muted:     #94a3b8;
+  --text-accent:    #3b82f6;
+
+  --sidebar-bg:          #0f172a;
+  --sidebar-border:      #1e293b;
+  --sidebar-text:        #94a3b8;
+  --sidebar-logo-text:   #ffffff;
+  --sidebar-logo-sub:    #64748b;
+  --sidebar-ver:         #475569;
+  --nav-active-bg:       #2563eb;
+  --nav-active-text:     #ffffff;
+  --nav-hover-bg:        #1e293b;
+  --nav-hover-text:      #ffffff;
+
+  --header-bg:     #ffffff;
+  --header-border: #e2e8f0;
+
+  --kpi-blue-bg: #eff6ff; --kpi-blue-border: #60a5fa; --kpi-blue-text: #1d4ed8;
+  --kpi-green-bg: #f0fdf4; --kpi-green-border: #4ade80; --kpi-green-text: #15803d;
+  --kpi-amber-bg: #fffbeb; --kpi-amber-border: #fbbf24; --kpi-amber-text: #92400e;
+  --kpi-red-bg: #fef2f2; --kpi-red-border: #f87171; --kpi-red-text: #b91c1c;
+  --kpi-slate-bg: #ffffff; --kpi-slate-border: #cbd5e1; --kpi-slate-text: #334155;
+
+  --scrollbar-track: #e2e8f0;
+  --scrollbar-thumb: #94a3b8;
+  --scrollbar-hover: #3b82f6;
+}
+
+/* ── Bloomberg Terminal theme ──────────────────────────────────────────────── */
+[data-theme="bloomberg"] {
+  --bg-base:    #080c10;
+  --bg-panel:   #0d1117;
+  --bg-surface: #111820;
+  --bg-hover:   #1a2230;
+  --border:     #1e2a38;
+
+  --text-primary:   #e8ecf0;
+  --text-secondary: #7a8fa8;
+  --text-muted:     #3d5068;
+  --text-accent:    #ff6600;
+
+  --sidebar-bg:          #06090d;
+  --sidebar-border:      #1e2a38;
+  --sidebar-text:        #7a8fa8;
+  --sidebar-logo-text:   #ff6600;
+  --sidebar-logo-sub:    #3d5068;
+  --sidebar-ver:         #3d5068;
+  --nav-active-bg:       transparent;
+  --nav-active-text:     #ff6600;
+  --nav-hover-bg:        #1a2230;
+  --nav-hover-text:      #e8ecf0;
+
+  --header-bg:     #0d1117;
+  --header-border: #1e2a38;
+
+  --kpi-blue-bg: #0a1628; --kpi-blue-border: #00c8ff; --kpi-blue-text: #00c8ff;
+  --kpi-green-bg: #061a0e; --kpi-green-border: #00cc66; --kpi-green-text: #00cc66;
+  --kpi-amber-bg: #1a1200; --kpi-amber-border: #ffaa00; --kpi-amber-text: #ffaa00;
+  --kpi-red-bg: #1a0505; --kpi-red-border: #ff3b3b; --kpi-red-text: #ff3b3b;
+  --kpi-slate-bg: #111820; --kpi-slate-border: #1e2a38; --kpi-slate-text: #7a8fa8;
+
+  --scrollbar-track: #0d1117;
+  --scrollbar-thumb: #2a3040;
+  --scrollbar-hover: #ff6600;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  transition: background 0.2s, color 0.2s;
+}
+
+#root { min-height: 100vh; }
+
+/* Bloomberg-style monospaced numbers */
+.bb-num {
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  letter-spacing: 0.02em;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-hover); }
+
+/* ── Theme-aware semantic utility classes ──────────────────────────────────── */
+.th-panel   { background: var(--bg-panel);   border-color: var(--border); }
+.th-surface { background: var(--bg-surface); }
+.th-border  { border-color: var(--border); }
+.th-text-primary   { color: var(--text-primary); }
+.th-text-secondary { color: var(--text-secondary); }
+.th-text-muted     { color: var(--text-muted); }
+
+[data-theme="bloomberg"] .th-nav-active-ring {
+  border-left: 2px solid #ff6600;
+}
