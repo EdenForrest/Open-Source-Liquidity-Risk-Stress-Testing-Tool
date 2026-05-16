@@ -23,7 +23,10 @@ from liquidity_risk_tool.config.settings import STRESS_SCENARIOS
 router = APIRouter(tags=["portfolio"])
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+DATA_DIR = Path(__file__).parent.parent.parent / "data" / "sample"
+
+# Cached demo run — computed once per server process
+_DEMO_RUN_ID: str | None = None
 
 
 def _safe_filename(raw: str | None, fallback: str) -> str:
@@ -60,11 +63,10 @@ async def _run_pipeline_bg(
         logger.error("Pipeline failed for run %s\n%s", run_id, tb)
         store.update(run_id, status="error", error=f"{type(exc).__name__}: {exc}")
     finally:
-        for p in [holdings_path, nav_path]:
-            if p and p.exists():
+        # Only delete files that are NOT in the bundled data directory
+        for p in [holdings_path, nav_path, market_data_path]:
+            if p and p.exists() and DATA_DIR not in p.parents:
                 p.unlink(missing_ok=True)
-        if market_data_path and market_data_path.exists():
-            market_data_path.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +132,42 @@ def list_portfolios():
         except Exception:
             codes.append(f.stem)
     return {"portfolios": codes, "files": [f.name for f in files]}
+
+
+@router.post("/demo")
+async def run_demo():
+    """Run the pipeline on bundled synthetic data and return the run_id.
+    Result is cached — subsequent calls return the same run_id instantly.
+    """
+    global _DEMO_RUN_ID
+
+    # Return cached run if already complete
+    if _DEMO_RUN_ID is not None:
+        record = store.get(_DEMO_RUN_ID)
+        if record and record.status in ("complete", "running", "pending"):
+            return {"run_id": _DEMO_RUN_ID, "status": record.status}
+
+    holdings_files = sorted(DATA_DIR.glob("HOLDINGS_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    nav_files = sorted(DATA_DIR.glob("NAV_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    market_data = DATA_DIR / "market_data_ALL.csv"
+
+    if not holdings_files or not nav_files:
+        raise HTTPException(status_code=404, detail="No synthetic demo data found in data/ directory")
+
+    run_id = str(uuid.uuid4())
+    _DEMO_RUN_ID = run_id
+    store.create(run_id)
+
+    asyncio.create_task(
+        _run_pipeline_bg(
+            run_id,
+            holdings_files[0],
+            nav_files[0],
+            market_data if market_data.exists() else None,
+        )
+    )
+
+    return {"run_id": run_id, "status": "pending"}
 
 
 @router.get("/scenarios")
