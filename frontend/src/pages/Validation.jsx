@@ -8,6 +8,7 @@ const CATEGORY_ORDER = [
   'Redemption',
   'Stress',
   'Waterfall',
+  'Reconciliation',
 ]
 
 function PassIcon() {

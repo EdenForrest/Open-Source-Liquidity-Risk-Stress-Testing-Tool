@@ -63,7 +63,9 @@ export default function StressTests() {
             <XAxis dataKey="name" tick={{ fontSize: 11, fill: ct.tickColor }} axisLine={{ stroke: ct.axisColor }} tickLine={false} />
             <YAxis unit="%" tick={{ fontSize: 11, fill: ct.tickColor }} axisLine={false} tickLine={false} />
             <Tooltip formatter={(v) => v.toFixed(2) + '%'}
-              contentStyle={{ background: ct.tooltipBg, borderColor: ct.tooltipBorder, color: ct.tooltipText }} />
+              contentStyle={{ background: ct.tooltipBg, borderColor: ct.tooltipBorder, color: ct.tooltipText }}
+              labelStyle={{ color: ct.tooltipText }}
+              itemStyle={{ color: ct.tooltipText }} />
             <ReferenceLine y={0} stroke={ct.axisColor} />
             <Bar dataKey="NAV Δ%" radius={[4, 4, 0, 0]}>
               {chartData.map((d, i) => (

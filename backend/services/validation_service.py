@@ -183,6 +183,112 @@ def run_checks(portfolio_results: dict) -> list[dict]:
         f"NAV impact = {_pct(nav_impact)}",
     ))
 
+    # ── Reconciliation ────────────────────────────────────────────────────
+    # 1. NAV vs sum of position market values (≤1% tolerance; NAV file vs position sum can differ)
+    if nav is not None and buckets:
+        pos_sum = sum(r.get("market_value_eur") or 0 for r in buckets)
+        discrepancy = abs(pos_sum - nav) / nav if nav else 0
+        results.append(_check(
+            "NAV vs position sum (≤1% tolerance)", "Reconciliation",
+            discrepancy <= 0.01,
+            f"NAV €{nav:,.0f} vs position sum €{pos_sum:,.0f} — diff {discrepancy * 100:.3f}%",
+        ))
+
+    # 2. Waterfall nav_before matches total_nav_eur
+    wf_nav_before = wf_meta.get("nav_before")
+    if nav is not None and wf_nav_before is not None:
+        wf_nav_ok = abs(wf_nav_before - nav) / nav < 0.001 if nav else wf_nav_before == 0
+        results.append(_check(
+            "Waterfall nav_before matches total NAV", "Reconciliation",
+            wf_nav_ok,
+            f"Waterfall nav_before €{wf_nav_before:,.0f} vs total_nav_eur €{nav:,.0f}",
+        ))
+
+    # 3. All stress nav_before values match total_nav_eur
+    if nav is not None and stress_results:
+        bad_nav = [s["scenario_name"] for s in stress_results
+                   if s.get("nav_before") is not None
+                   and abs(s["nav_before"] - nav) / nav > 0.001]
+        results.append(_check(
+            "All stress nav_before values match total NAV", "Reconciliation",
+            len(bad_nav) == 0,
+            f"Mismatch in: {bad_nav}" if bad_nav else f"All {len(stress_results)} scenarios use consistent NAV",
+        ))
+
+    # 4–7. LCR metrics vs ladder bucket sums
+    BUCKET_ORDER = ["T+0", "T+1", "T+3", "T+7", ">T+7"]
+    if ladder and t1 is not None:
+        nav_by_bucket = {r["bucket"]: (r.get("nav_pct") or 0) for r in ladder if r.get("bucket")}
+        calc_t1 = sum(nav_by_bucket.get(b, 0) for b in ["T+0", "T+1"])
+        results.append(_check(
+            "LCR T+1 matches ladder (T+0 + T+1)", "Reconciliation",
+            abs(calc_t1 - t1) < _TOL,
+            f"Metric {_pct(t1)} vs ladder sum {_pct(calc_t1)} — diff {abs(calc_t1 - t1) * 100:.4f}%",
+        ))
+
+        if t3 is not None:
+            calc_t3 = sum(nav_by_bucket.get(b, 0) for b in ["T+0", "T+1", "T+3"])
+            results.append(_check(
+                "LCR T+3 matches ladder (T+0 + T+1 + T+3)", "Reconciliation",
+                abs(calc_t3 - t3) < _TOL,
+                f"Metric {_pct(t3)} vs ladder sum {_pct(calc_t3)} — diff {abs(calc_t3 - t3) * 100:.4f}%",
+            ))
+
+        if t7 is not None:
+            calc_t7 = sum(nav_by_bucket.get(b, 0) for b in ["T+0", "T+1", "T+3", "T+7"])
+            results.append(_check(
+                "LCR T+7 matches ladder (T+0 through T+7)", "Reconciliation",
+                abs(calc_t7 - t7) < _TOL,
+                f"Metric {_pct(t7)} vs ladder sum {_pct(calc_t7)} — diff {abs(calc_t7 - t7) * 100:.4f}%",
+            ))
+
+        if illiquid is not None:
+            calc_illiquid = nav_by_bucket.get(">T+7", 0)
+            results.append(_check(
+                "Illiquid % matches ladder >T+7 bucket", "Reconciliation",
+                abs(calc_illiquid - illiquid) < _TOL,
+                f"Metric {_pct(illiquid)} vs ladder {_pct(calc_illiquid)} — diff {abs(calc_illiquid - illiquid) * 100:.4f}%",
+            ))
+
+    # 8. Redemption amounts: redemption_eur ≈ scenario_pct × total_nav_eur
+    if nav is not None and redemption:
+        bad_amounts = []
+        for r in redemption:
+            pct_val = r.get("scenario_pct")
+            red_eur = r.get("redemption_eur")
+            if pct_val is not None and red_eur is not None:
+                expected = pct_val * nav
+                if expected > 0 and abs(red_eur - expected) / expected > 0.001:
+                    bad_amounts.append(f"{_pct(pct_val)}: expected €{expected:,.0f}, got €{red_eur:,.0f}")
+        results.append(_check(
+            "Redemption amounts = scenario% × NAV", "Reconciliation",
+            len(bad_amounts) == 0,
+            f"Mismatches: {'; '.join(bad_amounts)}" if bad_amounts else f"All {len(redemption)} redemption amounts reconcile",
+        ))
+
+    # 9. Stress result count matches scenario_metadata count
+    scenario_meta = portfolio_results.get("scenario_metadata", [])
+    if scenario_meta or stress_results:
+        count_ok = len(stress_results) == len(scenario_meta)
+        results.append(_check(
+            "Stress result count matches scenario metadata", "Reconciliation",
+            count_ok,
+            f"{len(stress_results)} results vs {len(scenario_meta)} scenarios defined",
+        ))
+
+    # 10. Scenario severity: liquidity_haircut_multiplier non-decreasing
+    if len(scenario_meta) > 1:
+        multipliers = [s.get("liquidity_haircut_multiplier") for s in scenario_meta]
+        valid_multipliers = [m for m in multipliers if m is not None]
+        severity_ok = all(valid_multipliers[i] <= valid_multipliers[i + 1] + _TOL
+                          for i in range(len(valid_multipliers) - 1))
+        results.append(_check(
+            "Scenario haircut multipliers non-decreasing", "Reconciliation",
+            severity_ok,
+            f"Multipliers: {[round(m, 2) for m in valid_multipliers]}" if not severity_ok
+            else f"Haircut severity is monotone ({len(valid_multipliers)} scenarios)",
+        ))
+
     return results
 
 
