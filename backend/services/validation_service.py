@@ -289,13 +289,13 @@ def run_checks(portfolio_results: dict) -> list[dict]:
     # compare against position_sum, not total_nav_eur.
     position_sum = sum(r.get("market_value_eur") or 0 for r in buckets)
 
-    # 1. NAV vs sum of position market values (informational — NAV file and MVHOL
-    #    are separate data sources whose totals may legitimately differ by design).
+    # 1. NAV vs sum of position market values (≤1% tolerance for accruals/rounding).
+    #    A larger gap indicates a data integrity problem between the NAV file and MVHOL.
     if nav is not None and buckets:
         discrepancy = abs(position_sum - nav) / nav if nav else 0
         results.append(_check(
-            "NAV vs position sum (≤25% tolerance)", "Reconciliation",
-            discrepancy <= 0.25,
+            "NAV vs position sum (≤1% tolerance)", "Reconciliation",
+            discrepancy <= 0.01,
             f"NAV €{nav:,.0f} vs position sum €{position_sum:,.0f} — diff {discrepancy * 100:.3f}%",
         ))
 
