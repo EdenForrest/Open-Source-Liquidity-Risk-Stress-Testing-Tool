@@ -125,6 +125,7 @@ class Portfolio:
                 "credit_spread_bps":  p.credit_spread_bps,
                 "rating":             p.rating,
                 "beta":               p.beta,
+                "fx_rate":            p.fx_rate,
                 "is_locked":          p.is_locked,
                 "lock_expiry_days":   p.lock_expiry_days,
                 "bucket_override":    p.liquidity_bucket_override,

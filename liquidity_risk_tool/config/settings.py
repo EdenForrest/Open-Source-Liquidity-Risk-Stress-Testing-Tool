@@ -82,16 +82,6 @@ STRESS_SCENARIOS: List[StressScenario] = [
         is_worst_case=False, last_reviewed="2026-01-01",
     ),
     StressScenario(
-        name="Equity-Led Stress -20%",
-        equity_shock=-0.20, credit_spread_shock_bps=100,
-        liquidity_haircut_multiplier=1.5, redemption_rate=0.15,
-        adv_stress_scalar=0.70, rate_shock_bps=50,
-        version="1.0",
-        description="Equity-led drawdown (-20%) with material correlated spread widening (+100bps) and ADV compression. All asset classes affected via haircut multiplier.",
-        regulatory_basis="ESMA MMFR Art.28 Scenario B",
-        is_worst_case=False, last_reviewed="2026-01-01",
-    ),
-    StressScenario(
         name="Credit-Led Stress +100bps",
         equity_shock=0.00, credit_spread_shock_bps=100,
         liquidity_haircut_multiplier=1.3, redemption_rate=0.10,
@@ -99,6 +89,16 @@ STRESS_SCENARIOS: List[StressScenario] = [
         version="1.0",
         description="Credit-led stress with spreads +100bps and moderate rate shift. Equity market value unchanged; all asset liquidity compressed via haircut multiplier.",
         regulatory_basis="ESMA MMFR Art.28 Scenario C",
+        is_worst_case=False, last_reviewed="2026-01-01",
+    ),
+    StressScenario(
+        name="Equity-Led Stress -20%",
+        equity_shock=-0.20, credit_spread_shock_bps=100,
+        liquidity_haircut_multiplier=1.5, redemption_rate=0.15,
+        adv_stress_scalar=0.70, rate_shock_bps=50,
+        version="1.0",
+        description="Equity-led drawdown (-20%) with material correlated spread widening (+100bps) and ADV compression. All asset classes affected via haircut multiplier.",
+        regulatory_basis="ESMA MMFR Art.28 Scenario B",
         is_worst_case=False, last_reviewed="2026-01-01",
     ),
     StressScenario(
