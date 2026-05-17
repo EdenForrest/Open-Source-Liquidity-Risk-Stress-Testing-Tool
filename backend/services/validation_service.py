@@ -167,6 +167,105 @@ def run_checks(portfolio_results: dict) -> list[dict]:
                 f"Base nav_impact_pct = {_pct(base.get('nav_impact_pct'))}",
             ))
 
+    # ── Market Data ───────────────────────────────────────────────────────
+    # ADV defaults per asset class (from csv_loader._ADV_DEFAULTS)
+    _ADV_DEFAULTS = {
+        "cash": 1e12, "money_market": 50_000_000, "government_bond": 30_000_000,
+        "ig_corporate_bond": 5_000_000, "hy_corporate_bond": 1_000_000,
+        "listed_equity": 10_000_000, "etf": 10_000_000, "structured_credit": 500_000,
+        "real_estate": 0, "private_equity": 0, "hedge_fund": 0,
+        "future": 200_000_000, "option": 10_000_000,
+    }
+    tradeable = [
+        b for b in buckets
+        if b.get("asset_class") not in ("cash", "real_estate", "private_equity", "hedge_fund")
+        and b.get("market_value_eur", 0) > 0
+    ]
+    if tradeable:
+        # 1. ADV populated (non-zero) for all tradeable positions
+        no_adv = [b.get("isin", b.get("name", "?")) for b in tradeable if not (b.get("adv_30d") or 0) > 0]
+        results.append(_check(
+            "ADV populated for all tradeable positions", "Market Data",
+            len(no_adv) == 0,
+            f"{len(no_adv)} position(s) have zero or missing ADV: {no_adv[:5]}" if no_adv
+            else f"ADV present for all {len(tradeable)} tradeable positions",
+        ))
+
+        # 2. At least some ADV values differ from asset-class defaults (market data was ingested)
+        default_adv_count = sum(
+            1 for b in tradeable
+            if abs((b.get("adv_30d") or 0) - _ADV_DEFAULTS.get(b.get("asset_class", ""), 5_000_000)) < 1
+        )
+        enriched_count = len(tradeable) - default_adv_count
+        results.append(_check(
+            "ADV enriched from market data (not all defaults)", "Market Data",
+            enriched_count > 0,
+            f"{enriched_count}/{len(tradeable)} positions have market-data ADV (vs defaults)"
+            if enriched_count > 0
+            else "All ADV values equal class defaults — market data file may not have been loaded",
+        ))
+
+        # 3. Bid-ask spread populated for liquid positions (non-illiquid asset classes)
+        liquid_pos = [b for b in tradeable if b.get("bucket") != ">T+7"]
+        no_spread = [b.get("isin", "?") for b in liquid_pos if b.get("bid_ask_spread_bps") is None]
+        results.append(_check(
+            "Bid-ask spread present for liquid positions", "Market Data",
+            len(no_spread) == 0,
+            f"{len(no_spread)} liquid position(s) missing bid-ask spread: {no_spread[:5]}" if no_spread
+            else f"Bid-ask spread populated for all {len(liquid_pos)} liquid positions",
+        ))
+
+        # 4. FX rates applied for non-EUR positions
+        non_eur = [b for b in buckets if b.get("currency") and b.get("currency") != "EUR"
+                   and b.get("market_value_eur", 0) > 0]
+        bad_fx = [b.get("isin", "?") for b in non_eur
+                  if not (b.get("fx_rate") or 0) > 0 or abs((b.get("fx_rate") or 0) - 1.0) < 1e-6]
+        results.append(_check(
+            "FX rates applied for non-EUR positions", "Market Data",
+            len(bad_fx) == 0,
+            f"{len(bad_fx)} non-EUR position(s) with missing or 1.0 FX rate: {bad_fx[:5]}" if bad_fx
+            else f"FX rates applied for all {len(non_eur)} non-EUR positions" if non_eur
+            else "No non-EUR positions in portfolio",
+        ))
+
+        # 5. Duration present for bond positions
+        bonds = [b for b in buckets if b.get("asset_class") in
+                 ("government_bond", "ig_corporate_bond", "hy_corporate_bond", "structured_credit")
+                 and b.get("market_value_eur", 0) > 0]
+        if bonds:
+            no_dur = [b.get("isin", "?") for b in bonds if b.get("duration") is None]
+            results.append(_check(
+                "Duration present for bond positions", "Market Data",
+                len(no_dur) == 0,
+                f"{len(no_dur)} bond(s) missing duration: {no_dur[:5]}" if no_dur
+                else f"Duration populated for all {len(bonds)} bond positions",
+            ))
+
+        # 6. Beta present for equity positions
+        equities = [b for b in buckets if b.get("asset_class") in ("listed_equity", "etf")
+                    and b.get("market_value_eur", 0) > 0]
+        if equities:
+            no_beta = [b.get("isin", "?") for b in equities if b.get("beta") is None]
+            results.append(_check(
+                "Beta present for equity positions", "Market Data",
+                len(no_beta) == 0,
+                f"{len(no_beta)} equity position(s) missing beta: {no_beta[:5]}" if no_beta
+                else f"Beta populated for all {len(equities)} equity positions",
+            ))
+
+        # 7. Realisable value reflects spread cost (realisable < market value for non-cash)
+        non_cash = [b for b in buckets if b.get("asset_class") != "cash"
+                    and b.get("market_value_eur", 0) > 0 and b.get("realisable_value") is not None]
+        all_equal = all(abs((b.get("realisable_value") or 0) - (b.get("market_value_eur") or 0)) < 1
+                        for b in non_cash)
+        results.append(_check(
+            "Realisable value reflects bid-ask haircut", "Market Data",
+            not all_equal,
+            "All realisable values equal market values — spread cost not being applied"
+            if all_equal
+            else f"Bid-ask haircut applied across {len(non_cash)} non-cash positions",
+        ))
+
     # ── Waterfall ─────────────────────────────────────────────────────────
     wf_meta = portfolio_results.get("waterfall_meta", {})
     proceeds = wf_meta.get("total_proceeds_eur")

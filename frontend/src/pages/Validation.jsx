@@ -8,6 +8,7 @@ const CATEGORY_ORDER = [
   'Redemption',
   'Stress',
   'Waterfall',
+  'Market Data',
   'Reconciliation',
 ]
 
