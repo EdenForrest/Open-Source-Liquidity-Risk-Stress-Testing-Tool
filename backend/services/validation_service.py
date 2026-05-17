@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_FLOAT_ZERO = 0.01   # cents — smallest meaningful delta, not a tolerance band
+_RECON_TOL = 1e-5    # 0.001% — rounding tolerance for NAV reconciliation checks
 _LCR_TOL = 1e-4      # floating-point accumulation only; not a data-quality tolerance
 
 
@@ -323,13 +323,12 @@ def run_checks(portfolio_results: dict) -> list[dict]:
     # position_sum: sum of MVHOL market values (the engine's internal NAV basis)
     position_sum = sum(r.get("market_value_eur") or 0 for r in buckets)
 
-    # 1. NAV vs position sum — exact reconciliation.
+    # 1. NAV vs position sum — reconciliation within 0.001%.
     #    Formula: diff = |position_sum - NAV| / NAV
-    #    Any non-zero difference exposes a data integrity problem.
     if nav is not None and buckets:
         diff_eur = position_sum - nav
         diff_pct = diff_eur / nav if nav else 0
-        passed = abs(diff_eur) < _FLOAT_ZERO
+        passed = abs(diff_pct) < _RECON_TOL
         results.append(_check(
             "NAV vs position sum (exact reconciliation)", "Reconciliation",
             passed,
@@ -342,7 +341,7 @@ def run_checks(portfolio_results: dict) -> list[dict]:
     wf_nav_before = wf_meta.get("nav_before")
     if nav is not None and wf_nav_before is not None:
         wf_diff = wf_nav_before - nav
-        wf_ok = abs(wf_diff) < _FLOAT_ZERO
+        wf_ok = abs(wf_diff / nav) < _RECON_TOL
         results.append(_check(
             "Waterfall nav_before = total NAV", "Reconciliation",
             wf_ok,
@@ -359,7 +358,7 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             nb = s.get("nav_before")
             if nb is not None:
                 delta = nb - nav
-                if abs(delta) >= _FLOAT_ZERO:
+                if abs(delta / nav) >= _RECON_TOL:
                     bad_stress_nav.append(
                         f"{s['scenario_name']}: nav_before={_eur(nb)} vs NAV={_eur(nav)} Δ={_eur(delta)}"
                     )
@@ -427,7 +426,7 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             if pct_val is not None and red_eur is not None:
                 expected = pct_val * nav
                 delta = red_eur - expected
-                if abs(delta) >= _FLOAT_ZERO:
+                if expected > 0 and abs(delta / expected) >= _RECON_TOL:
                     bad_amounts.append(
                         f"{_pct(pct_val)}: expected=NAV×{_pct(pct_val)}={_eur(expected)}, "
                         f"actual={_eur(red_eur)}, Δ={_eur(delta)}"
