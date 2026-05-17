@@ -52,8 +52,8 @@ happen to be publicly available elsewhere.
 
 | Forbidden | Why |
 |---|---|
-| Real MVHOL holdings files (`MVHOL_ALT_*.csv`) | Proprietary position data |
-| Real NAV files (`NAV_ALT_*.csv`) | Proprietary fund data |
+| Real holdings files (e.g. `HOLDINGS_*.csv`, `MVHOL_*.csv`) | Proprietary position data |
+| Real NAV files (e.g. `NAV_*.csv`, `FUND_NAV_*.csv`) | Proprietary fund data |
 | Any file containing real ISIN + market value pairs | Client confidential |
 | Internal fund codes, portfolio names | Proprietary |
 | Any file from `data/real/` | Reserved for local real-data workflows |

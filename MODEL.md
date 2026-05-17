@@ -1,7 +1,7 @@
 # Liquidity Risk & Stress Testing Tool — Model Documentation
 
 **Version:** 1.1  
-**Last reviewed:** 2026-05-12  
+**Last reviewed:** 2026-05-17  
 **Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV  
 **Purpose:** Complete audit trail for every metric displayed in the GUI, its mathematical definition, and the theoretical framework used to derive it.
 
@@ -111,7 +111,7 @@ $$MV_b = \sum_{i \in b} MV_i \qquad RV_b = \sum_{i \in b} RV_i$$
 
 $$\mathrm{navPct}_b = \frac{MV_b}{NAV} \qquad \mathrm{cumulativeNavPct}_b = \sum_{b' \leq b} \mathrm{navPct}_{b'}$$
 
-Where $NAV$ is the position-sum NAV (sum of all $MV_i$ across all positions). This is used as the ladder denominator rather than the NAV file total to ensure LCR fractions are on the same basis as the realisable values computed from position data. The two should agree within 0.0001% (validated by the CSV loader on load).
+Where $NAV$ is the position-sum NAV (sum of all $MV_i$ across all positions). This is used as the ladder denominator rather than the NAV file total to ensure LCR fractions are on the same basis as the realisable values computed from position data. The position-sum and the NAV file total must reconcile exactly (Δ < €0.01); the validation service rejects any discrepancy as a FAIL — no tolerance band is applied.
 
 ---
 

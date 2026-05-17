@@ -28,7 +28,7 @@ A Luxembourg ManCo-grade liquidity risk analytics platform for UCITS/AIFMD funds
 
 ## Quick Start
 
-### 1. Install dependencies
+### 1. Install Python dependencies
 
 ```bash
 pip install -r requirements.txt
@@ -40,13 +40,28 @@ pip install -r requirements.txt
 py main.py
 ```
 
-### 3. Launch the GUI
+### 3. Launch the web UI (FastAPI + React)
+
+```bash
+# Terminal 1 — backend API
+cd backend
+uvicorn main:app --reload --port 8000
+
+# Terminal 2 — frontend dev server
+cd frontend
+npm install
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) in your browser. Upload your holdings and NAV CSV files using the sidebar, then click **Run Analysis**.
+
+### 4. Launch the legacy desktop GUI (Tkinter)
 
 ```bash
 py gui.py
 ```
 
-### 4. Optional CLI flags
+### 5. Optional CLI flags
 
 | Flag | Effect |
 |------|--------|
@@ -61,15 +76,27 @@ py gui.py
 ```
 liquidity_risk_tool/
 ├── main.py                          # CLI entry point — 8-step pipeline
-├── gui.py                           # Tkinter desktop app (6 tabs)
 ├── requirements.txt
-├── liquidity_risk_tool/
+├── backend/                         # FastAPI application
+│   ├── main.py                      # API entrypoint (uvicorn)
+│   ├── routers/                     # Endpoint modules (analysis, health)
+│   └── services/                    # Business logic wrappers + validation_service.py
+├── frontend/                        # React + Vite + TailwindCSS v4 web UI
+│   ├── src/
+│   │   ├── pages/                   # Dashboard, StressTests, Waterfall, Charts
+│   │   ├── components/              # KPICard, MetricTooltip, EmptyState, …
+│   │   ├── AnalysisContext.jsx      # Global analysis state
+│   │   └── theme.js                 # Colour tokens for light/dark mode
+│   └── package.json
+├── ui-tk/                           # Legacy Tkinter desktop GUI (6 tabs)
+│   └── gui.py
+├── liquidity_risk_tool/             # Core analytics engine (Python package)
 │   ├── config/
 │   │   └── settings.py              # All thresholds, haircuts, scenarios, constants
 │   ├── models/
 │   │   ├── position.py              # Position, ShareClass, Portfolio dataclasses
 │   │   ├── sample_portfolio.py      # EUR ~320M sample UCITS fund (31 positions)
-│   │   └── csv_loader.py            # Load portfolio from MVHOL + NAV CSV files
+│   │   └── csv_loader.py            # Load portfolio from holdings + NAV CSV files
 │   ├── engines/
 │   │   ├── validators.py            # Input validation — positions and portfolios
 │   │   ├── liquidity_profiler.py    # Bucket assignment, haircuts, ADV cap, concentration flags
@@ -81,6 +108,9 @@ liquidity_risk_tool/
 │   │   └── report_builder.py        # Excel (6 sheets) / JSON / console export
 │   └── visualization/
 │       └── charts.py                # 7-chart matplotlib pack
+├── data/
+│   ├── sample/                      # Synthetic demo data (safe to commit)
+│   └── generate_synthetic_data.py   # Generates sample holdings + NAV CSVs
 ├── tests/
 │   ├── test_pipeline.py
 │   ├── test_validators.py
@@ -410,13 +440,24 @@ Structured export including `run_id`, `scenario_metadata`, fund metrics, ladder,
 
 ---
 
-### 9. Graphical User Interface — `gui.py`
+### 9. User Interfaces
 
-**File:** `gui.py`
+#### 9a. Web UI — `backend/` + `frontend/`
+
+The primary interface is a browser-based application (FastAPI + React/Vite/TailwindCSS v4). Upload your holdings and NAV CSV files via the sidebar, click **Run Analysis**, and results appear across four tabs.
+
+| Tab | Contents |
+|-----|---------|
+| Dashboard | Fund name, reporting date, 6 LCR KPI cards, liquidity ladder chart (normal vs stressed), positions table with bucket badges |
+| Stress Tests | Per-scenario NAV impact, liquidity before/after, scenario config expandable panel |
+| Waterfall | Forced sell-down KPIs (target, proceeds, residual shortfall, NAV impact), daily proceeds chart by bucket, sell-order table |
+| Charts | Liquidity ladder, portfolio composition pie, stress NAV impact, liquidity before/after, days-to-liquidate by position, waterfall cumulative proceeds line |
+
+Supports **light / dark mode** toggle. All charts are theme-aware with consistent colour tokens. Tooltips are fully readable in both modes.
+
+#### 9b. Legacy Desktop GUI — `ui-tk/gui.py`
 
 Tkinter desktop application with 6 tabs. The pipeline runs on a background thread to keep the UI responsive.
-
-#### Tabs
 
 | Tab | Contents |
 |-----|---------|
@@ -427,16 +468,7 @@ Tkinter desktop application with 6 tabs. The pipeline runs on a background threa
 | Charts | 7 embedded matplotlib figures |
 | Risk Story | Auto-generated narrative risk summary with copy button |
 
-#### Key UX behaviour
-
-- **Run once:** The "▶ Run Analysis" button permanently becomes "✓ Analysis Complete" (green) after the first successful run. A "Re-run ↺" button appears beside it for subsequent runs.
-- **Auto-appearing portfolio selector:** Selecting an MVHOL CSV automatically scans for available portfolio codes and reveals a dropdown. If only one portfolio exists it is pre-selected; multiple portfolios are listed for manual selection.
-- **Auto-run on portfolio switch:** Selecting a different portfolio from the dropdown immediately re-runs the full pipeline — no manual re-run click needed.
-- **CSV loading:** The GUI can load real fund data from MVHOL and NAV CSV files, or fall back to the built-in sample portfolio.
-
-#### Thread safety
-
-All pipeline work runs in a `threading.Thread`. UI updates are dispatched back to the main thread via `root.after(0, callback)`.
+Key UX: "▶ Run Analysis" becomes "✓ Analysis Complete" (green) after a successful run; a "Re-run ↺" button replaces it for subsequent runs. All pipeline work runs in a `threading.Thread`; UI updates dispatch back to the main thread via `root.after(0, callback)`.
 
 ---
 
