@@ -74,6 +74,29 @@ def run_checks(portfolio_results: dict) -> list[dict]:
         else "Realisable values within market value bounds",
     ))
 
+    weight_sum = sum(r.get("weight") or 0 for r in buckets)
+    results.append(_check(
+        "Position weights sum to 100%", "Portfolio",
+        abs(weight_sum - 1.0) < _LCR_TOL,
+        f"Sum = {weight_sum * 100:.4f}%",
+    ))
+
+    all_isins = [r.get("isin") for r in buckets if r.get("isin")]
+    dup_isins = sorted({i for i in all_isins if all_isins.count(i) > 1})
+    results.append(_check(
+        "No duplicate ISINs in position_buckets", "Portfolio",
+        len(dup_isins) == 0,
+        f"Duplicates found: {dup_isins[:5]}" if dup_isins else f"{len(all_isins)} unique ISINs",
+    ))
+
+    locked_wrong = [r.get("isin", "?") for r in buckets if r.get("is_locked") and r.get("bucket") != ">T+7"]
+    results.append(_check(
+        "Locked positions assigned to >T+7 bucket", "Portfolio",
+        len(locked_wrong) == 0,
+        f"Locked but not >T+7: {locked_wrong[:5]}" if locked_wrong
+        else "All locked positions correctly in >T+7",
+    ))
+
     # ── Liquidity metrics ──────────────────────────────────────────────────
     lm = portfolio_results.get("liquidity_metrics", {})
     t1, t3, t7 = lm.get("lcr_t1"), lm.get("lcr_t3"), lm.get("lcr_t7")
@@ -164,6 +187,45 @@ def run_checks(portfolio_results: dict) -> list[dict]:
                 else "Gate NOT triggered at 10% — check gate threshold",
             ))
 
+        bad_shortfall = []
+        for r in redemption:
+            red_eur = r.get("redemption_eur")
+            liq_eur = r.get("liquidity_available_eur")
+            sf_eur = r.get("shortfall_eur")
+            if red_eur is not None and liq_eur is not None and sf_eur is not None:
+                expected_sf = max(0.0, red_eur - liq_eur)
+                if abs(sf_eur - expected_sf) > max(1.0, red_eur * _LCR_TOL):
+                    bad_shortfall.append(
+                        f"{_pct(r.get('scenario_pct'))}: "
+                        f"expected={_eur(expected_sf)} stored={_eur(sf_eur)}"
+                    )
+        results.append(_check(
+            "Shortfall = max(0, redemption − liquidity_available)", "Redemption",
+            len(bad_shortfall) == 0,
+            (f"FAIL — {len(bad_shortfall)} formula mismatch(es): {bad_shortfall[:3]}")
+            if bad_shortfall
+            else f"Shortfall formula verified for all {len(redemption)} scenarios",
+        ))
+
+        bad_t7_logic = []
+        for r in redemption:
+            can_t7 = r.get("can_meet_t7")
+            sf_eur = r.get("shortfall_eur")
+            if can_t7 is not None and sf_eur is not None:
+                expected_can = sf_eur <= 0.01
+                if bool(can_t7) != expected_can:
+                    bad_t7_logic.append(
+                        f"{_pct(r.get('scenario_pct'))}: "
+                        f"can_meet_t7={can_t7} but shortfall={_eur(sf_eur)}"
+                    )
+        results.append(_check(
+            "can_meet_t7 ↔ shortfall_eur = 0 (logical consistency)", "Redemption",
+            len(bad_t7_logic) == 0,
+            (f"FAIL — {len(bad_t7_logic)} inconsistent scenario(s): {bad_t7_logic[:3]}")
+            if bad_t7_logic
+            else f"can_meet_t7 consistent with shortfall for all {len(redemption)} scenarios",
+        ))
+
     # ── Stress engine ─────────────────────────────────────────────────────
     stress_results = portfolio_results.get("stress_results", [])
     if stress_results:
@@ -192,6 +254,73 @@ def run_checks(portfolio_results: dict) -> list[dict]:
                 "Base scenario has near-zero NAV impact", "Stress",
                 base_ok,
                 f"Base nav_impact_pct = {_pct(base.get('nav_impact_pct'))}",
+            ))
+
+        bad_impact_eur = []
+        for s in stress_results:
+            nb = s.get("nav_before")
+            na = s.get("nav_after_shock")
+            ni = s.get("nav_impact_eur")
+            if nb is not None and na is not None and ni is not None and nb > 0:
+                expected_impact = na - nb
+                delta = abs(ni - expected_impact)
+                if delta > max(1.0, abs(nb) * _LCR_TOL):
+                    bad_impact_eur.append(
+                        f"{s.get('scenario_name', '?')}: "
+                        f"expected={_eur(expected_impact)} stored={_eur(ni)} Δ={_eur(ni - expected_impact)}"
+                    )
+        if any(s.get("nav_impact_eur") is not None for s in stress_results):
+            results.append(_check(
+                "Stress nav_impact_eur = nav_after_shock − nav_before", "Stress",
+                len(bad_impact_eur) == 0,
+                (f"FAIL — {len(bad_impact_eur)} scenario(s): {bad_impact_eur[:3]}")
+                if bad_impact_eur
+                else f"Identity verified for all {len(stress_results)} scenarios",
+            ))
+
+        bad_decomp = []
+        for s in stress_results:
+            ni = s.get("nav_impact_eur")
+            eq = s.get("equity_loss_eur")
+            cr = s.get("credit_loss_eur")
+            rt = s.get("rate_loss_eur")
+            if ni is not None and eq is not None and cr is not None and rt is not None:
+                component_sum = eq + cr + rt
+                if abs(ni) > 1:
+                    delta_pct = abs(component_sum - ni) / abs(ni)
+                    if delta_pct > _LCR_TOL:
+                        bad_decomp.append(
+                            f"{s.get('scenario_name', '?')}: "
+                            f"eq+cr+rt={_eur(component_sum)} vs impact={_eur(ni)} ({delta_pct * 100:.4f}%)"
+                        )
+        if any(s.get("equity_loss_eur") is not None for s in stress_results):
+            results.append(_check(
+                "Stress equity + credit + rate = nav_impact_eur", "Stress",
+                len(bad_decomp) == 0,
+                (f"FAIL — {len(bad_decomp)} decomposition mismatch(es): {bad_decomp[:3]}")
+                if bad_decomp
+                else f"Component decomposition balanced for all {len(stress_results)} scenarios",
+            ))
+
+        bad_pct = []
+        for s in stress_results:
+            nb = s.get("nav_before")
+            ni = s.get("nav_impact_eur")
+            np_val = s.get("nav_impact_pct")
+            if nb is not None and ni is not None and np_val is not None and nb > 0:
+                expected_pct = ni / nb
+                if abs(np_val - expected_pct) > _LCR_TOL:
+                    bad_pct.append(
+                        f"{s.get('scenario_name', '?')}: "
+                        f"computed={_pct(expected_pct)} stored={_pct(np_val)}"
+                    )
+        if any(s.get("nav_impact_pct") is not None for s in stress_results):
+            results.append(_check(
+                "Stress nav_impact_pct = nav_impact_eur / nav_before", "Stress",
+                len(bad_pct) == 0,
+                (f"FAIL — {len(bad_pct)} pct formula mismatch(es): {bad_pct[:3]}")
+                if bad_pct
+                else f"nav_impact_pct formula verified for all {len(stress_results)} scenarios",
             ))
 
     # ── Market Data ───────────────────────────────────────────────────────
@@ -274,6 +403,26 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             else f"Bid-ask haircut applied across {len(non_cash)} non-cash positions",
         ))
 
+        formula_violations = []
+        for b in buckets:
+            mv = b.get("market_value_eur")
+            rv = b.get("realisable_value")
+            hc = b.get("haircut")
+            if mv is not None and rv is not None and hc is not None and mv > 0:
+                expected_rv = mv * (1.0 - hc)
+                if abs(expected_rv - rv) > max(1.0, mv * _LCR_TOL):
+                    formula_violations.append(
+                        f"{b.get('isin', '?')}: expected={_eur(expected_rv)} actual={_eur(rv)}"
+                    )
+        results.append(_check(
+            "Realisable value = MV × (1 − haircut)", "Market Data",
+            len(formula_violations) == 0,
+            (f"FAIL — {len(formula_violations)} position(s) mismatch formula: "
+             f"{formula_violations[:3]}")
+            if formula_violations
+            else f"Formula verified for all {len(buckets)} positions",
+        ))
+
     # ── Waterfall ─────────────────────────────────────────────────────────
     wf_meta = portfolio_results.get("waterfall_meta", {})
     proceeds = wf_meta.get("total_proceeds_eur")
@@ -289,6 +438,55 @@ def run_checks(portfolio_results: dict) -> list[dict]:
         nav_impact is not None and 0 <= nav_impact <= 1.0 + _LCR_TOL,
         f"NAV impact = {_pct(nav_impact)}",
     ))
+
+    wf_schedule = portfolio_results.get("waterfall", [])
+    if wf_schedule and wf_meta:
+        sched_proceeds = sum(r.get("net_proceeds_eur") or 0 for r in wf_schedule)
+        meta_proceeds = wf_meta.get("total_proceeds_eur") or 0
+        if meta_proceeds > 0:
+            proc_delta_pct = abs(sched_proceeds - meta_proceeds) / meta_proceeds
+            results.append(_check(
+                "Waterfall Σ net_proceeds = total_proceeds_eur", "Waterfall",
+                proc_delta_pct < _RECON_TOL,
+                (f"schedule_sum={_eur(sched_proceeds)} | meta={_eur(meta_proceeds)} | "
+                 f"Δ={_eur(sched_proceeds - meta_proceeds)} ({proc_delta_pct * 100:.4f}%)"),
+            ))
+
+        sched_gross = sum(r.get("gross_value_eur") or 0 for r in wf_schedule)
+        wf_nav_bef = wf_meta.get("nav_before") or 0
+        wf_nav_aft = wf_meta.get("nav_after") or 0
+        if wf_nav_bef > 0:
+            expected_nav_after = wf_nav_bef - sched_gross
+            nav_after_delta = abs(wf_nav_aft - expected_nav_after)
+            results.append(_check(
+                "Waterfall nav_after = nav_before − Σ gross_value", "Waterfall",
+                nav_after_delta < max(1.0, wf_nav_bef * _RECON_TOL),
+                (f"nav_before={_eur(wf_nav_bef)} − gross_sold={_eur(sched_gross)} "
+                 f"= {_eur(expected_nav_after)} | nav_after={_eur(wf_nav_aft)} | "
+                 f"Δ={_eur(wf_nav_aft - expected_nav_after)}"),
+            ))
+
+            if nav_impact is not None:
+                expected_pct = (wf_nav_bef - wf_nav_aft) / wf_nav_bef
+                pct_delta = abs(nav_impact - expected_pct)
+                results.append(_check(
+                    "Waterfall nav_impact_pct = (nav_before − nav_after) / nav_before", "Waterfall",
+                    pct_delta < _LCR_TOL,
+                    (f"computed={_pct(expected_pct)} | stored={_pct(nav_impact)} | "
+                     f"Δ={pct_delta * 100:.6f}%"),
+                ))
+
+        target = wf_meta.get("target_eur")
+        target_met_flag = wf_meta.get("target_met")
+        meta_proceeds_val = wf_meta.get("total_proceeds_eur")
+        if target is not None and target_met_flag is not None and meta_proceeds_val is not None:
+            expected_met = (meta_proceeds_val >= target - 0.01)
+            results.append(_check(
+                "Waterfall target_met consistent with proceeds ≥ target", "Waterfall",
+                bool(target_met_flag) == expected_met,
+                (f"target={_eur(target)} | proceeds={_eur(meta_proceeds_val)} | "
+                 f"target_met={target_met_flag} (expected {expected_met})"),
+            ))
 
     # ── Reconciliation ────────────────────────────────────────────────────
     # position_sum: sum of MVHOL market values (the engine's internal NAV basis)
