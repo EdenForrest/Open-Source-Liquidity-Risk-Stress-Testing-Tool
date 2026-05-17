@@ -114,6 +114,21 @@ def get_waterfall(run_id: str, portfolio: Optional[str] = Query(default=None)):
     }
 
 
+@router.get("/run/{run_id}/validation")
+def get_validation(run_id: str, portfolio: Optional[str] = Query(default=None)):
+    """Run business-logic validation checks against a completed pipeline run."""
+    from backend.services.validation_service import run_checks
+    r = _portfolio_results(run_id, portfolio)
+    checks = run_checks(r)
+    passed = sum(1 for c in checks if c["passed"])
+    return {
+        "total": len(checks),
+        "passed": passed,
+        "failed": len(checks) - passed,
+        "checks": checks,
+    }
+
+
 @router.get("/run/{run_id}/report")
 def get_report(run_id: str):
     """Return the full results dict (all portfolios) as a downloadable JSON response."""

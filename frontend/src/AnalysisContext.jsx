@@ -16,7 +16,7 @@ export function AnalysisProvider({ children }) {
 
   const allDataRef = useRef({})
   const [allData, setAllDataState] = useState({})
-  const [data, setData] = useState({ liquidity: null, stress: null, redemption: null, waterfall: null })
+  const [data, setData] = useState({ liquidity: null, stress: null, redemption: null, waterfall: null, validation: null })
 
   const _setAllData = (updater) => {
     allDataRef.current = typeof updater === 'function' ? updater(allDataRef.current) : updater
@@ -38,17 +38,19 @@ export function AnalysisProvider({ children }) {
 
   const fetchPortfolioData = useCallback(async (id, code) => {
     const params = { portfolio: code }
-    const [liq, stress, redemption, wf] = await Promise.all([
+    const [liq, stress, redemption, wf, validation] = await Promise.all([
       client.get(`/run/${id}/liquidity`, { params }),
       client.get(`/run/${id}/stress`, { params }),
       client.get(`/run/${id}/redemption`, { params }),
       client.get(`/run/${id}/waterfall`, { params }),
+      client.get(`/run/${id}/validation`, { params }),
     ])
     const entry = {
       liquidity: liq.data,
       stress: stress.data,
       redemption: redemption.data,
       waterfall: wf.data,
+      validation: validation.data,
     }
     _setAllData(prev => ({ ...prev, [code]: entry }))
     return entry

@@ -11,6 +11,7 @@ import Waterfall from './pages/Waterfall'
 import Charts from './pages/Charts'
 import RiskStory from './pages/RiskStory'
 import AllPortfolios from './pages/AllPortfolios'
+import Validation from './pages/Validation'
 
 // SVG icon components — 16×16, stroke-based, professional
 function IconPortfolios() {
@@ -34,6 +35,9 @@ function IconCharts() {
 function IconRiskStory() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><line x1="4" y1="6" x2="12" y2="6"/><line x1="4" y1="9" x2="12" y2="9"/><line x1="4" y1="12" x2="8" y2="12"/></svg>
 }
+function IconValidation() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="7"/><polyline points="5,8 7,10 11,6"/></svg>
+}
 
 const NAV_ITEMS = [
   { to: '/portfolios',  label: 'All Portfolios', Icon: IconPortfolios },
@@ -43,6 +47,7 @@ const NAV_ITEMS = [
   { to: '/waterfall',   label: 'Waterfall',      Icon: IconWaterfall  },
   { to: '/charts',      label: 'Charts',         Icon: IconCharts     },
   { to: '/risk-story',  label: 'Risk Story',     Icon: IconRiskStory  },
+  { to: '/validation',  label: 'Validation',     Icon: IconValidation },
 ]
 
 function Sidebar() {
@@ -152,6 +157,7 @@ export default function App() {
                   <Route path="/waterfall"   element={<Waterfall />} />
                   <Route path="/charts"      element={<Charts />} />
                   <Route path="/risk-story"  element={<RiskStory />} />
+                  <Route path="/validation"  element={<Validation />} />
                 </Routes>
               </main>
             </div>
