@@ -107,7 +107,7 @@ export default function RiskStory() {
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-800">Risk Story</h1>
+        <h1 className="text-xl font-bold text-slate-800">Liquidity Risk Summary</h1>
         <div className="flex gap-2">
           <button
             onClick={copy}

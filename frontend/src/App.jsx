@@ -46,7 +46,7 @@ const NAV_ITEMS = [
   { to: '/redemption',  label: 'Redemption',     Icon: IconRedemption },
   { to: '/waterfall',   label: 'Waterfall',      Icon: IconWaterfall  },
   { to: '/charts',      label: 'Charts',         Icon: IconCharts     },
-  { to: '/risk-story',  label: 'Risk Story',     Icon: IconRiskStory  },
+  { to: '/risk-story',  label: 'Liquidity Risk Summary', Icon: IconRiskStory  },
   { to: '/validation',  label: 'Validation',     Icon: IconValidation },
 ]
 
