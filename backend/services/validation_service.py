@@ -143,11 +143,11 @@ def run_checks(portfolio_results: dict) -> list[dict]:
     # ── Stress engine ─────────────────────────────────────────────────────
     stress_results = portfolio_results.get("stress_results", [])
     if stress_results:
-        nav_drops = [s for s in stress_results if (s.get("nav_impact_pct") or 0) > 0.001]
+        nav_drops = [s for s in stress_results if (s.get("nav_impact_pct") or 0) < -0.001]
         results.append(_check(
             "At least one scenario reduces NAV", "Stress",
             len(nav_drops) > 0,
-            f"{len(nav_drops)} scenario(s) with NAV impact > 0.1%" if nav_drops else "No scenario produces a NAV reduction — check shock parameters",
+            f"{len(nav_drops)} scenario(s) produce a NAV reduction" if nav_drops else "No scenario produces a NAV reduction — check shock parameters",
         ))
 
         liquid_pcts = [s.get("liquid_pct_after") for s in stress_results if s.get("liquid_pct_after") is not None]
