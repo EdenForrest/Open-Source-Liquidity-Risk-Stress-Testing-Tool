@@ -23,7 +23,7 @@ def build_sample_portfolio() -> Portfolio:
         Position("XS001",   "Bund 2.5% 2030",            "government_bond",   30_000_000,  0, "EUR", 1.0, adv_30d=50_000_000, bid_ask_spread_bps=2,  duration=4.8,  credit_spread_bps=0,   rating="AAA", is_government=True),
         Position("XS002",   "OAT 3.0% 2032",             "government_bond",   20_000_000,  0, "EUR", 1.0, adv_30d=40_000_000, bid_ask_spread_bps=3,  duration=6.2,  credit_spread_bps=45,  rating="AA",  is_government=True),
         Position("XS003",   "BTP Italy 4.0% 2029",       "government_bond",   15_000_000,  0, "EUR", 1.0, adv_30d=35_000_000, bid_ask_spread_bps=4,  duration=3.7,  credit_spread_bps=185, rating="BBB+",is_government=True),
-        Position("US001",   "US Treasury 4.25% 2031",    "government_bond",   10_000_000,  0, "USD", 1.08, adv_30d=80_000_000, bid_ask_spread_bps=1,  duration=5.1,  credit_spread_bps=0,   rating="AAA", is_government=True),
+        Position("US001",   "US Treasury 4.25% 2031",    "government_bond",   10_800_000,  0, "USD", 1.0,  adv_30d=80_000_000, bid_ask_spread_bps=1,  duration=5.1,  credit_spread_bps=0,   rating="AAA", is_government=True),
 
         # ── IG CORPORATE BONDS ──────────────────────────────────────────
         Position("XS010",   "Volkswagen 3.5% 2028",      "ig_corporate_bond", 12_000_000,  0, "EUR", 1.0, adv_30d=8_000_000,  bid_ask_spread_bps=12, duration=3.2,  credit_spread_bps=120, rating="BBB+"),
@@ -34,7 +34,7 @@ def build_sample_portfolio() -> Portfolio:
 
         # ── HY CORPORATE BONDS ──────────────────────────────────────────
         Position("XS020",   "Altice France 8.0% 2027",   "hy_corporate_bond",  5_000_000,  0, "EUR", 1.0, adv_30d=2_000_000,  bid_ask_spread_bps=60, duration=1.8,  credit_spread_bps=650, rating="B+"),
-        Position("XS021",   "Softbank 6.5% 2029",        "hy_corporate_bond",  4_000_000,  0, "USD", 1.08, adv_30d=1_800_000, bid_ask_spread_bps=75, duration=2.6,  credit_spread_bps=480, rating="BB-"),
+        Position("XS021",   "Softbank 6.5% 2029",        "hy_corporate_bond",  4_320_000,  0, "USD", 1.0,  adv_30d=1_800_000, bid_ask_spread_bps=75, duration=2.6,  credit_spread_bps=480, rating="BB-"),
         Position("XS022",   "Loxam 7.25% 2028",          "hy_corporate_bond",  3_000_000,  0, "EUR", 1.0, adv_30d=1_200_000,  bid_ask_spread_bps=90, duration=2.2,  credit_spread_bps=580, rating="B"),
 
         # ── STRUCTURED CREDIT ───────────────────────────────────────────
@@ -46,18 +46,18 @@ def build_sample_portfolio() -> Portfolio:
         Position("DE0007164600", "SAP SE",               "listed_equity",     22_000_000,  0, "EUR", 1.0, adv_30d=90_000_000,  bid_ask_spread_bps=4, beta=0.85),
         Position("FR0000120271", "Total Energies",       "listed_equity",     16_000_000,  0, "EUR", 1.0, adv_30d=110_000_000, bid_ask_spread_bps=4, beta=0.95),
         Position("NL0000009165", "Heineken",             "listed_equity",     12_000_000,  0, "EUR", 1.0, adv_30d=60_000_000,  bid_ask_spread_bps=5, beta=0.70),
-        Position("CH0012221716", "ABB Ltd",              "listed_equity",     10_000_000,  0, "CHF", 1.02, adv_30d=55_000_000, bid_ask_spread_bps=6, beta=1.05),
-        Position("GB0031348658", "Diageo",               "listed_equity",      9_000_000,  0, "GBP", 1.17, adv_30d=75_000_000, bid_ask_spread_bps=4, beta=0.60),
-        Position("US5949181045", "Microsoft",            "listed_equity",     20_000_000,  0, "USD", 1.08, adv_30d=400_000_000, bid_ask_spread_bps=2, beta=0.90),
-        Position("US0231351067", "Amazon",               "listed_equity",     15_000_000,  0, "USD", 1.08, adv_30d=350_000_000, bid_ask_spread_bps=2, beta=1.10),
+        Position("CH0012221716", "ABB Ltd",              "listed_equity",     10_200_000,  0, "CHF", 1.0,  adv_30d=55_000_000, bid_ask_spread_bps=6, beta=1.05),
+        Position("GB0031348658", "Diageo",               "listed_equity",     10_530_000,  0, "GBP", 1.0,  adv_30d=75_000_000, bid_ask_spread_bps=4, beta=0.60),
+        Position("US5949181045", "Microsoft",            "listed_equity",     21_600_000,  0, "USD", 1.0,  adv_30d=400_000_000, bid_ask_spread_bps=2, beta=0.90),
+        Position("US0231351067", "Amazon",               "listed_equity",     16_200_000,  0, "USD", 1.0,  adv_30d=350_000_000, bid_ask_spread_bps=2, beta=1.10),
 
         # ── ETFs ────────────────────────────────────────────────────────
-        Position("IE00B4L5Y983", "iShares Core MSCI World", "etf",           20_000_000,  0, "USD", 1.08, adv_30d=250_000_000, bid_ask_spread_bps=3, beta=1.00),
+        Position("IE00B4L5Y983", "iShares Core MSCI World", "etf",           21_600_000,  0, "USD", 1.0,  adv_30d=250_000_000, bid_ask_spread_bps=3, beta=1.00),
         Position("LU0290358497", "Xtrackers Euro Stoxx 50", "etf",           12_000_000,  0, "EUR", 1.0,  adv_30d=80_000_000,  bid_ask_spread_bps=3, beta=1.00),
 
         # ── PRIVATE / ILLIQUID ───────────────────────────────────────────
         Position("PE001",   "EQT Infrastructure VI",    "private_equity",    10_000_000,  0, "EUR", 1.0, adv_30d=0, is_locked=True, lock_expiry_days=730),
-        Position("HF001",   "Bridgewater All Weather",  "hedge_fund",         8_000_000,  0, "USD", 1.08, adv_30d=0, is_locked=True, lock_expiry_days=90),
+        Position("HF001",   "Bridgewater All Weather",  "hedge_fund",         8_640_000,  0, "USD", 1.0,  adv_30d=0, is_locked=True, lock_expiry_days=90),
         Position("RE001",   "CBRE Pan-Euro RE Fund",    "real_estate",         7_000_000,  0, "EUR", 1.0, adv_30d=0, is_locked=True, lock_expiry_days=365),
     ]
 

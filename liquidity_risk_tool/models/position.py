@@ -18,10 +18,10 @@ class Position:
     isin: str
     name: str
     asset_class: str          # key into ASSET_CLASS_LIQUIDITY
-    market_value: float       # EUR, current mark-to-market
+    market_value: float       # base currency (EUR), already converted by source system
     weight: float             # fraction of NAV (derived, not input)
-    currency: str = "EUR"
-    fx_rate: float = 1.0      # to EUR
+    currency: str = "EUR"     # local denomination of the position
+    fx_rate: float = 1.0      # FX rate used by source system (informational only)
 
     # Market microstructure
     adv_30d: float = 0.0      # 30-day average daily volume in EUR
@@ -57,7 +57,7 @@ class Position:
 
     @property
     def market_value_eur(self) -> float:
-        return self.market_value * self.fx_rate
+        return self.market_value
 
     def days_to_liquidate(self, adv_participation: float = 0.20) -> float:
         """Estimate calendar days to fully liquidate using ADV constraint."""
