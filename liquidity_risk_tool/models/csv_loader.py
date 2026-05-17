@@ -474,7 +474,7 @@ def enrich_portfolio_from_market_data(
 
     Columns consumed (all optional — missing columns are skipped gracefully):
         isin, portfolio, asset_class_hint, adv_30d_eur, bid_ask_spread_bps,
-        modified_duration, convexity, ytm, beta, fx_rate_to_eur
+        modified_duration, convexity, ytm, beta
     """
     mkt = pd.read_csv(market_data_path, dtype=str)
     mkt.columns = [c.strip() for c in mkt.columns]
@@ -530,10 +530,6 @@ def enrich_portfolio_from_market_data(
         beta = _f(row.get("beta"))
         if beta is not None:
             pos.beta = beta
-
-        fx = _f(row.get("fx_rate_to_eur"))
-        if fx is not None and fx > 0:
-            pos.fx_rate = fx
 
         enriched += 1
 

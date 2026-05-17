@@ -239,35 +239,6 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             else f"Bid-ask spread populated for all {len(liquid_pos)} liquid positions",
         ))
 
-        # FX Integrity — strict: FAIL if FX missing or FX=1.0 for any non-EUR position
-        non_eur = [b for b in buckets if b.get("currency") and b.get("currency") != "EUR"
-                   and b.get("market_value_eur", 0) > 0]
-        fx_failures = []
-        for b in non_eur:
-            isin = b.get("isin", "?")
-            ccy = b.get("currency", "?")
-            fx = b.get("fx_rate")
-            if fx is None:
-                fx_failures.append(f"{isin}|{ccy}|MISSING")
-            elif abs(fx - 1.0) < 1e-6:
-                fx_failures.append(f"{isin}|{ccy}|fx=1.0 (default — not applied)")
-
-        if non_eur:
-            results.append(_check(
-                "FX rates applied for non-EUR positions", "Market Data",
-                len(fx_failures) == 0,
-                (f"FAIL — {len(fx_failures)} position(s) with invalid FX rate: "
-                 + "; ".join(fx_failures[:5]))
-                if fx_failures
-                else f"FX rates applied for all {len(non_eur)} non-EUR positions",
-            ))
-        else:
-            results.append(_check(
-                "FX rates applied for non-EUR positions", "Market Data",
-                True,
-                "No non-EUR positions in portfolio",
-            ))
-
         bonds = [b for b in buckets if b.get("asset_class") in
                  ("government_bond", "ig_corporate_bond", "hy_corporate_bond", "structured_credit")
                  and b.get("market_value_eur", 0) > 0]

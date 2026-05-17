@@ -535,34 +535,6 @@ def fetch_adv(
 
 
 # ---------------------------------------------------------------------------
-# FX rates
-# ---------------------------------------------------------------------------
-
-def fetch_fx_rates(currencies: Set[str]) -> Dict[str, float]:
-    """Returns fx_to_eur keyed by currency code. EUR → 1.0."""
-    non_eur = [c for c in currencies if c.upper() != "EUR"]
-    fx: Dict[str, float] = {"EUR": 1.0}
-    if not non_eur:
-        return fx
-
-    # {CCY}=X returns units-of-CCY per 1 EUR (e.g. USD=X → 1.1725 means 1 EUR = 1.1725 USD)
-    rics = [f"{c.upper()}=X" for c in non_eur]
-    try:
-        df = _get_data(rics, ["CF_LAST"])
-        if df is not None and not df.empty:
-            for _, row in df.iterrows():
-                instrument = _s(row.get("Instrument", "") or row.get("RIC", ""))
-                ccy = instrument.replace("=X", "").strip()
-                rate = _safe_float(row.get("CF_LAST") or row.get("Last"))
-                if rate and ccy:
-                    fx[ccy] = rate
-    except Exception as exc:
-        print(f"  [WARN] FX fetch failed: {exc}", file=sys.stderr)
-
-    return fx
-
-
-# ---------------------------------------------------------------------------
 # MVHOL reader
 # ---------------------------------------------------------------------------
 
@@ -630,7 +602,7 @@ _CACHE_COLS = [
     "bid", "ask", "bid_ask_spread_bps", "adv_30d_eur",
     "beta", "modified_duration", "convexity", "ytm",
     "open_interest", "option_volume", "credit_spread_bps",
-    "rating", "amount_outstanding", "fx_rate_to_eur",
+    "rating", "amount_outstanding",
     "fetch_date", "fetch_errors",
 ]
 
@@ -693,7 +665,6 @@ def fetch_and_save(
 
     isins         = [p["isin"] for p in positions]
     asset_classes = {p["isin"]: p["asset_class"] for p in positions}
-    currencies    = {p["currency"] for p in positions}
 
     # ── Cache check ──────────────────────────────────────────────────────────
     cache_file = _cache_path(out_path) if out_path is not None else None
@@ -706,7 +677,6 @@ def fetch_and_save(
 
     if need_fetch:
         fresh_asset_classes = {k: v for k, v in asset_classes.items() if k in need_fetch}
-        fresh_currencies    = {p["currency"] for p in positions if p["isin"] in need_fetch}
 
         print("Resolving ISINs to RICs...")
         ric_map = resolve_rics(need_fetch, fresh_asset_classes)
@@ -722,16 +692,11 @@ def fetch_and_save(
         print("Fetching 30-day ADV...")
         adv_data = fetch_adv(ric_to_isin, fresh_asset_classes, snapshot_data)
         print(f"  {len(adv_data)} positions with ADV data")
-
-        print("Fetching FX rates...")
-        fx_rates = fetch_fx_rates(fresh_currencies)
-        print(f"  FX rates: {fx_rates}")
     else:
         print("  All ISINs served from cache — skipping API calls")
         ric_map = {}
         snapshot_data = {}
         adv_data = {}
-        fx_rates = {"EUR": 1.0}
 
     # ── Build output rows (cache-first) ──────────────────────────────────────
     new_rows: List[dict] = []
@@ -790,10 +755,6 @@ def fetch_and_save(
         rating      = None
         outstanding = None
 
-        fx = fx_rates.get(ccy.upper(), None)
-        if fx is None and ccy.upper() != "EUR":
-            errors.append(f"fx_missing_{ccy}")
-
         row = {
             "isin":               isin,
             "ric":                ric or "",
@@ -812,7 +773,6 @@ def fetch_and_save(
             "credit_spread_bps":  spread,
             "rating":             rating,
             "amount_outstanding": outstanding,
-            "fx_rate_to_eur":     fx,
             "fetch_date":         fetch_date,
             "fetch_errors":       "; ".join(errors),
         }
