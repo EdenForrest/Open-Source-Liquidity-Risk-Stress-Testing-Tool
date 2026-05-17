@@ -124,6 +124,7 @@ def run_full_pipeline(
         "fund_name": portfolio.fund_name,
         "reporting_date": str(portfolio.reporting_date.date()),
         "total_nav_eur": portfolio.total_nav,
+        "market_data_loaded": bool(market_data_path and Path(market_data_path).exists()),
         "liquidity_metrics": _clean_dict(metrics.summary()),
         "liquidity_ladder": _clean_records(
             normal_profiler.liquidity_ladder().to_dict(orient="records")

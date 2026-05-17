@@ -332,12 +332,15 @@ def run_checks(portfolio_results: dict) -> list[dict]:
         "real_estate": 0, "private_equity": 0, "hedge_fund": 0,
         "future": 200_000_000, "option": 10_000_000,
     }
+    market_data_loaded = portfolio_results.get("market_data_loaded", False)
     tradeable = [
         b for b in buckets
         if b.get("asset_class") not in ("cash", "real_estate", "private_equity", "hedge_fund")
         and b.get("market_value_eur", 0) > 0
     ]
     if tradeable:
+        # ── Structural checks — run regardless of whether market data was uploaded ──
+
         no_adv = [b.get("isin", b.get("name", "?")) for b in tradeable
                   if not (b.get("adv_30d") or 0) > 0]
         results.append(_check(
@@ -345,63 +348,6 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             len(no_adv) == 0,
             f"{len(no_adv)} position(s) have zero or missing ADV: {no_adv[:5]}" if no_adv
             else f"ADV present for all {len(tradeable)} tradeable positions",
-        ))
-
-        default_adv_count = sum(
-            1 for b in tradeable
-            if abs((b.get("adv_30d") or 0) - _ADV_DEFAULTS.get(b.get("asset_class", ""), 5_000_000)) < 1
-        )
-        enriched_count = len(tradeable) - default_adv_count
-        results.append(_check(
-            "ADV enriched from market data (not all defaults)", "Market Data",
-            enriched_count > 0,
-            f"{enriched_count}/{len(tradeable)} positions have market-data ADV (vs defaults)"
-            if enriched_count > 0
-            else "All ADV values equal class defaults — market data file may not have been loaded",
-        ))
-
-        liquid_pos = [b for b in tradeable if b.get("bucket") != ">T+7"]
-        no_spread = [b.get("isin", "?") for b in liquid_pos if b.get("bid_ask_spread_bps") is None]
-        results.append(_check(
-            "Bid-ask spread present for liquid positions", "Market Data",
-            len(no_spread) == 0,
-            f"{len(no_spread)} liquid position(s) missing bid-ask spread: {no_spread[:5]}" if no_spread
-            else f"Bid-ask spread populated for all {len(liquid_pos)} liquid positions",
-        ))
-
-        bonds = [b for b in buckets if b.get("asset_class") in
-                 ("government_bond", "ig_corporate_bond", "hy_corporate_bond", "structured_credit")
-                 and b.get("market_value_eur", 0) > 0]
-        if bonds:
-            no_dur = [b.get("isin", "?") for b in bonds if b.get("duration") is None]
-            results.append(_check(
-                "Duration present for bond positions", "Market Data",
-                len(no_dur) == 0,
-                f"{len(no_dur)} bond(s) missing duration: {no_dur[:5]}" if no_dur
-                else f"Duration populated for all {len(bonds)} bond positions",
-            ))
-
-        equities = [b for b in buckets if b.get("asset_class") in ("listed_equity", "etf")
-                    and b.get("market_value_eur", 0) > 0]
-        if equities:
-            no_beta = [b.get("isin", "?") for b in equities if b.get("beta") is None]
-            results.append(_check(
-                "Beta present for equity positions", "Market Data",
-                len(no_beta) == 0,
-                f"{len(no_beta)} equity position(s) missing beta: {no_beta[:5]}" if no_beta
-                else f"Beta populated for all {len(equities)} equity positions",
-            ))
-
-        non_cash = [b for b in buckets if b.get("asset_class") != "cash"
-                    and b.get("market_value_eur", 0) > 0 and b.get("realisable_value") is not None]
-        all_equal = all(abs((b.get("realisable_value") or 0) - (b.get("market_value_eur") or 0)) < 1
-                        for b in non_cash)
-        results.append(_check(
-            "Realisable value reflects bid-ask haircut", "Market Data",
-            not all_equal,
-            "All realisable values equal market values — spread cost not being applied"
-            if all_equal
-            else f"Bid-ask haircut applied across {len(non_cash)} non-cash positions",
         ))
 
         formula_violations = []
@@ -423,6 +369,73 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             if formula_violations
             else f"Formula verified for all {len(buckets)} positions",
         ))
+
+        # ── Enrichment-quality checks — only meaningful when market data was uploaded ──
+
+        if not market_data_loaded:
+            results.append(_check(
+                "Market data enrichment", "Market Data",
+                True,
+                "No market data file uploaded — ADV, bid-ask, duration, and beta are class-level defaults. "
+                "Upload a market data file to validate enrichment quality.",
+            ))
+        else:
+            default_adv_count = sum(
+                1 for b in tradeable
+                if abs((b.get("adv_30d") or 0) - _ADV_DEFAULTS.get(b.get("asset_class", ""), 5_000_000)) < 1
+            )
+            enriched_count = len(tradeable) - default_adv_count
+            results.append(_check(
+                "ADV enriched from market data (not all defaults)", "Market Data",
+                enriched_count > 0,
+                f"{enriched_count}/{len(tradeable)} positions have market-data ADV (vs class defaults)"
+                if enriched_count > 0
+                else "All ADV values equal class defaults — market data may not have enriched any positions",
+            ))
+
+            liquid_pos = [b for b in tradeable if b.get("bucket") != ">T+7"]
+            no_spread = [b.get("isin", "?") for b in liquid_pos if b.get("bid_ask_spread_bps") is None]
+            results.append(_check(
+                "Bid-ask spread present for liquid positions", "Market Data",
+                len(no_spread) == 0,
+                f"{len(no_spread)} liquid position(s) missing bid-ask spread: {no_spread[:5]}" if no_spread
+                else f"Bid-ask spread populated for all {len(liquid_pos)} liquid positions",
+            ))
+
+            bonds = [b for b in buckets if b.get("asset_class") in
+                     ("government_bond", "ig_corporate_bond", "hy_corporate_bond", "structured_credit")
+                     and b.get("market_value_eur", 0) > 0]
+            if bonds:
+                no_dur = [b.get("isin", "?") for b in bonds if b.get("duration") is None]
+                results.append(_check(
+                    "Duration present for bond positions", "Market Data",
+                    len(no_dur) == 0,
+                    f"{len(no_dur)} bond(s) missing duration: {no_dur[:5]}" if no_dur
+                    else f"Duration populated for all {len(bonds)} bond positions",
+                ))
+
+            equities = [b for b in buckets if b.get("asset_class") in ("listed_equity", "etf")
+                        and b.get("market_value_eur", 0) > 0]
+            if equities:
+                no_beta = [b.get("isin", "?") for b in equities if b.get("beta") is None]
+                results.append(_check(
+                    "Beta present for equity positions", "Market Data",
+                    len(no_beta) == 0,
+                    f"{len(no_beta)} equity position(s) missing beta: {no_beta[:5]}" if no_beta
+                    else f"Beta populated for all {len(equities)} equity positions",
+                ))
+
+            non_cash = [b for b in buckets if b.get("asset_class") != "cash"
+                        and b.get("market_value_eur", 0) > 0 and b.get("realisable_value") is not None]
+            all_equal = all(abs((b.get("realisable_value") or 0) - (b.get("market_value_eur") or 0)) < 1
+                            for b in non_cash)
+            results.append(_check(
+                "Realisable value reflects bid-ask haircut", "Market Data",
+                not all_equal,
+                "All realisable values equal market values — spread cost not being applied"
+                if all_equal
+                else f"Bid-ask haircut applied across {len(non_cash)} non-cash positions",
+            ))
 
     # ── Waterfall ─────────────────────────────────────────────────────────
     wf_meta = portfolio_results.get("waterfall_meta", {})
