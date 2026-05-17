@@ -3,13 +3,13 @@ import EmptyState from '../components/EmptyState'
 
 const CATEGORY_ORDER = [
   'Portfolio',
+  'Reconciliation',
+  'Market Data',
   'Liquidity Metrics',
   'Liquidity Ladder',
   'Redemption',
   'Stress',
   'Waterfall',
-  'Market Data',
-  'Reconciliation',
 ]
 
 function PassIcon() {
