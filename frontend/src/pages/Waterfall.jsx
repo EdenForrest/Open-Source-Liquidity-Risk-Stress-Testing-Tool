@@ -77,7 +77,9 @@ export default function Waterfall() {
               <YAxis tickFormatter={(v) => '€' + (v / 1e6).toFixed(1) + 'M'}
                 tick={{ fontSize: 11, fill: ct.tickColor }} axisLine={false} tickLine={false} />
               <Tooltip formatter={(v) => eur(v)}
-                contentStyle={{ background: ct.tooltipBg, borderColor: ct.tooltipBorder, color: ct.tooltipText }} />
+                contentStyle={{ background: ct.tooltipBg, borderColor: ct.tooltipBorder, color: ct.tooltipText }}
+                labelStyle={{ color: ct.tooltipText }}
+                itemStyle={{ color: ct.tooltipText }} />
               <Legend />
               {buckets.map((b) => (
                 <Bar key={b} dataKey={b} stackId="a" fill={BUCKET_COLORS[b] || '#94a3b8'}

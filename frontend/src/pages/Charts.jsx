@@ -62,6 +62,8 @@ export default function Charts() {
   const axisTick = { fill: ct.tickColor }
   const tooltip = {
     contentStyle: { background: ct.tooltipBg, borderColor: ct.tooltipBorder, color: ct.tooltipText },
+    labelStyle: { color: ct.tooltipText },
+    itemStyle: { color: ct.tooltipText },
   }
   const grid = <CartesianGrid strokeDasharray="3 3" stroke={ct.gridColor} vertical={false} />
   const xAxis = (key) => <XAxis dataKey={key} tick={{ fontSize: 11, ...axisTick }} axisLine={{ stroke: ct.axisColor }} tickLine={false} />

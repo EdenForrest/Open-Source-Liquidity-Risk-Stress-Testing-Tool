@@ -71,6 +71,8 @@ export default function Dashboard() {
             <Tooltip
               formatter={(v) => v.toFixed(1) + '%'}
               contentStyle={{ background: ct.tooltipBg, borderColor: ct.tooltipBorder, color: ct.tooltipText }}
+              labelStyle={{ color: ct.tooltipText }}
+              itemStyle={{ color: ct.tooltipText }}
             />
             <Legend />
             <Bar dataKey="Normal" fill={SERIES_COLORS.normal} radius={[4, 4, 0, 0]} />
