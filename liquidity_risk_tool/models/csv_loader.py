@@ -27,15 +27,19 @@ from .position import Position, ShareClass, Portfolio
 # ---------------------------------------------------------------------------
 
 def _eu_float(value: str) -> float:
-    """'1.159.375,000000' → 1159375.0  |  '98,3715' → 98.3715"""
+    """'1.159.375,000000' → 1159375.0  |  '(21.016.625,00)' → -21016625.0"""
     if not isinstance(value, str):
         return float(value) if value else 0.0
     s = value.strip()
     if not s:
         return 0.0
+    negative = s.startswith("(") and s.endswith(")")
+    if negative:
+        s = s[1:-1]
     s = s.replace(".", "").replace(",", ".")
     try:
-        return float(s)
+        result = float(s)
+        return -result if negative else result
     except ValueError:
         return 0.0
 
@@ -315,11 +319,6 @@ def load_portfolio_from_csv(
         market_value = _eu_float(_s(row.get("Market Value in Base Currency"), "0"))
         fx_rate      = _eu_float(_s(row.get("Exchange rate"), "1")) or 1.0
         price_factor = _eu_float(_s(row.get("PriceFactor"), "1"))
-        raw_exp      = _s(row.get("Exposure (base)"))
-
-        # Futures/options: market value = 0, use notional exposure instead (preserve sign for shorts)
-        if market_value == 0 and raw_exp:
-            market_value = _eu_float(raw_exp)
 
         if abs(market_value) < 1.0:
             continue
