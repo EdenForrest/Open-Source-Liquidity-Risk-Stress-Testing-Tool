@@ -42,6 +42,10 @@ py main.py
 
 ### 3. Launch the web UI (FastAPI + React)
 
+**Live demo:** [https://liquidity-risk-stress-testing.onrender.com/portfolios](https://liquidity-risk-stress-testing.onrender.com/portfolios)
+
+Or run locally:
+
 ```bash
 # Terminal 1 — backend API
 cd backend
