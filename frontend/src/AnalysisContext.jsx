@@ -84,9 +84,26 @@ export function AnalysisProvider({ children }) {
     let cancelled = false
     let pollTimer = null
 
+    async function waitForBackend(retries = 20, delayMs = 3000) {
+      for (let i = 0; i < retries; i++) {
+        if (cancelled) return false
+        try {
+          await client.get('/health')
+          return true
+        } catch {
+          await new Promise(r => setTimeout(r, delayMs))
+        }
+      }
+      return false
+    }
+
     async function loadDemo() {
       try {
         setStatus('running')
+        const alive = await waitForBackend()
+        if (cancelled) return
+        if (!alive) { markError('Backend is not responding. Please try again in a moment.'); return }
+
         const res = await client.post('/demo')
         const id = res.data.run_id
         if (cancelled) return
