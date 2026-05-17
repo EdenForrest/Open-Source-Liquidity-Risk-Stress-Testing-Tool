@@ -1,5 +1,7 @@
 # Liquidity Risk & Stress Testing Tool
 
+**Live demo:** [https://liquidity-risk-stress-testing.onrender.com](https://liquidity-risk-stress-testing.onrender.com)
+
 A Luxembourg ManCo-grade liquidity risk analytics platform for UCITS/AIFMD funds. Performs a full end-to-end pipeline — liquidity profiling, redemption simulation, stress testing, forced liquidation waterfall, input validation, reverse stress testing, and multi-format regulatory reporting — aligned with ESMA, and CSSF standards.
 
 ---
@@ -41,8 +43,6 @@ py main.py
 ```
 
 ### 3. Launch the web UI (FastAPI + React)
-
-**Live demo:** [https://liquidity-risk-stress-testing.onrender.com/portfolios](https://liquidity-risk-stress-testing.onrender.com/portfolios)
 
 Or run locally:
 
