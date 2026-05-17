@@ -152,6 +152,23 @@ export const DEFINITIONS = {
     body: 'NAVImpact% = (NAV_before − NAV_after) / NAV_before. Measures the portfolio dilution caused by the forced liquidation. High values indicate that remaining investors absorb a significant mark-down.',
   },
 
+  // ── Redemption table columns ─────────────────────────────────────────────
+  redemption_gate: {
+    label: 'Gate',
+    section: '§9.1',
+    body: 'Liquidity gate flag. Triggered when the requested redemption ≥ 10% of NAV — a common UCITS/AIFMD threshold above which the manager may pro-rate redemptions across dealing days rather than meeting them in full on the requested date.\n\nRegulatory basis: AIFMD Art. 16(2); ESMA UCITS LVLR Art. 4.',
+  },
+  redemption_suspension: {
+    label: 'Suspension',
+    section: '§9.2',
+    body: 'Full suspension flag. Triggered when redemption ≥ 25% of NAV — the level at which orderly liquidation of the liquid book is unlikely and a full trading halt may be warranted to protect remaining investors.\n\nRegulatory basis: UCITS LVLR Art. 5; AIFMD Art. 16(1).',
+  },
+  redemption_days_to_clear: {
+    label: 'Days to Clear',
+    section: '§9.3',
+    body: 'Estimated calendar days to raise the redemption amount via parallel sell-down of all unlocked positions, each capped at 20% of its 30-day ADV (MiFID II participation cap). Each day every liquid position contributes min(daily_cap, remaining_position_value); the simulation runs until cumulative net proceeds reach the target. Stressed regime uses a reduced ADV scalar (e.g. 0.50×) reflecting market volume collapse.',
+  },
+
   // ── Position table columns ───────────────────────────────────────────────
   bucket: {
     label: 'Bucket',

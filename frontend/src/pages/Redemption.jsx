@@ -1,5 +1,6 @@
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
+import MetricTooltip from '../components/MetricTooltip'
 
 function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—' }
 function eur(v) {
@@ -31,8 +32,21 @@ function RedemptionTable({ rows, label }) {
       <table className="w-full text-sm">
         <thead className="text-xs uppercase" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
           <tr>
-            {['Redemption %', 'Amount (€)', 'Liquidity Available', 'Shortfall', 'Can Meet T+1', 'Can Meet T+3', 'Can Meet T+7', 'Gate', 'Suspension', 'Days to Clear'].map((h) => (
-              <th key={h} className="px-3 py-2 text-left whitespace-nowrap">{h}</th>
+            {[
+              { label: 'Redemption %' },
+              { label: 'Amount (€)' },
+              { label: 'Liquidity Available' },
+              { label: 'Shortfall' },
+              { label: 'Can Meet T+1' },
+              { label: 'Can Meet T+3' },
+              { label: 'Can Meet T+7' },
+              { label: 'Gate', id: 'redemption_gate' },
+              { label: 'Suspension', id: 'redemption_suspension' },
+              { label: 'Days to Clear', id: 'redemption_days_to_clear' },
+            ].map(({ label, id }) => (
+              <th key={label} className="px-3 py-2 text-left whitespace-nowrap">
+                {id ? <MetricTooltip id={id}>{label}</MetricTooltip> : label}
+              </th>
             ))}
           </tr>
         </thead>

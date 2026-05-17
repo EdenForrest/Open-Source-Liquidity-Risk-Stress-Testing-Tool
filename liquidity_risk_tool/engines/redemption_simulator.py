@@ -154,26 +154,38 @@ class RedemptionSimulator:
 
     def _estimate_days_to_cover(self, target_eur: float, profile: pd.DataFrame) -> float:
         """
-        Greedy waterfall: sell most-liquid assets first using ADV-capped
-        daily capacity.  Returns calendar days until target is reached.
+        Parallel daily simulation: each day every unlocked position contributes
+        up to min(effective_adv * MAX_ADV_PARTICIPATION, remaining_realisable_value).
+        Returns fractional calendar days until the cash target is reached.
+
+        Stressed profiles have lower effective_adv (ADV scalar) AND lower
+        realisable_value (higher haircuts), so stressed days >= normal days —
+        the previous max(day, days_needed) approach inverted this when stress
+        haircuts reduced realisable_value proportionally more than the ADV scalar.
         """
-        remaining = target_eur
-        day = 0
+        if target_eur <= 0:
+            return 0.0
+
         sellable = profile[~profile["is_locked"]].copy()
-        sellable = sellable.sort_values(
-            by=["bucket", "days_to_liquidate"],
-            key=lambda col: col.map(BUCKET_ORDER.index) if col.name == "bucket" else col,
-        )
+        adv_col = "effective_adv" if "effective_adv" in sellable.columns else "adv_30d"
+        caps = (sellable[adv_col] * MAX_ADV_PARTICIPATION).clip(lower=0).values
+        values = sellable["realisable_value"].clip(lower=0).values
 
-        for _, pos in sellable.iterrows():
-            if remaining <= 0:
-                break
-            cap = pos.get("effective_adv", pos["adv_30d"]) * MAX_ADV_PARTICIPATION
-            if cap <= 0:
-                # illiquid, skip for now
-                continue
-            days_needed = min(pos["realisable_value"], remaining) / cap
-            day = max(day, days_needed)
-            remaining -= min(pos["realisable_value"], remaining)
+        liquid = caps > 0
+        caps, values = caps[liquid], values[liquid]
+        if len(caps) == 0:
+            return float("inf")
 
-        return day if remaining <= 0 else float("inf")
+        remaining = float(target_eur)
+        day = 0
+        while remaining > 0 and day < 500:
+            daily = float(np.minimum(caps, values).sum())
+            if daily <= 0:
+                return float("inf")
+            if daily >= remaining:
+                return day + remaining / daily
+            remaining -= daily
+            values = np.maximum(values - caps, 0.0)
+            day += 1
+
+        return float(day) if remaining <= 0 else float("inf")
