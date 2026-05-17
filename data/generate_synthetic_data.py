@@ -1014,8 +1014,7 @@ def generate_all(
     )
 
     # Compute NAV to match what csv_loader.load_portfolio_from_csv produces:
-    #   - futures: MV=0, use Exposure (base) instead
-    #   - skip rows where effective |market_value| < 1.0
+    #   - rows where |market_value| < 1.0 are skipped (futures with MV=0 are excluded)
     #   - aggregate duplicate ISINs (sum their market values)
     #   - NAV = sum of those market values (signed, as the loader does)
     # We replicate the loader's _eu_float inline here to stay independent.
@@ -1037,10 +1036,6 @@ def generate_all(
             pcode   = row["Portfolio Code"]
             isin    = row["ISIN"].strip()
             mv      = _eu_float_local(row["Market Value in Base Currency"])
-            exp     = _eu_float_local(row["Exposure (base)"])
-            # mirrors loader: if mv==0 and exposure exists, use exposure
-            if mv == 0 and exp:
-                mv = exp
             if abs(mv) < 1.0:
                 continue
             if pcode not in seen_isins:
