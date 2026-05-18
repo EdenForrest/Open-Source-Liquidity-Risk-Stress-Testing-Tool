@@ -134,9 +134,6 @@ class StressEngine:
 
         # 2. Re-run liquidity profile on shocked portfolio
         shocked_portfolio = self._build_shocked_portfolio(df)
-        profiler_normal = LiquidityProfiler(
-            shocked_portfolio, stress=False, adv_stress_scalar=scenario.adv_stress_scalar
-        ).run()
         profiler_stress = LiquidityProfiler(
             shocked_portfolio, stress=True, adv_stress_scalar=scenario.adv_stress_scalar
         ).run()
@@ -149,8 +146,14 @@ class StressEngine:
         )
         liquidity_loss = stressed_profile["realisable_value"].sum() - mv_before_haircut
 
-        # liquidity_at_horizon returns a fraction of NAV (0-1), not EUR
-        liquid_before = profiler_normal.liquidity_at_horizon(1)
+        # liquid_before: original portfolio under normal conditions (pre-shock, normal ADV)
+        profiler_pre = LiquidityProfiler(
+            self.portfolio, stress=False, adv_stress_scalar=1.0
+        ).run()
+        liquid_before = self._liquidity_at_horizon_df(
+            profiler_pre.position_buckets, 1, nav_before
+        )
+        # liquid_after: shocked portfolio under stressed conditions (post-shock, compressed ADV + multiplied haircuts)
         liquid_after  = self._liquidity_at_horizon_df(stressed_profile, 1, nav_after)
 
         # 3. Waterfall to meet redemption
