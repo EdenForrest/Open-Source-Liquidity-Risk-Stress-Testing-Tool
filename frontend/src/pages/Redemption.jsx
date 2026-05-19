@@ -1,13 +1,8 @@
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
+import StatusBanner from '../components/StatusBanner'
 import MetricTooltip from '../components/MetricTooltip'
-
-function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—' }
-function eur(v) {
-  if (v == null) return '—'
-  if (Math.abs(v) >= 1e6) return '€' + (v / 1e6).toFixed(1) + 'M'
-  return '€' + v.toFixed(0)
-}
+import { pct, eur } from '../utils/formatters'
 
 function Flag({ yes }) {
   return (
@@ -76,8 +71,9 @@ function RedemptionTable({ rows, label }) {
 }
 
 export default function Redemption() {
-  const { data } = useAnalysis()
+  const { data, error } = useAnalysis()
   const redemption = data?.redemption
+  if (error) return <StatusBanner />
   if (!redemption) return <EmptyState />
 
   return (

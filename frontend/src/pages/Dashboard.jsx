@@ -5,25 +5,17 @@ import { useAnalysis } from '../AnalysisContext'
 import { useTheme } from '../ThemeContext'
 import KPICard from '../components/KPICard'
 import EmptyState from '../components/EmptyState'
+import StatusBanner from '../components/StatusBanner'
 import { SERIES_COLORS, bucketBadgeStyle, chartTheme } from '../theme'
 import MetricTooltip from '../components/MetricTooltip'
-
-function fmt(n, digits = 1) {
-  if (n == null) return '—'
-  return (n * 100).toFixed(digits) + '%'
-}
-function fmtEur(n) {
-  if (n == null) return '—'
-  if (n >= 1e9) return '€' + (n / 1e9).toFixed(2) + 'B'
-  if (n >= 1e6) return '€' + (n / 1e6).toFixed(1) + 'M'
-  return '€' + n.toFixed(0)
-}
+import { fmt, fmtEur } from '../utils/formatters'
 
 export default function Dashboard() {
-  const { data } = useAnalysis()
+  const { data, error } = useAnalysis()
   const { theme } = useTheme()
   const ct = chartTheme(theme)
   const liq = data?.liquidity
+  if (error) return <StatusBanner />
   if (!liq) return <EmptyState />
 
   const m = liq.liquidity_metrics

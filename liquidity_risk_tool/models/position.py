@@ -6,6 +6,7 @@ fund-level metadata (NAV, share class details, investor base).
 """
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass, field
 from typing import Optional
 import pandas as pd
@@ -61,10 +62,14 @@ class Position:
 
     def days_to_liquidate(self, adv_participation: float = 0.20) -> float:
         """Estimate calendar days to fully liquidate using ADV constraint."""
-        if self.adv_30d <= 0 or self.is_locked:
+        if self.adv_30d <= 0:
             return float("inf")
         daily_capacity = self.adv_30d * adv_participation
-        return self.market_value_eur / daily_capacity
+        trading_days = self.market_value_eur / daily_capacity
+        if self.is_locked:
+            lock_delay = self.lock_expiry_days if self.lock_expiry_days is not None else float("inf")
+            return lock_delay + trading_days
+        return trading_days
 
 
 @dataclass
@@ -74,6 +79,18 @@ class ShareClass:
     shares_outstanding: float
     notice_period_days: int = 0   # redemption notice period
     redemption_frequency: str = "daily"  # daily, weekly, monthly
+
+    def __post_init__(self):
+        if self.nav_per_share <= 0:
+            raise ValueError(
+                f"ShareClass '{self.name}': nav_per_share must be positive, "
+                f"got {self.nav_per_share}"
+            )
+        if self.shares_outstanding < 0:
+            raise ValueError(
+                f"ShareClass '{self.name}': shares_outstanding cannot be negative, "
+                f"got {self.shares_outstanding}"
+            )
 
     @property
     def total_nav(self) -> float:
@@ -94,12 +111,34 @@ class Portfolio:
     top_10_investor_concentration: float = 0.40
 
     def __post_init__(self):
+        self._positions_df_cache: Optional[pd.DataFrame] = None
         self._refresh_weights()
+        self._check_nav_drift()
 
     def _refresh_weights(self):
+        self._positions_df_cache = None
         total = self.total_nav
         for pos in self.positions:
             pos.weight = pos.market_value_eur / total if total > 0 else 0.0
+
+    def _check_nav_drift(self):
+        """Warn when sum of position market values deviates >5% from share-class NAV."""
+        if not self.share_classes or not self.positions:
+            return
+        sc_nav = sum(sc.total_nav for sc in self.share_classes)
+        pos_sum = sum(p.market_value_eur for p in self.positions)
+        if sc_nav <= 0 or pos_sum <= 0:
+            return
+        drift = abs(pos_sum - sc_nav) / sc_nav
+        if drift > 0.05:
+            warnings.warn(
+                f"Portfolio '{self.fund_name}': position sum "
+                f"({pos_sum:,.0f}) differs from share-class NAV "
+                f"({sc_nav:,.0f}) by {drift*100:.1f}% — "
+                f"possible missing positions or stale NAV.",
+                UserWarning,
+                stacklevel=2,
+            )
 
     @property
     def total_nav(self) -> float:
@@ -109,7 +148,9 @@ class Portfolio:
 
     @property
     def positions_df(self) -> pd.DataFrame:
-        """Flat DataFrame view of all positions."""
+        """Flat DataFrame view of all positions (cached until weights refresh)."""
+        if self._positions_df_cache is not None:
+            return self._positions_df_cache
         rows = []
         for p in self.positions:
             rows.append({
@@ -134,4 +175,5 @@ class Portfolio:
                 "settlement_days":    p.settlement_days,
                 "is_government":      p.is_government,
             })
-        return pd.DataFrame(rows)
+        self._positions_df_cache = pd.DataFrame(rows)
+        return self._positions_df_cache

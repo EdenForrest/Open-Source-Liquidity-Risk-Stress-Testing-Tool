@@ -32,8 +32,10 @@ from ..config.settings import (
     EQUITY_SHOCK_MAX_LOSS,
     LIQUIDITY_BREACH_THRESHOLD,
     LIQUIDITY_BUCKETS,
+    MAX_HAIRCUT,
     StressScenario,
 )
+from .liquidity_utils import liquidity_at_horizon, safe_divide
 from ..models.position import Portfolio
 from .liquidity_profiler import LiquidityProfiler
 from .waterfall_engine import WaterfallEngine
@@ -246,10 +248,10 @@ class StressEngine:
         self, profile: pd.DataFrame, multiplier: float
     ) -> pd.DataFrame:
         profile = profile.copy()
-        profile["haircut"] = (profile["haircut"] * multiplier).clip(upper=0.99)
+        profile["haircut"] = (profile["haircut"] * multiplier).clip(upper=MAX_HAIRCUT)
         profile["realisable_value"] = profile["market_value_eur"] * (1 - profile["haircut"])
         nav = profile["market_value_eur"].sum()
-        profile["realisable_weight"] = profile["realisable_value"] / nav if nav > 0 else 0
+        profile["realisable_weight"] = safe_divide(profile["realisable_value"], nav)
         return profile
 
     def _build_shocked_portfolio(self, df: pd.DataFrame) -> Portfolio:
@@ -265,12 +267,7 @@ class StressEngine:
     def _liquidity_at_horizon_df(
         self, profile: pd.DataFrame, days: int, nav: float
     ) -> float:
-        total = 0.0
-        for bucket in BUCKET_ORDER:
-            lo, _ = LIQUIDITY_BUCKETS[bucket]
-            if lo <= days:
-                total += profile[profile["bucket"] == bucket]["realisable_value"].sum()
-        return total / nav if nav > 0 else 0.0
+        return safe_divide(liquidity_at_horizon(profile, days), nav)
 
     # ------------------------------------------------------------------
     # Reverse stress testing

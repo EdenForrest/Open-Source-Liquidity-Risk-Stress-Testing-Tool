@@ -139,6 +139,22 @@ DURATION_BY_ASSET_CLASS: Dict[str, float] = {
 # Concentration flag: positions > this fraction of NAV are flagged
 CONCENTRATION_FLAG_THRESHOLD: float = 0.05
 
+# Maximum haircut applied to any single position (caps haircut scaling under stress)
+MAX_HAIRCUT: float = 0.99
+
+# Maximum days simulated in the daily liquidation loop before declaring illiquid
+MAX_LIQUIDATION_DAYS: int = 500
+
+# Acceptable credit spread range in basis points
+CREDIT_SPREAD_BPS_RANGE: tuple = (0, 5000)
+
+# Acceptable equity beta range
+EQUITY_BETA_RANGE: tuple = (0, 3)
+
+# Duration inference limits for bond positions
+MAX_DURATION_YEARS: float = 15.0
+DEFAULT_DURATION_YEARS: float = 3.0
+
 # Maximum single-position equity loss applied in stress (caps beta amplification)
 EQUITY_SHOCK_MAX_LOSS: float = 0.50
 

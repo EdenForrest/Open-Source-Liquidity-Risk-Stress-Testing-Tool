@@ -20,6 +20,8 @@ from typing import Optional
 import pandas as pd
 
 from .position import Position, ShareClass, Portfolio
+from ..config.settings import DEFAULT_DURATION_YEARS, MAX_DURATION_YEARS
+from ..engines.validators import ValidationError
 
 
 # ---------------------------------------------------------------------------
@@ -76,10 +78,10 @@ def _estimate_duration(name: str, reporting_year: int) -> float:
     """Years-to-maturity as a duration proxy, capped at reasonable bounds."""
     mat = _parse_maturity_year(name)
     if mat is None:
-        return 3.0   # fallback
+        return DEFAULT_DURATION_YEARS
     ytm = max(mat - reporting_year - 0.5, 0.25)
     # Modified duration ≈ ytm for rough purposes (ignores coupon)
-    return round(min(ytm, 15.0), 1)
+    return round(min(ytm, MAX_DURATION_YEARS), 1)
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +241,10 @@ def load_portfolio_from_csv(
     nav_path      = Path(nav_path)
 
     # ── 1. NAV file ─────────────────────────────────────────────────────────
-    nav_df = pd.read_csv(nav_path, sep=";", quotechar='"', dtype=str)
+    try:
+        nav_df = pd.read_csv(nav_path, sep=";", quotechar='"', dtype=str)
+    except Exception as exc:
+        raise ValidationError(f"Cannot read NAV file '{nav_path.name}': {exc}") from exc
     nav_df.columns = [c.strip().strip('"') for c in nav_df.columns]
 
     _NAV_AMOUNT_KEYWORDS = {"totalassets", "total assets", "nav", "totalnav",
@@ -279,7 +284,10 @@ def load_portfolio_from_csv(
     )
 
     # ── 2. Holdings file ─────────────────────────────────────────────────────
-    holdings_df = pd.read_csv(holdings_path, sep=";", dtype=str, header=0)
+    try:
+        holdings_df = pd.read_csv(holdings_path, sep=";", dtype=str, header=0)
+    except Exception as exc:
+        raise ValidationError(f"Cannot read holdings file '{holdings_path.name}': {exc}") from exc
     holdings_df.columns = [c.strip() for c in holdings_df.columns]
 
     available = sorted(holdings_df["Portfolio Code"].dropna().unique().tolist())
@@ -296,7 +304,10 @@ def load_portfolio_from_csv(
 
     # ── 3. Reporting date ────────────────────────────────────────────────────
     raw_date = rows["Date"].iloc[0]
-    reporting_date = pd.to_datetime(raw_date, dayfirst=True)
+    try:
+        reporting_date = pd.to_datetime(raw_date, dayfirst=True)
+    except Exception as exc:
+        raise ValidationError(f"Cannot parse reporting date '{raw_date}': {exc}") from exc
     reporting_year = reporting_date.year
 
     # ── 4. Build positions ───────────────────────────────────────────────────

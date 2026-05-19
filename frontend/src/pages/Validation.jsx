@@ -1,5 +1,6 @@
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
+import StatusBanner from '../components/StatusBanner'
 
 const CATEGORY_ORDER = [
   'Portfolio',
@@ -87,8 +88,9 @@ function CategorySection({ category, checks }) {
 }
 
 export default function Validation() {
-  const { data } = useAnalysis()
+  const { data, error } = useAnalysis()
   const v = data?.validation
+  if (error) return <StatusBanner />
   if (!v) return <EmptyState />
 
   const byCategory = {}

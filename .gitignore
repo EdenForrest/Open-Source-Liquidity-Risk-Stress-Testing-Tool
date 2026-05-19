@@ -70,3 +70,6 @@ integrations/refinitiv/secrets.py
 # Local tooling
 .claude/
 liquidity_risk_tool/.claude/
+
+# Vite build cache
+frontend/.vite/

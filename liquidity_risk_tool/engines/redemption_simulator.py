@@ -20,8 +20,9 @@ import numpy as np
 
 from ..config.settings import (
     REDEMPTION_SCENARIOS, BUCKET_ORDER, LIQUIDITY_BUCKETS, MAX_ADV_PARTICIPATION,
-    MIN_CASH_BUFFER_PCT,
+    MAX_LIQUIDATION_DAYS, MIN_CASH_BUFFER_PCT,
 )
+from .liquidity_utils import liquidity_at_horizon
 from ..models.position import Portfolio
 
 
@@ -144,13 +145,7 @@ class RedemptionSimulator:
     # ------------------------------------------------------------------
 
     def _liquidity_at_horizon(self, profile: pd.DataFrame, days: int) -> float:
-        total = 0.0
-        for bucket in BUCKET_ORDER:
-            lo, hi = LIQUIDITY_BUCKETS[bucket]
-            if lo <= days:
-                subset = profile[profile["bucket"] == bucket]
-                total += subset["realisable_value"].sum()
-        return total
+        return liquidity_at_horizon(profile, days)
 
     def _estimate_days_to_cover(self, target_eur: float, profile: pd.DataFrame) -> float:
         """
@@ -178,7 +173,7 @@ class RedemptionSimulator:
 
         remaining = float(target_eur)
         day = 0
-        while remaining > 0 and day < 500:
+        while remaining > 0 and day < MAX_LIQUIDATION_DAYS:
             daily = float(np.minimum(caps, values).sum())
             if daily <= 0:
                 return float("inf")

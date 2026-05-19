@@ -22,6 +22,7 @@ from ..config.settings import (
     CONCENTRATION_FLAG_THRESHOLD,
     LIQUIDITY_BUCKETS,
     MAX_ADV_PARTICIPATION,
+    MAX_HAIRCUT,
     LIQUIDITY_WARNING_THRESHOLD,
     LIQUIDITY_BREACH_THRESHOLD,
 )
@@ -184,7 +185,7 @@ class LiquidityProfiler:
             spread_cost = row["bid_ask_spread_bps"] / 2.0 / 10_000
             return base_haircut + spread_cost
 
-        df["haircut"] = df.apply(total_haircut, axis=1).clip(lower=0.0, upper=0.99)
+        df["haircut"] = df.apply(total_haircut, axis=1).clip(lower=0.0, upper=MAX_HAIRCUT)
         df["realisable_value"] = df["market_value_eur"] * (1 - df["haircut"])
         df["realisable_weight"] = df["realisable_value"] / nav
         return df
