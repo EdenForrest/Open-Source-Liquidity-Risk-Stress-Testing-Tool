@@ -1,2 +1,2 @@
 portfolio,isin,ric,asset_class_hint,currency,fetch_errors
-SYN-ILLIQ,IT6369023643,IT6369023643=,hy_corporate_bond,EUR,no_data
+SYN-EQUITY,US6617861975,NSGJ.SW,listed_equity,USD,spread_missing

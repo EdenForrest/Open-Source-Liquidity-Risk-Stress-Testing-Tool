@@ -103,10 +103,21 @@ class LeverageEngine:
     # ------------------------------------------------------------------
 
     def _gross_leverage(self, df: pd.DataFrame, nav: float) -> float:
-        """Sum of |market value| / NAV (conservative: treats all positions as long)."""
+        """Sum of |notional exposure| / NAV per CDR 231/2013 Art.7 Gross Method.
+
+        Uses exposure_base when populated (derivatives, leveraged positions),
+        falling back to market_value_eur for plain long positions.
+        """
         if nav <= 0:
             return float("inf")
-        return df["market_value_eur"].abs().sum() / nav
+        if "exposure_base" in df.columns:
+            notional = df["exposure_base"].where(
+                df["exposure_base"].notna() & (df["exposure_base"].abs() > 0),
+                df["market_value_eur"],
+            )
+        else:
+            notional = df["market_value_eur"]
+        return notional.abs().sum() / nav
 
     def _commitment_leverage(self, df: pd.DataFrame, nav: float) -> float:
         """

@@ -327,9 +327,13 @@ def load_portfolio_from_csv(
         product_code = _s(row.get("Product Code"))
         csc          = _s(row.get("CustomSecurityCode"))
 
-        market_value = _eu_float(_s(row.get("Market Value in Base Currency"), "0"))
-        fx_rate      = _eu_float(_s(row.get("Exchange rate"), "1")) or 1.0
-        price_factor = _eu_float(_s(row.get("PriceFactor"), "1"))
+        market_value     = _eu_float(_s(row.get("Market Value in Base Currency"), "0"))
+        fx_rate          = _eu_float(_s(row.get("Exchange rate"), "1")) or 1.0
+        price_factor     = _eu_float(_s(row.get("PriceFactor"), "1"))
+        exposure_base_str = _s(row.get("Exposure (base)"), "")
+        exposure_base    = _eu_float(exposure_base_str) if exposure_base_str else None
+        if exposure_base is not None and abs(exposure_base) < 1.0:
+            exposure_base = None
 
         if abs(market_value) < 1.0:
             continue
@@ -368,6 +372,7 @@ def load_portfolio_from_csv(
                 bid_ask_spread_bps=bid_ask_bps,
                 duration=duration,
                 beta=beta,
+                exposure_base=exposure_base,
             )
         )
 

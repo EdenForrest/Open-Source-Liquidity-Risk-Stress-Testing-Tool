@@ -48,6 +48,11 @@ class Position:
     settlement_days: Optional[int] = None  # actual settlement lag in calendar days
     is_government: bool = False            # True = pure gov bond (rate shock only, no credit spread)
 
+    # Economic exposure — populated for derivatives and leveraged positions.
+    # When set and non-zero, this overrides market_value_eur for AIFMD II
+    # Gross Method leverage computation (CDR 231/2013 Art.7).
+    exposure_base: Optional[float] = None
+
     @property
     def effective_convexity(self) -> float:
         if self.convexity is not None:
@@ -174,6 +179,7 @@ class Portfolio:
                 "effective_convexity": p.effective_convexity,
                 "settlement_days":    p.settlement_days,
                 "is_government":      p.is_government,
+                "exposure_base":      p.exposure_base,
             })
         self._positions_df_cache = pd.DataFrame(rows)
         return self._positions_df_cache

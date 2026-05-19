@@ -113,15 +113,18 @@ PORTFOLIO_WEIGHTS: dict[str, dict] = {
         "cash":              0.08,
     },
     # Portfolio 4: Mixed — equity + gov + HY + IG + futures + forwards (hedging)
-    # Liquid assets (equity + gov + cash) represent ~65% of NAV → compliant
+    # + leveraged equity (margin) + TRS (total return swaps)
+    # Liquid assets (equity + gov + cash) represent ~60% of NAV → compliant
     "SYN-MIXED": {
-        "listed_equity":     0.35,
-        "government_bond":   0.20,
-        "ig_corporate_bond": 0.15,
-        "hy_corporate_bond": 0.08,
-        "future":            0.10,   # hedging — futures settle T+1
-        "forward":           0.07,   # hedging — FX forwards
-        "cash":              0.05,
+        "listed_equity":      0.25,
+        "government_bond":    0.20,
+        "ig_corporate_bond":  0.15,
+        "hy_corporate_bond":  0.08,
+        "future":             0.10,   # hedging — futures settle T+1
+        "forward":            0.07,   # hedging — FX forwards
+        "leveraged_equity":   0.07,   # equity on margin — Exposure (base) > MV
+        "trs":                0.03,   # total return swap — MV ≈ 0, large notional
+        "cash":               0.05,
     },
     # Portfolio 5: HY-dominated with minimal liquid buffer — NON-COMPLIANT
     # Cash is injected as a fixed tiny balance (€200k–€800k) separately.
@@ -141,6 +144,8 @@ ASSET_CLASSES = [
     "option",
     "future",
     "forward",
+    "leveraged_equity",
+    "trs",
     "cash",
 ]
 
@@ -410,6 +415,56 @@ def _gen_forward_row(portfolio: str, report_date: str) -> dict:
     }
 
 
+def _gen_leveraged_equity_row(portfolio: str, report_date: str) -> dict:
+    """Equity position bought on margin — Exposure (base) = MV × leverage_ratio.
+
+    The market value reflects the current mark-to-market of the shares held;
+    Exposure (base) reflects the full economic notional controlled by the fund
+    including the borrowed portion (CDR 231/2013 Art.7 Gross Method).
+    """
+    row = _gen_equity_row(portfolio, report_date)
+    # Parse European decimal string back to float (remove thousands sep, swap comma)
+    mv_str = row["Market Value in Base Currency"]
+    mv_eur = float(mv_str.replace(".", "").replace(",", "."))
+    leverage_ratio = random.uniform(1.5, 3.0)
+    exposure = mv_eur * leverage_ratio
+    row["Exposure (base)"] = _eu(exposure, 2)
+    return row
+
+
+def _gen_trs_row(portfolio: str, report_date: str) -> dict:
+    """Total Return Swap — MV ≈ 0 (mark-to-market), Exposure (base) = reference notional.
+
+    A TRS passes the total return of a reference asset to the fund in exchange
+    for a funding rate. The mark-to-market value is close to zero at inception
+    and fluctuates as the reference asset moves; the full notional is the
+    economic exposure that must be counted under AIFMD II Gross Method.
+    """
+    yymm     = random.choice(["0626", "0926", "1226"])
+    isin     = f"TRS-SYN{yymm}"
+    notional = random.choice([2_000_000, 5_000_000, 10_000_000, 20_000_000])
+    # Small but non-zero mark-to-market so the position passes the MV > 1 filter
+    mtm_eur = max(abs(notional * random.uniform(-0.003, 0.003)), 1_000.0)
+    if random.random() < 0.5:
+        mtm_eur = -mtm_eur   # TRS can have negative MTM (funding cost > accrued return)
+    return {
+        "Portfolio Code":               portfolio,
+        "Date":                         report_date,
+        "Security Name":                f"TRS Synth Equity Index SYN {yymm}",
+        "ISIN":                         isin,
+        "Quantity":                     str(int(notional)),
+        "Clean price (local)":          _eu(1.0, 4),
+        "Exchange rate":                "1",
+        "Market Value in Base Currency": _eu(mtm_eur, 2),
+        "Accruals in Base Currency":    "",
+        "Currency":                     "EUR",
+        "Exposure (base)":              _eu(notional, 2),
+        "Product Code":                 "6",   # OTC derivative
+        "Price Include":                "",
+        "PriceFactor":                  "1",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Holdings file
 # ---------------------------------------------------------------------------
@@ -505,6 +560,10 @@ def generate_holdings(
                 _add(_gen_future_row(pcode, report_date), pcode, ac)
             elif ac == "forward":
                 _add(_gen_forward_row(pcode, report_date), pcode, ac)
+            elif ac == "leveraged_equity":
+                _add(_gen_leveraged_equity_row(pcode, report_date), pcode, ac)
+            elif ac == "trs":
+                _add(_gen_trs_row(pcode, report_date), pcode, ac)
             else:
                 cash_row2 = _gen_cash_row(pcode, report_date)
                 _add(cash_row2, pcode, "cash")
