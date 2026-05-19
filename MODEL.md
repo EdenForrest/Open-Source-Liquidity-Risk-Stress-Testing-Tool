@@ -2,7 +2,7 @@
 
 **Version:** 1.1  
 **Last reviewed:** 2026-05-17  
-**Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV  
+**Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV / AIFMD II (Directive (EU) 2024/927)  
 **Purpose:** Complete audit trail for every metric displayed in the GUI, its mathematical definition, and the theoretical framework used to derive it.
 
 ---
@@ -26,6 +26,7 @@
 15. [Synthetic Data Generation](#15-synthetic-data-generation)
 16. [Asset-Class Parameter Table](#16-asset-class-parameter-table)
 17. [Scenario Parameter Table](#17-scenario-parameter-table)
+18. [AIFMD II — Directive (EU) 2024/927](#18-aifmd-ii--directive-eu-2024927)
 
 ---
 
@@ -584,19 +585,96 @@ All parameters are defined in `settings.py` → `STRESS_SCENARIOS`.
 
 | Scenario               | Equity Shock | Credit Spread | Rate Shock  | ADV Scalar ($\sigma$) | Haircut Mult ($\lambda$) | Redemption Rate | Regulatory Basis                        |
 |------------------------|-------------|--------------|-------------|--------------------|-----------------------|----------------|-----------------------------------------|
-| Base                   | 0%          | +0 bps       | +0 bps      | 1.00×              | 1.0×                  | 5%             | ESMA MMFR Art.28 — baseline             |
-| Equity-Led Stress -10% | -10%        | +50 bps      | +25 bps     | 0.80×              | 1.2×                  | 10%            | ESMA MMFR Art.28 Scenario A             |
-| Equity-Led Stress -20% | -20%        | +100 bps     | +50 bps     | 0.70×              | 1.5×                  | 15%            | ESMA MMFR Art.28 Scenario B             |
-| Credit-Led Stress +100bps | 0%       | +100 bps     | +30 bps     | 0.85×              | 1.3×                  | 10%            | ESMA MMFR Art.28 Scenario C             |
-| Credit-Led Stress +300bps | -5%      | +300 bps     | +75 bps     | 0.60×              | 1.8×                  | 20%            | ESMA MMFR Art.28 Scenario D             |
-| Severe Combined        | -20%        | +300 bps     | +100 bps    | **0.50×**          | **2.0×**              | **30%**        | ESMA MMFR Art.28 Scenario E — adverse   |
+| Base                   | 0%          | +0 bps       | +0 bps      | 1.00×              | 1.0×                  | 5%             | ESMA MMFR Art.28 — baseline; AIFMD II Art.16(1)             |
+| Equity-Led Stress -10% | -10%        | +50 bps      | +25 bps     | 0.80×              | 1.2×                  | 10%            | ESMA MMFR Art.28 Scenario A; AIFMD II Art.16(1)             |
+| Equity-Led Stress -20% | -20%        | +100 bps     | +50 bps     | 0.70×              | 1.5×                  | 15%            | ESMA MMFR Art.28 Scenario B; AIFMD II Art.16(1)             |
+| Credit-Led Stress +100bps | 0%       | +100 bps     | +30 bps     | 0.85×              | 1.3×                  | 10%            | ESMA MMFR Art.28 Scenario C; AIFMD II Art.16(1)             |
+| Credit-Led Stress +300bps | -5%      | +300 bps     | +75 bps     | 0.60×              | 1.8×                  | 20%            | ESMA MMFR Art.28 Scenario D; AIFMD II Art.16(1)             |
+| Severe Combined        | -20%        | +300 bps     | +100 bps    | **0.50×**          | **2.0×**              | **30%**        | ESMA MMFR Art.28 Scenario E — adverse; AIFMD II Art.16(1) worst-case LMT |
 
 The Severe Combined scenario is the source of the stressed liquidity ladder displayed in the GUI.
 
 ---
 
+## 18. AIFMD II — Directive (EU) 2024/927
+
+**Effective:** 16 April 2026  
+**Code:** `leverage_engine.py`, `redemption_simulator.py`, `config/settings.py`
+
+### 18.1 Leverage — Gross Method (Art.15)
+
+$$\text{GrossLeverage} = \frac{\sum_i |MV_i|}{NAV}$$
+
+Where $MV_i$ is the market value of each position in base currency. This is the conservative fallback mandated by CDR 231/2013 Art. 7 when derivative notional data is unavailable. The tool treats all positions as long exposures.
+
+**Caps:**
+
+| Fund type | AIFMD II leverage cap |
+|-----------|----------------------|
+| Open-ended (non-loan) | no hard cap; disclosure required above 100% |
+| Open-ended loan origination AIF | **175%** gross |
+| Closed-ended loan origination AIF | **300%** gross |
+
+A breach flag is raised when `gross_leverage > leverage_cap`.
+
+### 18.2 Leverage — Commitment Method (Art.15 / CDR 231/2013 Art.8)
+
+The commitment method nets eligible hedging positions and converts derivatives to delta-equivalent notionals. In the CSV data model, full netting agreement data is unavailable; the tool approximates by excluding locked illiquid positions (private equity, real estate lock-ups) that cannot participate in hedging:
+
+$$\text{CommitmentLeverage} \approx \frac{\sum_{i:\,\text{not locked}} |MV_i|}{NAV}$$
+
+This is conservative. A fund with true derivatives hedges would have lower commitment leverage.
+
+### 18.3 Loan Origination AIF Detection (Art.15 / Recital 17)
+
+A fund is classified as a loan origination AIF if:
+
+$$\frac{\sum_{i:\,\text{asset\_class} \in \{\text{loan, originated\_loan}\}} MV_i}{NAV} \geq 50\%$$
+
+When the flag is set, the AIFMD II loan origination regime applies: stricter leverage caps, mandatory risk retention, and borrower concentration limits.
+
+**Risk retention (Art.15(4)):** Each originated loan must have ≥5% retained by the AIFM. The tool flags a warning if any single loan position represents >95% NAV (implying the external distribution cannot be verified from position data alone).
+
+**Borrower concentration (ESMA guideline):** Any single borrower (ISIN) exceeding 20% NAV generates a breach entry in `borrower_breaches`.
+
+### 18.4 Liquidity Management Tools — LMT Framework (Art.16 + Annex V)
+
+AIFMD II requires open-ended AIFs to pre-select at least **two** LMTs from the Annex V list (excluding side pockets). The tool pre-selects: `gate`, `suspension`, `swing_pricing`.
+
+#### Activation triggers
+
+| Tool | Trigger threshold | Code constant |
+|------|-------------------|---------------|
+| Gate | redemption ≥ 10% NAV | `GATE_THRESHOLD = 0.10` |
+| Suspension | redemption ≥ 25% NAV | `SUSPENSION_THRESHOLD = 0.25` |
+| Swing pricing | net redemptions ≥ 2% NAV | `SWING_PRICING_THRESHOLD = 0.02` |
+
+### 18.5 Swing Pricing (Annex V, Pt. 1)
+
+When net redemptions exceed `SWING_PRICING_THRESHOLD`, the NAV is adjusted downward so that redeeming investors bear the transaction costs of the liquidation rather than remaining investors:
+
+$$\text{SwingFactor} = \min\!\left(\bar{h} \times r,\; \text{SWING\_FACTOR\_MAX}\right)$$
+
+Where:
+- $\bar{h}$ = portfolio average haircut $= 1 - \frac{\sum_i RV_i}{\sum_i MV_i}$
+- $r$ = redemption rate (fraction of NAV)
+- $\text{SWING\_FACTOR\_MAX} = 0.02$ (200 bps cap)
+
+The adjusted NAV paid to redeeming investors is $NAV \times (1 - \text{SwingFactor})$.
+
+### 18.6 Anti-Dilution Levy (ADL) (Annex V, Pt. 2)
+
+An explicit levy on redeeming investors as an alternative/complement to swing pricing. Calibrated to estimated transaction costs:
+
+$$\text{ADL} = \text{ADL\_LEVY\_RATE} \times \text{RedemptionAmount}$$
+
+Default rate: `ADL_LEVY_RATE = 0.005` (50 bps). The ADL is shown in basis points on the Redemption page alongside the swing factor.
+
+---
+
 ## References
 
+- European Parliament & Council (2024). *Directive (EU) 2024/927 (AIFMD II)* — amending AIFMD and UCITS Directive
 - ESMA (2019). *Guidelines on liquidity stress testing in UCITS and AIFs* (ESMA34-39-897)
 - ESMA (2020). *MMFR Stress-Testing Guidelines* (ESMA34-49-172)
 - IOSCO (2018). *Liquidity Risk Management Recommendations* (FR07/2018)

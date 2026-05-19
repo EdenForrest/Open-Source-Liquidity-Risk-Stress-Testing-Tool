@@ -19,6 +19,7 @@ export default function Dashboard() {
   if (!liq) return <EmptyState />
 
   const m = liq.liquidity_metrics
+  const aifmd2 = data?.aifmd2
 
   const ladderData = (liq.liquidity_ladder || []).map((row) => ({
     bucket: row.bucket,
@@ -79,6 +80,49 @@ export default function Dashboard() {
         <KPICard label={<MetricTooltip id="days_to_90pct">Days to 90% NAV</MetricTooltip>} value={m.days_to_90pct?.toFixed(1) ?? '—'} color="slate" />
         <KPICard label={<MetricTooltip id="top10_concentration">Top-10 Concentration</MetricTooltip>} value={fmt(m.top10_concentration)} color="slate" />
       </div>
+
+      {aifmd2 && (
+        <div className="rounded-xl shadow-sm border p-5" style={panelStyle}>
+          <h2 className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: 'var(--text-secondary)' }}>
+            AIFMD II — Directive (EU) 2024/927
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <KPICard
+              label={<MetricTooltip id="gross_leverage">Gross Leverage</MetricTooltip>}
+              value={aifmd2.gross_leverage != null ? (aifmd2.gross_leverage * 100).toFixed(1) + '%' : '—'}
+              color={aifmd2.leverage_breach ? 'red' : 'slate'}
+              alert={aifmd2.leverage_breach}
+            />
+            <KPICard
+              label="Leverage Cap"
+              value={aifmd2.leverage_cap != null ? (aifmd2.leverage_cap * 100).toFixed(0) + '%' : '—'}
+              color="slate"
+            />
+            <KPICard
+              label={<MetricTooltip id="lmt_count">LMTs Pre-selected</MetricTooltip>}
+              value={aifmd2.lmt_count ?? '—'}
+              color={aifmd2.lmt_compliant ? 'green' : 'red'}
+            />
+            <KPICard
+              label="AIFMD II Status"
+              value={aifmd2.leverage_breach ? 'BREACH' : aifmd2.lmt_compliant ? 'OK' : 'INCOMPLETE'}
+              color={aifmd2.leverage_breach ? 'red' : aifmd2.lmt_compliant ? 'green' : 'amber'}
+              alert={aifmd2.leverage_breach}
+            />
+          </div>
+          {aifmd2.warnings && (
+            <p className="mt-3 text-xs" style={{ color: 'var(--kpi-amber-text)' }}>{aifmd2.warnings}</p>
+          )}
+          <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+            LMTs: {Array.isArray(aifmd2.lmt_preselected) ? aifmd2.lmt_preselected.join(', ') : aifmd2.lmt_preselected}
+            {aifmd2.is_loan_origination_aif && (
+              <span className="ml-3 font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>
+                Loan origination AIF regime applies ({(aifmd2.loan_pct_nav * 100).toFixed(1)}% in loans)
+              </span>
+            )}
+          </p>
+        </div>
+      )}
 
       <div className="rounded-xl shadow-sm border overflow-auto" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide p-4 pb-2" style={{ color: 'var(--text-secondary)' }}>

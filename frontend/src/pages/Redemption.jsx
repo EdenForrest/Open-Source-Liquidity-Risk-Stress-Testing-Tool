@@ -38,6 +38,9 @@ function RedemptionTable({ rows, label }) {
               { label: 'Gate', id: 'redemption_gate' },
               { label: 'Suspension', id: 'redemption_suspension' },
               { label: 'Days to Clear', id: 'redemption_days_to_clear' },
+              { label: 'Swing Factor' },
+              { label: 'ADL (bps)' },
+              { label: 'LMT Status' },
             ].map(({ label, id }) => (
               <th key={label} className="px-3 py-2 text-left whitespace-nowrap">
                 {id ? <MetricTooltip id={id}>{label}</MetricTooltip> : label}
@@ -62,6 +65,15 @@ function RedemptionTable({ rows, label }) {
               <td className="px-3 py-2 text-center"><Alert triggered={r.gate_triggered} /></td>
               <td className="px-3 py-2 text-center"><Alert triggered={r.suspension_triggered} /></td>
               <td className="px-3 py-2 text-right" style={{ color: 'var(--text-primary)' }}>{r.days_to_clear?.toFixed(1) ?? '—'}</td>
+              <td className="px-3 py-2 text-right" style={{ color: r.swing_factor > 0 ? 'var(--kpi-amber-text)' : 'var(--text-muted)' }}>
+                {r.swing_factor > 0 ? pct(r.swing_factor) : '—'}
+              </td>
+              <td className="px-3 py-2 text-right" style={{ color: r.adl_bps > 0 ? 'var(--kpi-amber-text)' : 'var(--text-muted)' }}>
+                {r.adl_bps > 0 ? r.adl_bps.toFixed(0) : '—'}
+              </td>
+              <td className="px-3 py-2 text-xs" style={{ color: r.lmt_activated ? 'var(--kpi-amber-text)' : 'var(--text-muted)', minWidth: '120px' }}>
+                {r.lmt_tools_used || '—'}
+              </td>
             </tr>
           ))}
         </tbody>

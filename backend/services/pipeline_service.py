@@ -17,9 +17,10 @@ from liquidity_risk_tool.engines.liquidity_profiler import LiquidityProfiler
 from liquidity_risk_tool.engines.stress_engine import StressEngine
 from liquidity_risk_tool.engines.redemption_simulator import RedemptionSimulator
 from liquidity_risk_tool.engines.waterfall_engine import WaterfallEngine
+from liquidity_risk_tool.engines.leverage_engine import LeverageEngine
 from liquidity_risk_tool.reporting.risk_metrics import RiskMetricsBuilder
 from liquidity_risk_tool.reporting.report_builder import ReportBuilder
-from liquidity_risk_tool.config.settings import STRESS_SCENARIOS
+from liquidity_risk_tool.config.settings import STRESS_SCENARIOS, AIFMD2_PRESELECTED_LMTS, AIFMD2_MIN_LMT_COUNT
 
 
 def _safe(v):
@@ -84,6 +85,8 @@ def run_full_pipeline(
     waterfall = WaterfallEngine(portfolio, stress_buckets, stress=True).run(waterfall_target)
 
     metrics = RiskMetricsBuilder(portfolio).build_liquidity_metrics()
+
+    leverage = LeverageEngine(portfolio).run()
 
     # Build stressed ladder from the worst scenario's post-shock position detail
     # so that bucket migrations from equity/credit shocks are reflected — matching
@@ -157,6 +160,21 @@ def run_full_pipeline(
             "nav_impact_pct": waterfall.nav_impact_pct,
         }),
         "scenario_metadata": [_clean_dict(m) for m in scenario_meta],
+        "aifmd2": _clean_dict({
+            "gross_leverage": leverage.gross_leverage,
+            "commitment_leverage": leverage.commitment_leverage,
+            "leverage_cap": leverage.leverage_cap,
+            "leverage_breach": leverage.leverage_breach,
+            "is_loan_origination_aif": leverage.is_loan_origination_aif,
+            "loan_pct_nav": leverage.loan_pct_nav,
+            "risk_retention_ok": leverage.risk_retention_ok,
+            "borrower_breaches": ", ".join(leverage.borrower_breaches),
+            "lmt_preselected": AIFMD2_PRESELECTED_LMTS,
+            "lmt_count": len(AIFMD2_PRESELECTED_LMTS),
+            "lmt_compliant": len(AIFMD2_PRESELECTED_LMTS) >= AIFMD2_MIN_LMT_COUNT,
+            "warnings": "; ".join(leverage.warnings),
+            "regulatory_basis": "AIFMD II (Directive (EU) 2024/927), effective 16 April 2026",
+        }),
     }
 
 

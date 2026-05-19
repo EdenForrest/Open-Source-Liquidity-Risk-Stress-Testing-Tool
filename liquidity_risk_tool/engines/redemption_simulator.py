@@ -12,7 +12,7 @@ Incorporates:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List
 
 import pandas as pd
@@ -21,6 +21,8 @@ import numpy as np
 from ..config.settings import (
     REDEMPTION_SCENARIOS, BUCKET_ORDER, LIQUIDITY_BUCKETS, MAX_ADV_PARTICIPATION,
     MAX_LIQUIDATION_DAYS, MIN_CASH_BUFFER_PCT,
+    SWING_PRICING_THRESHOLD, SWING_FACTOR_MAX, ADL_LEVY_RATE,
+    AIFMD2_PRESELECTED_LMTS,
 )
 from .liquidity_utils import liquidity_at_horizon
 from ..models.position import Portfolio
@@ -45,9 +47,16 @@ class RedemptionResult:
     suspension_triggered: bool
     concentration_driven: bool  # redemption dominated by single top investor
     days_to_clear: float        # estimated days to fully liquidate for payment
+    # AIFMD II LMT fields
+    swing_factor: float = 0.0       # swing pricing NAV adjustment (fraction)
+    adl_bps: float = 0.0            # anti-dilution levy charged to redeeming investors (bps)
+    lmt_activated: bool = False     # True if any LMT beyond gate/suspension is activated
+    lmt_tools_used: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return self.__dict__
+        d = self.__dict__.copy()
+        d["lmt_tools_used"] = ", ".join(self.lmt_tools_used)
+        return d
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +133,32 @@ class RedemptionSimulator:
         # Estimate days to fully cover redemption via waterfall
         days_to_clear = self._estimate_days_to_cover(redemption_eur, profile)
 
+        # AIFMD II LMT calculations
+        gate_triggered       = redemption_pct >= self.GATE_THRESHOLD
+        suspension_triggered = redemption_pct >= self.SUSPENSION_THRESHOLD
+        lmt_tools = []
+        if gate_triggered:
+            lmt_tools.append("gate")
+        if suspension_triggered:
+            lmt_tools.append("suspension")
+
+        # Swing pricing: activated when net redemptions exceed threshold
+        swing_active = redemption_pct >= SWING_PRICING_THRESHOLD and "swing_pricing" in AIFMD2_PRESELECTED_LMTS
+        if swing_active:
+            total_rv = profile["realisable_value"].sum()
+            total_mv = profile["market_value_eur"].sum()
+            avg_haircut = (1 - total_rv / total_mv) if total_mv > 0 else 0.0
+            swing_factor = min(avg_haircut * redemption_pct, SWING_FACTOR_MAX)
+            lmt_tools.append("swing_pricing")
+        else:
+            swing_factor = 0.0
+
+        # Anti-dilution levy: activated alongside swing pricing as the cost measure
+        adl_active = swing_active and "adl" in AIFMD2_PRESELECTED_LMTS
+        adl_bps = ADL_LEVY_RATE * 10_000 if adl_active else 0.0
+        if adl_active:
+            lmt_tools.append("adl")
+
         return RedemptionResult(
             scenario_pct              = redemption_pct,
             redemption_eur            = redemption_eur,
@@ -134,10 +169,14 @@ class RedemptionSimulator:
             can_meet_t1               = usable_t1 >= redemption_eur,
             can_meet_t3               = usable_t3 >= redemption_eur,
             can_meet_t7               = usable_t7 >= redemption_eur,
-            gate_triggered            = redemption_pct >= self.GATE_THRESHOLD,
-            suspension_triggered      = redemption_pct >= self.SUSPENSION_THRESHOLD,
+            gate_triggered            = gate_triggered,
+            suspension_triggered      = suspension_triggered,
             concentration_driven      = concentration_driven,
             days_to_clear             = days_to_clear,
+            swing_factor              = swing_factor,
+            adl_bps                   = adl_bps,
+            lmt_activated             = len(lmt_tools) > 0,
+            lmt_tools_used            = lmt_tools,
         )
 
     # ------------------------------------------------------------------

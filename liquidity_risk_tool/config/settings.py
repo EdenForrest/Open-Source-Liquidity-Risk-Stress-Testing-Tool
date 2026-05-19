@@ -68,7 +68,7 @@ STRESS_SCENARIOS: List[StressScenario] = [
         adv_stress_scalar=1.0, rate_shock_bps=0,
         version="1.0",
         description="Normal operating conditions with modest redemption pressure.",
-        regulatory_basis="ESMA MMFR Art.28 — baseline calibration",
+        regulatory_basis="ESMA MMFR Art.28 — baseline calibration; AIFMD II Art.16(1)",
         is_worst_case=False, last_reviewed="2026-01-01",
     ),
     StressScenario(
@@ -78,7 +78,7 @@ STRESS_SCENARIOS: List[StressScenario] = [
         adv_stress_scalar=0.80, rate_shock_bps=25,
         version="1.0",
         description="Equity-led correction (-10%) with correlated spread widening (+50bps) and partial ADV compression. All asset classes affected via haircut multiplier.",
-        regulatory_basis="ESMA MMFR Art.28 Scenario A",
+        regulatory_basis="ESMA MMFR Art.28 Scenario A; AIFMD II Art.16(1) LMT stress",
         is_worst_case=False, last_reviewed="2026-01-01",
     ),
     StressScenario(
@@ -88,7 +88,7 @@ STRESS_SCENARIOS: List[StressScenario] = [
         adv_stress_scalar=0.85, rate_shock_bps=30,
         version="1.0",
         description="Credit-led stress with spreads +100bps and moderate rate shift. Equity market value unchanged; all asset liquidity compressed via haircut multiplier.",
-        regulatory_basis="ESMA MMFR Art.28 Scenario C",
+        regulatory_basis="ESMA MMFR Art.28 Scenario C; AIFMD II Art.16(1) LMT stress",
         is_worst_case=False, last_reviewed="2026-01-01",
     ),
     StressScenario(
@@ -98,7 +98,7 @@ STRESS_SCENARIOS: List[StressScenario] = [
         adv_stress_scalar=0.70, rate_shock_bps=50,
         version="1.0",
         description="Equity-led drawdown (-20%) with material correlated spread widening (+100bps) and ADV compression. All asset classes affected via haircut multiplier.",
-        regulatory_basis="ESMA MMFR Art.28 Scenario B",
+        regulatory_basis="ESMA MMFR Art.28 Scenario B; AIFMD II Art.16(1) LMT stress",
         is_worst_case=False, last_reviewed="2026-01-01",
     ),
     StressScenario(
@@ -108,7 +108,7 @@ STRESS_SCENARIOS: List[StressScenario] = [
         adv_stress_scalar=0.60, rate_shock_bps=75,
         version="1.0",
         description="Severe credit dislocation (+300bps) with significant ADV collapse and correlated mild equity drawdown (-5%). All asset classes affected via haircut multiplier.",
-        regulatory_basis="ESMA MMFR Art.28 Scenario D",
+        regulatory_basis="ESMA MMFR Art.28 Scenario D; AIFMD II Art.16(1) LMT stress",
         is_worst_case=False, last_reviewed="2026-01-01",
     ),
     StressScenario(
@@ -118,7 +118,7 @@ STRESS_SCENARIOS: List[StressScenario] = [
         adv_stress_scalar=0.50, rate_shock_bps=100,
         version="1.0",
         description="Simultaneous equity crash, credit crisis, and market freeze. Worst-case regulatory scenario.",
-        regulatory_basis="ESMA MMFR Art.28 Scenario E — adverse",
+        regulatory_basis="ESMA MMFR Art.28 Scenario E — adverse; AIFMD II Art.16(1) worst-case LMT",
         is_worst_case=True, last_reviewed="2026-01-01",
     ),
 ]
@@ -171,6 +171,40 @@ LIQUIDITY_BREACH_THRESHOLD: float  = 0.05   # <5% triggers breach
 # ADV scalar applied when building the stress liquidity profile for redemption simulation.
 # Represents a moderate market stress where trading volumes compress to 60% of normal.
 REDEMPTION_STRESS_ADV_SCALAR: float = 0.60
+
+
+# ---------------------------------------------------------------------------
+# AIFMD II (Directive (EU) 2024/927) — effective 16 April 2026
+# ---------------------------------------------------------------------------
+
+# Liquidity Management Tools: fund must pre-select at least 2
+AIFMD2_PRESELECTED_LMTS: List[str] = ["gate", "suspension", "swing_pricing"]
+AIFMD2_MIN_LMT_COUNT: int = 2
+
+# Leverage caps — Art. 15 and Art. 26a
+AIFMD2_LEVERAGE_CAP_OPEN_ENDED: float  = 1.75   # 175% gross exposure / NAV (open-ended loan AIFs)
+AIFMD2_LEVERAGE_CAP_CLOSED_ENDED: float = 3.00  # 300% (closed-ended loan AIFs)
+
+# Loan origination AIF: ≥50% NAV in originated loans triggers the regime
+AIFMD2_LOAN_ORIGINATION_THRESHOLD: float = 0.50
+
+# Risk retention: originating AIFM must retain ≥5% of each originated loan notional
+AIFMD2_RISK_RETENTION_MINIMUM: float = 0.05
+
+# Borrower concentration: no single borrower > 20% NAV (ESMA guidance)
+AIFMD2_BORROWER_CONCENTRATION_LIMIT: float = 0.20
+
+# Swing pricing — activates when net redemptions exceed the threshold
+SWING_PRICING_THRESHOLD: float = 0.02   # 2% NAV
+SWING_FACTOR_MAX: float = 0.02          # cap swing adjustment at 200 bps (2%)
+
+# Anti-dilution levy — alternative to swing pricing; expressed as a rate
+ADL_LEVY_RATE: float = 0.005   # 50 bps default levy on redeeming investors
+
+
+# Gate / suspension thresholds (also used by RedemptionSimulator as class defaults)
+GATE_THRESHOLD: float       = 0.10   # UCITS/AIFMD common practice
+SUSPENSION_THRESHOLD: float = 0.25
 
 
 def validate_scenario_severity_monotonic(scenarios: List[StressScenario] = None) -> bool:

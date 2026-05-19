@@ -169,6 +169,28 @@ export const DEFINITIONS = {
     body: 'Estimated calendar days to raise the redemption amount via parallel sell-down of all unlocked positions, each capped at 20% of its 30-day ADV (MiFID II participation cap). Each day every liquid position contributes min(daily_cap, remaining_position_value); the simulation runs until cumulative net proceeds reach the target. Stressed regime uses a reduced ADV scalar (e.g. 0.50×) reflecting market volume collapse.',
   },
 
+  // ── AIFMD II KPIs ────────────────────────────────────────────────────────
+  gross_leverage: {
+    label: 'Gross Leverage',
+    section: '§AIFMD II',
+    body: 'Sum of |market value| / NAV (Gross Method per CDR 231/2013 Art. 7). Under AIFMD II Art. 15, open-ended loan AIFs are capped at 175% and closed-ended loan AIFs at 300%. Non-loan AIFs must disclose leverage but are not subject to the same hard caps unless the fund-level limit set in the fund rules is lower.',
+  },
+  lmt_count: {
+    label: 'LMTs Pre-selected',
+    section: '§AIFMD II',
+    body: 'Number of Liquidity Management Tools (LMTs) pre-selected in the fund prospectus, as required by AIFMD II Art. 16 and Annex V. At least 2 tools must be selected (excluding side pockets). Pre-selected tools here: gate, suspension, swing pricing. Each tool has activation triggers calibrated to scenario redemption rates.',
+  },
+  swing_factor: {
+    label: 'Swing Factor',
+    section: '§AIFMD II',
+    body: 'NAV adjustment applied under swing pricing when net redemptions exceed the threshold (2% NAV). Swing factor ≈ average portfolio haircut × redemption %, capped at 200 bps. The adjusted NAV is paid to redeeming investors, passing transaction costs to the party causing them rather than to remaining investors. Mandatory LMT under AIFMD II Art. 16 and Annex V, Pt. 1.',
+  },
+  adl_bps: {
+    label: 'ADL (bps)',
+    section: '§AIFMD II',
+    body: 'Anti-Dilution Levy: a charge on redeeming investors equal to the estimated transaction costs of meeting their redemption. Default rate 50 bps. Alternative to swing pricing; both are pre-selected LMTs under AIFMD II Art. 16. Shown when swing pricing is active to illustrate the effective cost passed to redeeming investors.',
+  },
+
   // ── Position table columns ───────────────────────────────────────────────
   bucket: {
     label: 'Bucket',
