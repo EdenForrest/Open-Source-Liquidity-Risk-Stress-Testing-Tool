@@ -114,9 +114,7 @@ export default function AllPortfolios() {
             <tbody>
               <MetricRow label="NAV (EUR)" codes={portfolioCodes} allData={allData} getter={m => fmtEur(m?.total_nav_eur)} />
               <MetricRow label="Reporting Date" codes={portfolioCodes} allData={allData} getter={m => m?.reporting_date ?? '—'} />
-              <MetricRow label="Status" codes={portfolioCodes} allData={allData} getter={(m) => (
-                <StatusDot warning_flag={m?.warning_flag} breach_flag={m?.breach_flag} />
-              )} />
+              <BreachRow codes={portfolioCodes} allData={allData} />
               <MetricRow label="LCR T+1" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t1} />} />
               <MetricRow label="LCR T+3" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t3} />} />
               <MetricRow label="LCR T+7" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t7} />} />
@@ -145,12 +143,6 @@ export default function AllPortfolios() {
                 <RiskCell value={a?.commitment_leverage} warnAt={1.5} redAt={1.75} display={a?.commitment_leverage != null ? (a.commitment_leverage * 100).toFixed(1) + '%' : null} />
               )} />
               <LeverageMetricRow label="Leverage Cap" codes={portfolioCodes} allData={allData} getter={a => a?.leverage_cap != null ? (a.leverage_cap * 100).toFixed(0) + '%' : '—'} />
-              <LeverageMetricRow label="AIFMD II Status" codes={portfolioCodes} allData={allData} getter={a => {
-                if (!a) return <span style={{ color: 'var(--text-muted)' }}>—</span>
-                if (a.leverage_breach) return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
-                if (!a.lmt_compliant) return <span className="font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>INCOMPLETE</span>
-                return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
-              }} />
               <LeverageMetricRow label="LMTs Pre-selected" codes={portfolioCodes} allData={allData} getter={a => {
                 if (a?.lmt_count == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
                 const color = a.lmt_compliant ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
@@ -161,6 +153,30 @@ export default function AllPortfolios() {
         </div>
       </div>
     </div>
+  )
+}
+
+function BreachRow({ codes, allData }) {
+  return (
+    <tr style={{ borderBottom: '1px solid var(--border)' }} className="transition-colors hover:opacity-80">
+      <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>Breach / Warning</td>
+      {codes.map(code => {
+        const m = allData[code]?.liquidity?.liquidity_metrics
+        const a = allData[code]?.aifmd2
+        const isBreach = m?.breach_flag || a?.leverage_breach
+        const isWarning = !isBreach && m?.warning_flag
+        return (
+          <td key={code} className="px-3 py-1.5 text-right">
+            {isBreach
+              ? <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+              : isWarning
+              ? <span className="text-xs font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>Warning</span>
+              : <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+            }
+          </td>
+        )
+      })}
+    </tr>
   )
 }
 
