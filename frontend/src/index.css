@@ -46,10 +46,10 @@
   --bg-panel:   #0d1117;
   --bg-surface: #111820;
   --bg-hover:   #1a2230;
-  --border:     #1e2a38;
+  --border:     #243346;
 
   --text-primary:   #e8ecf0;
-  --text-secondary: #7a8fa8;
+  --text-secondary: #8aa0bb;
   --text-muted:     #3d5068;
   --text-accent:    #ff6600;
 
@@ -71,7 +71,9 @@
   --kpi-green-bg: #061a0e; --kpi-green-border: #00cc66; --kpi-green-text: #00cc66;
   --kpi-amber-bg: #1a1200; --kpi-amber-border: #ffaa00; --kpi-amber-text: #ffaa00;
   --kpi-red-bg: #1a0505; --kpi-red-border: #ff3b3b; --kpi-red-text: #ff3b3b;
-  --kpi-slate-bg: #111820; --kpi-slate-border: #1e2a38; --kpi-slate-text: #7a8fa8;
+  --kpi-slate-bg: #111820; --kpi-slate-border: #2a3a4e; --kpi-slate-text: #8aa0bb;
+
+  --kpi-label-color: #ff6600;
 
   --scrollbar-track: #0d1117;
   --scrollbar-thumb: #2a3040;
@@ -101,10 +103,73 @@ body {
   letter-spacing: 0.02em;
 }
 
-/* Bloomberg Terminal — section header left-accent */
+/* Bloomberg Terminal — ultra-dense table rows */
+[data-theme="bloomberg"] table td,
+[data-theme="bloomberg"] table th {
+  padding-top: 3px !important;
+  padding-bottom: 3px !important;
+}
+
+/* Bloomberg Terminal — section header: orange text + left-accent */
 [data-theme="bloomberg"] .bb-head {
+  color: var(--text-accent) !important;
   border-left: 2px solid var(--text-accent);
   padding-left: 6px;
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  letter-spacing: 0.08em;
+}
+
+/* Bloomberg Terminal — KPI card label orange */
+[data-theme="bloomberg"] .bb-kpi-label {
+  color: var(--text-accent) !important;
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  letter-spacing: 0.08em;
+}
+
+/* Bloomberg Terminal — global compact font */
+[data-theme="bloomberg"] main,
+[data-theme="bloomberg"] header {
+  font-size: 11px;
+}
+
+/* Bloomberg Terminal — table header row background */
+[data-theme="bloomberg"] table thead th {
+  background: #06090d !important;
+  color: #ff6600 !important;
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  border-bottom: 1px solid #243346;
+}
+
+/* Bloomberg Terminal — zero border-radius on panels/cards */
+[data-theme="bloomberg"] .rounded,
+[data-theme="bloomberg"] .rounded-sm,
+[data-theme="bloomberg"] .rounded-xl,
+[data-theme="bloomberg"] .rounded-full,
+[data-theme="bloomberg"] .rounded-lg {
+  border-radius: 0 !important;
+}
+
+/* Bloomberg Terminal — h1 page titles orange */
+[data-theme="bloomberg"] h1 {
+  color: var(--text-accent) !important;
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+}
+
+/* Bloomberg Terminal — page description subtitles */
+[data-theme="bloomberg"] h1 + p,
+[data-theme="bloomberg"] .bb-subtitle {
+  color: var(--text-secondary) !important;
+  font-size: 10px;
+}
+
+/* Bloomberg Terminal — ensure table containers scroll horizontally */
+[data-theme="bloomberg"] .overflow-auto,
+[data-theme="bloomberg"] .overflow-x-auto {
+  overflow-x: auto !important;
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }

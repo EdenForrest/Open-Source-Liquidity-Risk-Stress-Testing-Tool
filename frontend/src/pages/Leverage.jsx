@@ -91,7 +91,7 @@ export default function Leverage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {/* Leverage detail table */}
-        <div className="rounded shadow-sm border overflow-hidden" style={panelStyle}>
+        <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
           <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
             Leverage Metrics
           </h2>
@@ -110,7 +110,7 @@ export default function Leverage() {
         </div>
 
         {/* Loan origination & constraints */}
-        <div className="rounded shadow-sm border overflow-hidden" style={panelStyle}>
+        <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
           <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
             Loan Origination AIF
           </h2>

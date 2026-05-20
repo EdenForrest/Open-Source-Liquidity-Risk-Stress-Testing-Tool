@@ -7,8 +7,8 @@ export default function KPICard({ label, value, sub, color = 'blue', alert = fal
   }
 
   return (
-    <div className="rounded border-l-2 p-2 shadow-sm" style={style}>
-      <p className="text-xs font-semibold uppercase tracking-widest" style={{ opacity: 0.72 }}>{label}</p>
+    <div className="border-l-2 p-2 shadow-sm" style={style}>
+      <p className="bb-kpi-label text-xs font-semibold uppercase tracking-widest" style={{ opacity: 0.85 }}>{label}</p>
       <p className="mt-0.5 text-xl font-bold bb-num">{value}</p>
       {sub && <p className="text-xs" style={{ opacity: 0.55 }}>{sub}</p>}
     </div>

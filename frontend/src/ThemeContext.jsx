@@ -8,11 +8,11 @@ export const THEMES = [
 ]
 
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(() => localStorage.getItem('lrt-theme') || 'light')
+  const [theme, setTheme] = useState(() => localStorage.getItem('lrt-theme-v2') || 'bloomberg')
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('lrt-theme', theme)
+    localStorage.setItem('lrt-theme-v2', theme)
   }, [theme])
 
   return (
