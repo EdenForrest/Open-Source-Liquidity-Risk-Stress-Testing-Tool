@@ -111,10 +111,8 @@ class LeverageEngine:
         if nav <= 0:
             return float("inf")
         if "exposure_base" in df.columns:
-            notional = df["exposure_base"].where(
-                df["exposure_base"].notna() & (df["exposure_base"].abs() > 0),
-                df["market_value_eur"],
-            )
+            exp = pd.to_numeric(df["exposure_base"], errors="coerce")
+            notional = exp.where(exp.notna() & (exp.abs() > 0), df["market_value_eur"])
         else:
             notional = df["market_value_eur"]
         return notional.abs().sum() / nav
