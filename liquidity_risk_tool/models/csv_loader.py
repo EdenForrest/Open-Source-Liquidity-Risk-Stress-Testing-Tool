@@ -335,7 +335,8 @@ def load_portfolio_from_csv(
         if exposure_base is not None and abs(exposure_base) < 1.0:
             exposure_base = None
 
-        if abs(market_value) < 1.0:
+        significant_exposure = exposure_base is not None and abs(exposure_base) >= 1.0
+        if abs(market_value) < 1.0 and not significant_exposure:
             continue
 
         asset_class = _infer_asset_class(isin, name, product_code or csc, price_factor)
@@ -442,12 +443,14 @@ def load_portfolio_from_csv(
 
 
 def _aggregate_positions(positions: list[Position]) -> list[Position]:
-    """Sum market values of rows with the same ISIN (multiple sub-ledger rows)."""
+    """Sum market values and exposure notionals of rows with the same ISIN."""
     seen: dict[str, Position] = {}
     for pos in positions:
         key = pos.isin
         if key in seen:
             seen[key].market_value += pos.market_value
+            if pos.exposure_base is not None:
+                seen[key].exposure_base = (seen[key].exposure_base or 0.0) + pos.exposure_base
         else:
             seen[key] = pos
     return list(seen.values())
@@ -465,19 +468,30 @@ def find_latest_files(
     """Return the most-recently-modified holdings and NAV files in *folder*.
 
     Defaults to the current user's Desktop.
+    Matches both HOLDINGS_*.csv and MVHOL_*.csv for holdings;
+    NAV_*.csv and NAV_ALT_*.csv for nav.
     """
     if folder is None:
         import os
         folder = Path(os.path.expanduser("~")) / "Desktop"
     folder = Path(folder)
 
-    holdings_files = sorted(folder.glob(holdings_glob), key=lambda p: p.stat().st_mtime, reverse=True)
-    nav_files      = sorted(folder.glob(nav_glob),      key=lambda p: p.stat().st_mtime, reverse=True)
+    _HOLDINGS_GLOBS = [holdings_glob, "MVHOL_*.csv"]
+    _NAV_GLOBS      = [nav_glob, "NAV_ALT_*.csv"]
+
+    holdings_files = sorted(
+        [f for g in _HOLDINGS_GLOBS for f in folder.glob(g)],
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
+    nav_files = sorted(
+        [f for g in _NAV_GLOBS for f in folder.glob(g)],
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )
 
     if not holdings_files:
-        raise FileNotFoundError(f"No holdings file matching '{holdings_glob}' in {folder}")
+        raise FileNotFoundError(f"No holdings file matching {_HOLDINGS_GLOBS} in {folder}")
     if not nav_files:
-        raise FileNotFoundError(f"No NAV file matching '{nav_glob}' in {folder}")
+        raise FileNotFoundError(f"No NAV file matching {_NAV_GLOBS} in {folder}")
 
     return holdings_files[0], nav_files[0]
 

@@ -22,7 +22,7 @@ export default function StatusBanner() {
 
   const states = {
     uploading: { bg: 'bg-blue-50 border-blue-300 text-blue-800', msg: 'Uploading files…' },
-    running:   { bg: 'bg-amber-50 border-amber-300 text-amber-800', msg: 'Running pipeline — profiling all portfolios, stress testing, waterfall…' },
+    running:   { bg: 'bg-amber-50 border-amber-300 text-amber-800', msg: 'Running demo pipeline — loading synthetic portfolio data…' },
     complete:  { bg: 'bg-green-50 border-green-300 text-green-800', msg: 'Analysis complete.' },
     error:     { bg: 'bg-red-50 border-red-300 text-red-800', msg: `Error: ${error}` },
   }

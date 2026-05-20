@@ -111,6 +111,17 @@ export default function AllPortfolios() {
               <MetricRow label="Days to 50% liquidated" codes={portfolioCodes} allData={allData} getter={m => fmtDays(m?.days_to_50pct)} />
               <MetricRow label="Days to 75% liquidated" codes={portfolioCodes} allData={allData} getter={m => fmtDays(m?.days_to_75pct)} />
               <MetricRow label="Days to 90% liquidated" codes={portfolioCodes} allData={allData} getter={m => fmtDays(m?.days_to_90pct)} />
+              <SectionHeaderRow label="AIFMD II Leverage" colSpan={portfolioCodes.length + 1} />
+              <LeverageMetricRow label="Gross Leverage" codes={portfolioCodes} allData={allData} getter={a => a?.gross_leverage != null ? (a.gross_leverage * 100).toFixed(1) + '%' : '—'} />
+              <LeverageMetricRow label="Commitment Leverage" codes={portfolioCodes} allData={allData} getter={a => a?.commitment_leverage != null ? (a.commitment_leverage * 100).toFixed(1) + '%' : '—'} />
+              <LeverageMetricRow label="Leverage Cap" codes={portfolioCodes} allData={allData} getter={a => a?.leverage_cap != null ? (a.leverage_cap * 100).toFixed(0) + '%' : '—'} />
+              <LeverageMetricRow label="AIFMD II Status" codes={portfolioCodes} allData={allData} getter={a => {
+                if (!a) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+                if (a.leverage_breach) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+                if (!a.lmt_compliant) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>INCOMPLETE</span>
+                return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+              }} />
+              <LeverageMetricRow label="LMTs Pre-selected" codes={portfolioCodes} allData={allData} getter={a => a?.lmt_count != null ? `${a.lmt_count} (${a.lmt_compliant ? 'compliant' : 'insufficient'})` : '—'} />
             </tbody>
           </table>
         </div>
@@ -129,6 +140,34 @@ function MetricRow({ label, codes, allData, getter }) {
         return (
           <td key={code} className="px-4 py-2.5 text-right" style={{ color: 'var(--text-primary)' }}>
             {getter(m)}
+          </td>
+        )
+      })}
+    </tr>
+  )
+}
+
+function SectionHeaderRow({ label, colSpan }) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide"
+        style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', borderTop: '2px solid var(--border)' }}>
+        {label}
+      </td>
+    </tr>
+  )
+}
+
+function LeverageMetricRow({ label, codes, allData, getter }) {
+  return (
+    <tr style={{ borderBottom: '1px solid var(--border)' }}
+      className="transition-colors hover:opacity-80">
+      <td className="px-4 py-2.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>{label}</td>
+      {codes.map(code => {
+        const a = allData[code]?.aifmd2
+        return (
+          <td key={code} className="px-4 py-2.5 text-right" style={{ color: 'var(--text-primary)' }}>
+            {getter(a)}
           </td>
         )
       })}
