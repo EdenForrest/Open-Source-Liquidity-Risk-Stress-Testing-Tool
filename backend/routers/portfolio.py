@@ -138,21 +138,33 @@ def list_portfolios():
 async def run_demo():
     """Run the pipeline on bundled synthetic data and return the run_id.
     Result is cached — subsequent calls return the same run_id instantly.
+    Pairs HOLDINGS and NAV files by matching timestamp prefix to prevent mismatches.
     """
     global _DEMO_RUN_ID
 
-    # Return cached run if already complete
+    # Find best matched HOLDINGS+NAV pair by shared timestamp prefix
+    holdings_files = sorted(DATA_DIR.glob("HOLDINGS_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+    market_data = DATA_DIR / "market_data_ALL.csv"
+
+    if not holdings_files:
+        raise HTTPException(status_code=404, detail="No synthetic demo data found in data/ directory")
+
+    # Match NAV file to the newest HOLDINGS by shared timestamp suffix
+    holdings_file = holdings_files[0]
+    timestamp = holdings_file.stem.replace("HOLDINGS_", "")
+    nav_file = DATA_DIR / f"NAV_{timestamp}.csv"
+    if not nav_file.exists():
+        # Fallback: pick newest NAV file
+        nav_files = sorted(DATA_DIR.glob("NAV_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not nav_files:
+            raise HTTPException(status_code=404, detail="No NAV demo data found in data/ directory")
+        nav_file = nav_files[0]
+
+    # Return cached run if already complete and files haven't changed
     if _DEMO_RUN_ID is not None:
         record = store.get(_DEMO_RUN_ID)
         if record and record.status in ("complete", "running", "pending"):
             return {"run_id": _DEMO_RUN_ID, "status": record.status}
-
-    holdings_files = sorted(DATA_DIR.glob("HOLDINGS_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
-    nav_files = sorted(DATA_DIR.glob("NAV_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
-    market_data = DATA_DIR / "market_data_ALL.csv"
-
-    if not holdings_files or not nav_files:
-        raise HTTPException(status_code=404, detail="No synthetic demo data found in data/ directory")
 
     run_id = str(uuid.uuid4())
     _DEMO_RUN_ID = run_id
@@ -161,8 +173,8 @@ async def run_demo():
     asyncio.create_task(
         _run_pipeline_bg(
             run_id,
-            holdings_files[0],
-            nav_files[0],
+            holdings_file,
+            nav_file,
             market_data if market_data.exists() else None,
         )
     )
