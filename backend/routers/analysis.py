@@ -114,6 +114,12 @@ def get_waterfall(run_id: str, portfolio: Optional[str] = Query(default=None)):
     }
 
 
+@router.get("/run/{run_id}/leverage")
+def get_leverage(run_id: str, portfolio: Optional[str] = Query(default=None)):
+    r = _portfolio_results(run_id, portfolio)
+    return r.get("aifmd2", {})
+
+
 @router.get("/run/{run_id}/validation")
 def get_validation(run_id: str, portfolio: Optional[str] = Query(default=None)):
     """Run business-logic validation checks against a completed pipeline run."""

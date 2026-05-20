@@ -170,6 +170,11 @@ export const DEFINITIONS = {
   },
 
   // ── AIFMD II KPIs ────────────────────────────────────────────────────────
+  commitment_leverage: {
+    label: 'Commitment Leverage',
+    section: '§AIFMD II',
+    body: 'Exposure / NAV under the Commitment Method (CDR 231/2013 Art. 8). Locked illiquid positions (e.g. private equity, real estate under lock-up) are excluded from netting. Derivatives are converted to delta-equivalent notionals. A conservative approximation — full netting requires trade-level agreements not captured in the holdings file.',
+  },
   gross_leverage: {
     label: 'Gross Leverage',
     section: '§AIFMD II',
