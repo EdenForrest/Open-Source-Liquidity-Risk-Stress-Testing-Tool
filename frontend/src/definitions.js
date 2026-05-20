@@ -185,6 +185,11 @@ export const DEFINITIONS = {
     section: '§AIFMD II',
     body: 'Number of Liquidity Management Tools (LMTs) pre-selected in the fund prospectus, as required by AIFMD II Art. 16 and Annex V. At least 2 tools must be selected (excluding side pockets). Pre-selected tools here: gate, suspension, swing pricing. Each tool has activation triggers calibrated to scenario redemption rates.',
   },
+  cap_utilization: {
+    label: 'Cap Utilization',
+    section: '§AIFMD II',
+    body: 'Gross leverage as a percentage of the applicable AIFMD II leverage cap: Cap Utilization = Gross Leverage / Cap. Open-ended loan AIFs are capped at 175% NAV; closed-ended loan AIFs at 300% NAV. Non-loan AIFs have no hard regulatory cap but must disclose leverage under Art. 15.\n\nHeadroom = Cap − Gross Leverage — the remaining capacity before the cap is breached. Turns amber above 80% utilization.',
+  },
   swing_factor: {
     label: 'Swing Factor',
     section: '§AIFMD II',

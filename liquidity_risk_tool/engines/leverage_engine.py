@@ -184,7 +184,9 @@ class LeverageEngine:
                 f"Loan origination AIF regime applies: {loan_pct*100:.1f}% NAV "
                 "in originated loans (threshold 50%)"
             )
-        if gross > 1.0 and not is_loan_aif:
+        # Threshold of 1.005 avoids false positives on pure long-only books where
+        # floating-point arithmetic lands fractionally above 1.0.
+        if gross > 1.005 and not is_loan_aif:
             msgs.append(
                 f"Fund uses leverage ({gross*100:.1f}% gross); "
                 "AIFMD II Art.15 disclosure required"

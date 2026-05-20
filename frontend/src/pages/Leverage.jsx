@@ -67,7 +67,7 @@ export default function Leverage() {
           color="slate"
         />
         <KPICard
-          label="Cap Utilization"
+          label={<MetricTooltip id="cap_utilization">Cap Utilization</MetricTooltip>}
           value={utilizationPct}
           sub={`headroom ${headroomPct}`}
           color={a.leverage_breach ? 'red' : (parseFloat(utilizationPct) > 80 ? 'amber' : 'green')}
@@ -168,7 +168,7 @@ export default function Leverage() {
       </div>
 
       {/* Regulatory basis */}
-      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+      <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
         Leverage computed per AIFMD II (Directive (EU) 2024/927), Article 15 and Commission Delegated Regulation (EU) 231/2013, Article 7 (Gross Method) and Article 8 (Commitment Method).
       </p>
     </div>
