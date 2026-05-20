@@ -81,15 +81,19 @@ def _rating() -> str:
 # Portfolio / security universe
 # ---------------------------------------------------------------------------
 
-# Five synthetic portfolios with distinct mandates:
+# Seven synthetic portfolios with distinct mandates:
 #
-#  SYN-EQUITY   : 100% listed equities → T+1 liquid, fully compliant
-#  SYN-GOVBOND  : 100% government bonds → T+1 liquid, fully compliant
-#  SYN-FIXEDINC : Government + HY + IG bonds → T+1/T+3/T+7, compliant
-#  SYN-MIXED    : Equities + gov + HY + IG + futures + forwards (hedging) → compliant
-#  SYN-ILLIQ    : HY-heavy + illiquid IG + minimal cash → NON-COMPLIANT
-#                 T+0/T+1 < 5% of NAV → triggers regulatory breach
-PORTFOLIOS = ["SYN-EQUITY", "SYN-GOVBOND", "SYN-FIXEDINC", "SYN-MIXED", "SYN-ILLIQ"]
+#  SYN-EQUITY    : 100% listed equities → T+1 liquid, fully compliant
+#  SYN-GOVBOND   : 100% government bonds → T+1 liquid, fully compliant
+#  SYN-FIXEDINC  : Government + HY + IG bonds → T+1/T+3/T+7, compliant
+#  SYN-MIXED     : Equities + gov + HY + IG + futures + forwards (hedging) → compliant
+#  SYN-ILLIQ     : HY-heavy + illiquid IG + minimal cash → NON-COMPLIANT
+#                  T+0/T+1 < 5% of NAV → triggers regulatory breach
+#  SYN-LOANFUND  : >50% originated loans → triggers loan origination AIF regime
+#                  one large borrower > 20% NAV → borrower concentration breach
+#  SYN-LEVERAGED : heavy TRS + futures → gross leverage > 175% AIFMD II cap → BREACH
+PORTFOLIOS = ["SYN-EQUITY", "SYN-GOVBOND", "SYN-FIXEDINC", "SYN-MIXED", "SYN-ILLIQ",
+              "SYN-LOANFUND", "SYN-LEVERAGED"]
 
 # Asset-class weights per portfolio mandate.
 # Keys map to _holdings_per_portfolio weight dicts.
@@ -133,6 +137,24 @@ PORTFOLIO_WEIGHTS: dict[str, dict] = {
         "hy_corporate_bond": 0.76,
         "ig_corporate_bond": 0.24,
     },
+    # Portfolio 6: Loan origination AIF — >50% of NAV in originated loans
+    # Triggers AIFMD II loan origination AIF regime (Art. 15a CDR).
+    # One large borrower exceeds 20% NAV concentration limit → breach.
+    # Handled via special-case logic in generate_holdings (two-pass sizing).
+    "SYN-LOANFUND": {
+        "originated_loan":   0.55,
+        "ig_corporate_bond": 0.30,
+        "cash":              0.15,
+    },
+    # Portfolio 7: Heavily leveraged derivatives — gross leverage > 175% AIFMD II cap.
+    # Handled via special-case logic in generate_holdings: TRS notionals are
+    # sized to 120% of the base-asset NAV so that total gross exposure ≈ 2.2× NAV.
+    "SYN-LEVERAGED": {
+        "listed_equity":    0.60,
+        "government_bond":  0.20,
+        "trs":              0.15,
+        "future":           0.05,
+    },
 }
 
 ASSET_CLASSES = [
@@ -147,6 +169,7 @@ ASSET_CLASSES = [
     "leveraged_equity",
     "trs",
     "cash",
+    "originated_loan",
 ]
 
 CURRENCIES = ["EUR", "USD", "GBP", "CHF", "JPY", "SEK", "DKK"]
@@ -465,6 +488,43 @@ def _gen_trs_row(portfolio: str, report_date: str) -> dict:
     }
 
 
+def _gen_loan_row(portfolio: str, report_date: str, notional: float | None = None) -> dict:
+    """Originated loan — illiquid private debt position.
+
+    PriceFactor = 0.01 (price expressed as percentage of par).
+    Exposure (base) is blank — loans are not derivatives.
+    MV = notional * price_pct / 100.
+    """
+    yymm   = report_date.replace("-", "")[:6]
+    suffix = random.randint(10000, 99999)
+    isin   = f"LOAN-SYN{yymm}-{suffix}"
+    if notional is None:
+        notional = random.choice([500_000, 1_000_000, 2_000_000, 5_000_000])
+    price_pct = random.uniform(95.0, 102.0)
+    mv_eur    = notional * price_pct / 100.0
+    borrower  = random.choice([
+        "SYNTH BORROWER ALPHA SA", "SYNTH BORROWER BETA GmbH",
+        "SYNTH BORROWER GAMMA Ltd", "SYNTH BORROWER DELTA NV",
+        "SYNTH BORROWER EPSILON SpA",
+    ])
+    return {
+        "Portfolio Code":               portfolio,
+        "Date":                         report_date,
+        "Security Name":                f"ORIGINATED LOAN {borrower} {yymm}",
+        "ISIN":                         isin,
+        "Quantity":                     str(int(notional)),
+        "Clean price (local)":          _eu(price_pct, 4),
+        "Exchange rate":                "1",
+        "Market Value in Base Currency": _eu(mv_eur, 2),
+        "Accruals in Base Currency":    "",
+        "Currency":                     "EUR",
+        "Exposure (base)":              "",
+        "Product Code":                 "5",   # private debt / loan
+        "Price Include":                "",
+        "PriceFactor":                  "0,01",
+    }
+
+
 # ---------------------------------------------------------------------------
 # Holdings file
 # ---------------------------------------------------------------------------
@@ -522,8 +582,106 @@ def generate_holdings(
         if isin:
             isin_map[isin] = (pcode, ac)
 
+    def _eu_float_local(s: str) -> float:
+        """Parse European-formatted number string back to float."""
+        try:
+            return float(str(s).replace(".", "").replace(",", "."))
+        except (ValueError, AttributeError):
+            return 0.0
+
     for pcode in portfolios:
         n = random.randint(*positions_per_portfolio)
+
+        # ── SYN-LOANFUND: two-pass to guarantee one borrower > 20% NAV ──────
+        if pcode == "SYN-LOANFUND":
+            _add(_gen_cash_row(pcode, report_date), pcode, "cash")
+            # Pass 1: generate IG bonds + regular loans + cash
+            bulk_classes = _holdings_per_portfolio(n - 1, portfolio=pcode)
+            pass1_rows: list[dict] = []
+            for ac in bulk_classes:
+                if ac in ("government_bond", "ig_corporate_bond"):
+                    r = _gen_bond_row(pcode, report_date, ac)
+                    pass1_rows.append((r, ac))
+                elif ac == "originated_loan":
+                    r = _gen_loan_row(pcode, report_date)
+                    pass1_rows.append((r, ac))
+                else:
+                    r = _gen_cash_row(pcode, report_date)
+                    pass1_rows.append((r, "cash"))
+            for r, ac in pass1_rows:
+                _add(r, pcode, ac)
+            # Estimate NAV from pass-1 rows
+            nav_est = sum(
+                _eu_float_local(r["Market Value in Base Currency"])
+                for r, _ in pass1_rows
+            )
+            # Pass 2: add one large loan at ~30% of estimated NAV → ~23% of final NAV
+            big_notional = max(nav_est * 0.30, 1_000_000.0)
+            _add(_gen_loan_row(pcode, report_date, notional=big_notional), pcode, "originated_loan")
+            continue
+
+        # ── SYN-LEVERAGED: two-pass to guarantee gross leverage > 175% ──────
+        if pcode == "SYN-LEVERAGED":
+            _add(_gen_cash_row(pcode, report_date), pcode, "cash")
+            # Pass 1: base equity + bond positions
+            base_classes = [ac for ac in _holdings_per_portfolio(n - 1, portfolio=pcode)
+                            if ac not in ("trs", "future")]
+            base_rows: list[tuple[dict, str]] = []
+            for ac in base_classes:
+                if ac == "listed_equity":
+                    r = _gen_equity_row(pcode, report_date)
+                    base_rows.append((r, ac))
+                elif ac in ("government_bond", "ig_corporate_bond"):
+                    r = _gen_bond_row(pcode, report_date, ac)
+                    base_rows.append((r, ac))
+                else:
+                    r = _gen_cash_row(pcode, report_date)
+                    base_rows.append((r, "cash"))
+            for r, ac in base_rows:
+                _add(r, pcode, ac)
+            # Compute base NAV from pass-1 rows
+            base_nav = sum(
+                abs(_eu_float_local(r["Market Value in Base Currency"]))
+                for r, _ in base_rows
+            )
+            if base_nav < 1_000_000:
+                base_nav = 10_000_000.0
+            # Pass 2: add TRS with total notionals = 1.2× base NAV (→ gross ≈ 2.2×)
+            trs_total = base_nav * 1.2
+            n_trs = random.randint(3, 5)
+            shares = sorted([random.random() for _ in range(n_trs - 1)] + [0.0, 1.0])
+            for i in range(n_trs):
+                notional_i = trs_total * (shares[i + 1] - shares[i])
+                if notional_i < 100_000:
+                    continue
+                yymm   = random.choice(["0626", "0926", "1226"])
+                isin   = f"TRS-SYN{yymm}-{random.randint(1000, 9999)}"
+                mtm    = max(abs(notional_i * random.uniform(-0.003, 0.003)), 1_000.0)
+                if random.random() < 0.5:
+                    mtm = -mtm
+                r = {
+                    "Portfolio Code":               pcode,
+                    "Date":                         report_date,
+                    "Security Name":                f"TRS Synth Equity Index SYN {yymm}",
+                    "ISIN":                         isin,
+                    "Quantity":                     str(int(notional_i)),
+                    "Clean price (local)":          _eu(1.0, 4),
+                    "Exchange rate":                "1",
+                    "Market Value in Base Currency": _eu(mtm, 2),
+                    "Accruals in Base Currency":    "",
+                    "Currency":                     "EUR",
+                    "Exposure (base)":              _eu(notional_i, 2),
+                    "Product Code":                 "6",
+                    "Price Include":                "",
+                    "PriceFactor":                  "1",
+                }
+                _add(r, pcode, "trs")
+            # Add 2–3 futures (MV ≈ 0, don't inflate NAV)
+            for _ in range(random.randint(2, 3)):
+                _add(_gen_future_row(pcode, report_date), pcode, "future")
+            continue
+
+        # ── Standard portfolios ───────────────────────────────────────────────
         # Always include at least one cash row.
         # For SYN-ILLIQ, force a tiny cash balance so T+0 stays below 2% of NAV.
         if pcode == "SYN-ILLIQ":
@@ -564,6 +722,8 @@ def generate_holdings(
                 _add(_gen_leveraged_equity_row(pcode, report_date), pcode, ac)
             elif ac == "trs":
                 _add(_gen_trs_row(pcode, report_date), pcode, ac)
+            elif ac == "originated_loan":
+                _add(_gen_loan_row(pcode, report_date), pcode, ac)
             else:
                 cash_row2 = _gen_cash_row(pcode, report_date)
                 _add(cash_row2, pcode, "cash")
@@ -817,6 +977,38 @@ def _mkt_cash(portfolio: str, ccy: str, fetch_date: str) -> dict:
     }
 
 
+def _mkt_loan(portfolio: str, isin: str, fetch_date: str) -> dict:
+    """Market data row for an originated loan.
+
+    No exchange ADV — loans are illiquid private instruments.
+    asset_class_hint forces csv_loader to classify as 'originated_loan'
+    so the leverage engine correctly counts it in loan_pct_nav.
+    """
+    return {
+        "portfolio":            portfolio,
+        "isin":                 isin,
+        "ric":                  "",
+        "asset_class_hint":     "originated_loan",
+        "currency":             "EUR",
+        "bid":                  "",
+        "ask":                  "",
+        "bid_ask_spread_bps":   "",
+        "adv_30d_eur":          "",
+        "beta":                 "",
+        "modified_duration":    str(round(random.uniform(1.0, 5.0), 2)),
+        "convexity":            "",
+        "ytm":                  str(round(random.uniform(0.04, 0.12), 4)),
+        "open_interest":        "",
+        "option_volume":        "",
+        "credit_spread_bps":    str(round(random.uniform(200, 800))),
+        "rating":               random.choice(["B+", "B", "B-", "CCC+"]),
+        "amount_outstanding":   "",
+        "fx_rate_to_eur":       "1.0",
+        "fetch_date":           fetch_date,
+        "fetch_errors":         "",
+    }
+
+
 def generate_market_data(
     report_date_iso: str,
     portfolios: list[str],
@@ -842,6 +1034,7 @@ def generate_market_data(
         "hy_corporate_bond": lambda pcode, isin: _mkt_bond(pcode, isin, "hy_corporate_bond", report_date_iso),
         "etf":               lambda pcode, isin: _mkt_etf(pcode, isin, report_date_iso),
         "option":            lambda pcode, isin: _mkt_option(pcode, isin, report_date_iso),
+        "originated_loan":   lambda pcode, isin: _mkt_loan(pcode, isin, report_date_iso),
     }
 
     if isin_map:
@@ -1016,7 +1209,7 @@ def generate_all(
     output_dir:  str | Path = None,
     report_date: str = None,
     seed:        int = 42,
-    n_portfolios: int = 5,
+    n_portfolios: int = 7,
     n_market_securities: int = 300,  # kept for CLI compat; no longer used internally
 ) -> Path:
     """
@@ -1147,8 +1340,8 @@ if __name__ == "__main__":
         help="Random seed for reproducibility (default: 42)"
     )
     parser.add_argument(
-        "--portfolios", "-p", type=int, default=5,
-        help="Number of synthetic portfolios 1-5 (default: 5)"
+        "--portfolios", "-p", type=int, default=7,
+        help="Number of synthetic portfolios 1-7 (default: 7)"
     )
     parser.add_argument(
         "--securities", "-n", type=int, default=300,

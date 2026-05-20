@@ -46,10 +46,15 @@ export default function MetricTooltip({ id, children, className = '' }) {
     const r = btnRef.current.getBoundingClientRect()
     const width = 320
     const margin = 8
+    const estimatedHeight = 160
     let left = r.left + r.width / 2 - width / 2
     if (left + width + margin > window.innerWidth) left = window.innerWidth - width - margin
     if (left < margin) left = margin
-    setPos({ top: r.bottom + 8, left })
+    const spaceBelow = window.innerHeight - r.bottom
+    const top = spaceBelow < estimatedHeight + margin
+      ? Math.max(margin, r.top - estimatedHeight - 8)
+      : r.bottom + 8
+    setPos({ top, left })
   }
 
   const bg = BG[theme] || BG.light

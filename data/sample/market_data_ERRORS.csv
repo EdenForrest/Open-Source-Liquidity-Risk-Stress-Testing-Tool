@@ -1,2 +1,6 @@
 portfolio,isin,ric,asset_class_hint,currency,fetch_errors
-SYN-EQUITY,US6617861975,NSGJ.SW,listed_equity,USD,spread_missing
+SYN-EQUITY,ES5113878823,KDHJO.L,listed_equity,EUR,no_data
+SYN-GOVBOND,IT0091253398,IT0091253398=,government_bond,EUR,adv_missing
+SYN-ILLIQ,FI3128541049,FI3128541049=,hy_corporate_bond,EUR,stale_price
+SYN-LEVERAGED,AT0251231652,RMIKF.SW,listed_equity,EUR,adv_missing
+SYN-LEVERAGED,FI0488803672,GPY.SW,listed_equity,EUR,adv_missing
