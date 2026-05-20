@@ -49,7 +49,7 @@ Or run locally:
 ```bash
 # Terminal 1 — backend API
 cd backend
-uvicorn main:app --reload --port 8000
+uvicorn main:app --reload --port 8080
 
 # Terminal 2 — frontend dev server
 cd frontend
@@ -87,7 +87,7 @@ liquidity_risk_tool/
 │   └── services/                    # Business logic wrappers + validation_service.py
 ├── frontend/                        # React + Vite + TailwindCSS v4 web UI
 │   ├── src/
-│   │   ├── pages/                   # Dashboard, StressTests, Waterfall, Charts
+│   │   ├── pages/                   # AllPortfolios, Dashboard, StressTests, Waterfall, Charts, Leverage, …
 │   │   ├── components/              # KPICard, MetricTooltip, EmptyState, …
 │   │   ├── AnalysisContext.jsx      # Global analysis state
 │   │   └── theme.js                 # Colour tokens for light/dark mode
@@ -452,12 +452,13 @@ The primary interface is a browser-based application (FastAPI + React/Vite/Tailw
 
 | Tab | Contents |
 |-----|---------|
+| All Portfolios | Cross-portfolio comparison table — NAV, LCR T+1/T+3/T+7, illiquid %, concentration, days-to-liquidate, leverage, and unified breach/warning status for every fund in the run |
 | Dashboard | Fund name, reporting date, 6 LCR KPI cards, liquidity ladder chart (normal vs stressed), positions table with bucket badges |
 | Stress Tests | Per-scenario NAV impact, liquidity before/after, scenario config expandable panel |
 | Waterfall | Forced sell-down KPIs (target, proceeds, residual shortfall, NAV impact), daily proceeds chart by bucket, sell-order table |
 | Charts | Liquidity ladder, portfolio composition pie, stress NAV impact, liquidity before/after, days-to-liquidate by position, waterfall cumulative proceeds line |
 
-Supports **light / dark mode** toggle. All charts are theme-aware with consistent colour tokens. Tooltips are fully readable in both modes.
+Supports **light / dark / Bloomberg Terminal** theme toggle. All charts are theme-aware with consistent colour tokens. Tooltips are fully readable in both modes.
 
 #### 9b. Legacy Desktop GUI — `ui-tk/gui.py`
 

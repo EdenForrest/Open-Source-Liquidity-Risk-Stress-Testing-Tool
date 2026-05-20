@@ -57,7 +57,8 @@ export default function AllPortfolios() {
   const rows = portfolioCodes.map(code => {
     const entry = allData[code]
     const m = entry?.liquidity?.liquidity_metrics
-    return { code, entry, m }
+    const a = entry?.aifmd2
+    return { code, entry, m, a }
   })
 
   return (
@@ -71,7 +72,7 @@ export default function AllPortfolios() {
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
-        {rows.map(({ code, m }) => (
+        {rows.map(({ code, m, a }) => (
           <button
             key={code}
             onClick={() => selectPortfolio(code)}
@@ -83,7 +84,7 @@ export default function AllPortfolios() {
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold truncate" style={{ color: 'var(--text-secondary)' }}>{code}</span>
-              {m && <StatusDot warning_flag={m.warning_flag} breach_flag={m.breach_flag} />}
+              {m && <StatusDot warning_flag={m.warning_flag} breach_flag={m.breach_flag || a?.leverage_breach} />}
             </div>
             <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{fmtEur(m?.total_nav_eur)}</div>
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>

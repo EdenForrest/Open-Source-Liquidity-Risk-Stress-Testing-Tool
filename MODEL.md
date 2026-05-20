@@ -1,7 +1,7 @@
 # Liquidity Risk & Stress Testing Tool — Model Documentation
 
-**Version:** 1.1  
-**Last reviewed:** 2026-05-17  
+**Version:** 1.2  
+**Last reviewed:** 2026-05-20  
 **Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV / AIFMD II (Directive (EU) 2024/927)  
 **Purpose:** Complete audit trail for every metric displayed in the GUI, its mathematical definition, and the theoretical framework used to derive it.
 
@@ -468,15 +468,17 @@ The tool ships with a fully synthetic dataset that is structurally identical to 
 
 ### 15.1 Portfolio mandates
 
-Five portfolios are generated, each with a distinct investment mandate and target liquidity profile:
+Seven portfolios are generated, each with a distinct investment mandate and target liquidity profile:
 
 | Portfolio | Mandate | Asset Allocation | Expected T+0/T+1 | Compliant? |
 |-----------|---------|-----------------|-----------------|------------|
-| `SYN-EQUITY`   | Large-cap equities | 97% listed equity, 3% cash | ~100% | Yes |
-| `SYN-GOVBOND`  | Government bonds | 95% government bonds, 5% cash | ~70% | Yes |
-| `SYN-FIXEDINC` | Fixed income | 55% govt, 25% IG, 12% HY, 8% cash | ~44% | Yes |
-| `SYN-MIXED`    | Multi-asset with hedging | 35% equity, 20% govt, 15% IG, 8% HY, 10% futures, 7% forwards, 5% cash | ~94% | Yes |
-| `SYN-ILLIQ`    | HY-heavy (stress test) | 76% HY bonds, 24% IG bonds, tiny forced cash | <1% | **No** |
+| `SYN-EQUITY`     | Large-cap equities | 97% listed equity, 3% cash | ~100% | Yes |
+| `SYN-GOVBOND`    | Government bonds | 95% government bonds, 5% cash | ~70% | Yes |
+| `SYN-FIXEDINC`   | Fixed income | 55% govt, 25% IG, 12% HY, 8% cash | ~44% | Yes |
+| `SYN-MIXED`      | Multi-asset with hedging | 35% equity, 20% govt, 15% IG, 8% HY, 10% futures, 7% forwards, 5% cash | ~94% | Yes |
+| `SYN-ILLIQ`      | HY-heavy (stress test) | 76% HY bonds, 24% IG bonds, tiny forced cash | <1% | **No** |
+| `SYN-LEVERAGED`  | Leveraged equity/credit | Equity + derivatives overlay; gross leverage >175% NAV | ~80% | Warning |
+| `SYN-LOANFUND`   | Loan origination AIF | >50% NAV in originated loans; subject to AIFMD II loan AIF rules | ~5% | Warning |
 
 `SYN-ILLIQ` is the sole non-compliant portfolio by design, with T+0/T+1 deliberately held below the 5% regulatory breach threshold. It serves as the benchmark adversarial case for stress testing and regulatory flag validation.
 
