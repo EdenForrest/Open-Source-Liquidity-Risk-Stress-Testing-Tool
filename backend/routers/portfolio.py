@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data" / "sample"
 
-# Cached demo run — computed once per server process
+# Cached demo run — invalidated when the holdings file changes
 _DEMO_RUN_ID: str | None = None
+_DEMO_HOLDINGS_MTIME: float | None = None
 
 
 def _safe_filename(raw: str | None, fallback: str) -> str:
@@ -160,14 +161,16 @@ async def run_demo():
             raise HTTPException(status_code=404, detail="No NAV demo data found in data/ directory")
         nav_file = nav_files[0]
 
-    # Return cached run if already complete and files haven't changed
-    if _DEMO_RUN_ID is not None:
+    # Return cached run if already complete and the holdings file hasn't changed
+    current_mtime = holdings_file.stat().st_mtime
+    if _DEMO_RUN_ID is not None and _DEMO_HOLDINGS_MTIME == current_mtime:
         record = store.get(_DEMO_RUN_ID)
         if record and record.status in ("complete", "running", "pending"):
             return {"run_id": _DEMO_RUN_ID, "status": record.status}
 
     run_id = str(uuid.uuid4())
     _DEMO_RUN_ID = run_id
+    _DEMO_HOLDINGS_MTIME = current_mtime
     store.create(run_id)
 
     asyncio.create_task(
