@@ -22,10 +22,25 @@ function StatusDot({ warning_flag, breach_flag }) {
   return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
 }
 
+// higher = better (LCR, coverage ratios)
 function LcrCell({ value, threshold = 0.1 }) {
   const pct = value ?? 0
   const color = pct >= 0.3 ? 'var(--kpi-green-text)' : pct >= threshold ? 'var(--kpi-amber-text)' : 'var(--kpi-red-text)'
   return <span className="font-semibold" style={{ color }}>{fmt(value)}</span>
+}
+
+// higher = worse (illiquid %, concentration, days, leverage)
+function RiskCell({ value, warnAt, redAt, display }) {
+  if (value == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+  const color = value >= redAt ? 'var(--kpi-red-text)' : value >= warnAt ? 'var(--kpi-amber-text)' : 'var(--kpi-green-text)'
+  return <span className="font-semibold" style={{ color }}>{display ?? value}</span>
+}
+
+// higher = better (liq/concentration ratio)
+function RatioCell({ value }) {
+  if (value == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+  const color = value >= 1.5 ? 'var(--kpi-green-text)' : value >= 0.5 ? 'var(--kpi-amber-text)' : 'var(--kpi-red-text)'
+  return <span className="font-semibold" style={{ color }}>{value.toFixed(2)}x</span>
 }
 
 export default function AllPortfolios() {
@@ -105,23 +120,42 @@ export default function AllPortfolios() {
               <MetricRow label="LCR T+1" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t1} />} />
               <MetricRow label="LCR T+3" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t3} />} />
               <MetricRow label="LCR T+7" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t7} />} />
-              <MetricRow label="Illiquid (>T+7)" codes={portfolioCodes} allData={allData} getter={m => fmt(m?.illiquid_pct)} />
-              <MetricRow label="Top-10 Concentration" codes={portfolioCodes} allData={allData} getter={m => fmt(m?.top10_concentration)} />
-              <MetricRow label="Liq / Concentration" codes={portfolioCodes} allData={allData} getter={m => (m?.liquidity_vs_concentration ?? null) != null ? m.liquidity_vs_concentration.toFixed(2) + 'x' : '—'} />
-              <MetricRow label="Days to 50% liquidated" codes={portfolioCodes} allData={allData} getter={m => fmtDays(m?.days_to_50pct)} />
-              <MetricRow label="Days to 75% liquidated" codes={portfolioCodes} allData={allData} getter={m => fmtDays(m?.days_to_75pct)} />
-              <MetricRow label="Days to 90% liquidated" codes={portfolioCodes} allData={allData} getter={m => fmtDays(m?.days_to_90pct)} />
-              <SectionHeaderRow label="AIFMD II Leverage" colSpan={portfolioCodes.length + 1} />
-              <LeverageMetricRow label="Gross Leverage" codes={portfolioCodes} allData={allData} getter={a => a?.gross_leverage != null ? (a.gross_leverage * 100).toFixed(1) + '%' : '—'} />
-              <LeverageMetricRow label="Commitment Leverage" codes={portfolioCodes} allData={allData} getter={a => a?.commitment_leverage != null ? (a.commitment_leverage * 100).toFixed(1) + '%' : '—'} />
+              <MetricRow label="Illiquid (>T+7)" codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.illiquid_pct} warnAt={0.1} redAt={0.2} display={fmt(m?.illiquid_pct)} />
+              )} />
+              <MetricRow label="Top-10 Concentration" codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.top10_concentration} warnAt={0.4} redAt={0.6} display={fmt(m?.top10_concentration)} />
+              )} />
+              <MetricRow label="Liq / Concentration" codes={portfolioCodes} allData={allData} getter={m => (
+                <RatioCell value={m?.liquidity_vs_concentration} />
+              )} />
+              <MetricRow label="Days to 50% liquidated" codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.days_to_50pct} warnAt={3} redAt={7} display={fmtDays(m?.days_to_50pct)} />
+              )} />
+              <MetricRow label="Days to 75% liquidated" codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.days_to_75pct} warnAt={7} redAt={14} display={fmtDays(m?.days_to_75pct)} />
+              )} />
+              <MetricRow label="Days to 90% liquidated" codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.days_to_90pct} warnAt={14} redAt={30} display={fmtDays(m?.days_to_90pct)} />
+              )} />
+              <LeverageMetricRow label="Gross Leverage" codes={portfolioCodes} allData={allData} getter={a => (
+                <RiskCell value={a?.gross_leverage} warnAt={1.5} redAt={1.75} display={a?.gross_leverage != null ? (a.gross_leverage * 100).toFixed(1) + '%' : null} />
+              )} />
+              <LeverageMetricRow label="Commitment Leverage" codes={portfolioCodes} allData={allData} getter={a => (
+                <RiskCell value={a?.commitment_leverage} warnAt={1.5} redAt={1.75} display={a?.commitment_leverage != null ? (a.commitment_leverage * 100).toFixed(1) + '%' : null} />
+              )} />
               <LeverageMetricRow label="Leverage Cap" codes={portfolioCodes} allData={allData} getter={a => a?.leverage_cap != null ? (a.leverage_cap * 100).toFixed(0) + '%' : '—'} />
               <LeverageMetricRow label="AIFMD II Status" codes={portfolioCodes} allData={allData} getter={a => {
                 if (!a) return <span style={{ color: 'var(--text-muted)' }}>—</span>
-                if (a.leverage_breach) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
-                if (!a.lmt_compliant) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>INCOMPLETE</span>
-                return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+                if (a.leverage_breach) return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+                if (!a.lmt_compliant) return <span className="font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>INCOMPLETE</span>
+                return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
               }} />
-              <LeverageMetricRow label="LMTs Pre-selected" codes={portfolioCodes} allData={allData} getter={a => a?.lmt_count != null ? `${a.lmt_count} (${a.lmt_compliant ? 'compliant' : 'insufficient'})` : '—'} />
+              <LeverageMetricRow label="LMTs Pre-selected" codes={portfolioCodes} allData={allData} getter={a => {
+                if (a?.lmt_count == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+                const color = a.lmt_compliant ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
+                return <span className="font-semibold" style={{ color }}>{a.lmt_count} ({a.lmt_compliant ? 'compliant' : 'insufficient'})</span>
+              }} />
             </tbody>
           </table>
         </div>
@@ -143,17 +177,6 @@ function MetricRow({ label, codes, allData, getter }) {
           </td>
         )
       })}
-    </tr>
-  )
-}
-
-function SectionHeaderRow({ label, colSpan }) {
-  return (
-    <tr>
-      <td colSpan={colSpan} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
-        style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', borderTop: '2px solid var(--border)' }}>
-        {label}
-      </td>
     </tr>
   )
 }
