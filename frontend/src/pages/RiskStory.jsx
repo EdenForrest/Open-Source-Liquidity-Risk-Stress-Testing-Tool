@@ -124,26 +124,29 @@ export default function RiskStory() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-3 space-y-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-800">Liquidity Risk Summary</h1>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Liquidity Risk Summary</h1>
         <div className="flex gap-2">
           <button
             onClick={copy}
-            className="rounded-lg border border-slate-300 px-4 py-1.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+            className="rounded border px-3 py-1 text-xs transition-colors"
+            style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'var(--bg-surface)' }}
           >
             Copy text
           </button>
           <button
             onClick={downloadJSON}
-            className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors"
+            className="rounded px-3 py-1 text-xs font-semibold text-white transition-colors"
+            style={{ background: 'var(--text-accent)' }}
           >
             Download JSON
           </button>
         </div>
       </div>
 
-      <pre className="rounded-xl bg-slate-900 text-green-300 p-6 text-xs leading-relaxed overflow-auto whitespace-pre-wrap font-mono shadow-inner">
+      <pre className="rounded border text-xs leading-relaxed overflow-auto whitespace-pre-wrap font-mono p-4"
+        style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--kpi-green-text)' }}>
         {narrative}
       </pre>
     </div>

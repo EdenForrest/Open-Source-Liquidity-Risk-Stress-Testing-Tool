@@ -58,16 +58,16 @@ const NAV_ITEMS = [
 function Sidebar() {
   return (
     <aside style={{ background: 'var(--sidebar-bg)', borderRightColor: 'var(--sidebar-border)' }}
-      className="w-56 min-h-screen flex flex-col shrink-0 border-r">
-      <div style={{ borderBottomColor: 'var(--sidebar-border)' }} className="px-5 py-5 border-b">
-        <div style={{ color: 'var(--sidebar-logo-text)' }} className="font-bold text-sm leading-tight">
+      className="w-44 min-h-screen flex flex-col shrink-0 border-r">
+      <div style={{ borderBottomColor: 'var(--sidebar-border)' }} className="px-3 py-3 border-b">
+        <div style={{ color: 'var(--sidebar-logo-text)' }} className="font-bold text-xs tracking-widest leading-tight uppercase">
           Liquidity Risk
         </div>
         <div style={{ color: 'var(--sidebar-logo-sub)' }} className="text-xs mt-0.5">
           Analytics Platform
         </div>
       </div>
-      <nav className="flex-1 py-4 space-y-0.5 px-2">
+      <nav className="flex-1 py-2 space-y-0.5 px-1">
         {NAV_ITEMS.map(({ to, label, Icon }) => (
           <NavLink
             key={to}
@@ -77,7 +77,7 @@ function Sidebar() {
               : { color: 'var(--sidebar-text)' }
             }
             className={({ isActive }) =>
-              `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ` +
+              `flex items-center gap-2 px-3 py-1.5 rounded-sm text-xs transition-colors ` +
               (isActive ? 'font-semibold' : 'hover:bg-[var(--nav-hover-bg)] hover:text-[var(--nav-hover-text)]')
             }
           >
@@ -87,7 +87,7 @@ function Sidebar() {
         ))}
       </nav>
       <div style={{ borderTopColor: 'var(--sidebar-border)', color: 'var(--sidebar-ver)' }}
-        className="px-5 py-4 border-t text-xs">
+        className="px-3 py-2 border-t text-xs">
         v1.1 — ESMA/AIFMD
       </div>
     </aside>
@@ -105,7 +105,7 @@ function PortfolioSelector() {
         value={selectedPortfolio || ''}
         onChange={(e) => selectPortfolio(e.target.value)}
         style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
-        className="rounded-lg border px-3 py-1.5 text-sm focus:outline-none"
+        className="rounded border px-2 py-1 text-xs focus:outline-none"
       >
         {portfolioCodes.map((code) => (
           <option key={code} value={code}>{code}</option>
@@ -118,7 +118,7 @@ function PortfolioSelector() {
 function ThemeSwitcher() {
   const { theme, setTheme } = useTheme()
   return (
-    <div className="flex items-center gap-1 ml-auto rounded-lg overflow-hidden"
+    <div className="flex items-center gap-0 ml-auto rounded overflow-hidden"
       style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
       {THEMES.map(({ id, label }) => (
         <button
@@ -146,7 +146,7 @@ export default function App() {
             <Sidebar />
             <div className="flex-1 flex flex-col min-w-0">
               <header style={{ background: 'var(--header-bg)', borderBottomColor: 'var(--header-border)' }}
-                className="border-b px-6 py-3 flex items-center gap-4 shrink-0 flex-wrap">
+                className="border-b px-3 py-2 flex items-center gap-4 shrink-0 flex-wrap">
                 <Uploader />
                 <PortfolioSelector />
                 <ThemeSwitcher />

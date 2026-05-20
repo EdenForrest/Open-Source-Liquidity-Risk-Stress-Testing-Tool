@@ -38,10 +38,10 @@ export default function StressTests() {
   }))
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 space-y-3">
       <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Stress Tests</h1>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         <KPICard label={<MetricTooltip id="worst_nav_impact">Worst NAV Impact</MetricTooltip>} value={pct(worstNav?.nav_impact_pct)} sub={worstNav?.scenario_name} color="red" />
         <KPICard label={<MetricTooltip id="worst_liq_after">Worst Liquidity After</MetricTooltip>} value={pct(worstLiq?.liquid_pct_after)} sub={worstLiq?.scenario_name} color="amber" />
         <KPICard label={<MetricTooltip id="max_days_to_liq">Max Days to Liquidate</MetricTooltip>} value={worstDays?.time_to_liquidate_days?.toFixed(1) ?? '—'} sub={worstDays?.scenario_name} color="amber" />
@@ -49,8 +49,8 @@ export default function StressTests() {
           color={metCount === results.length ? 'green' : metCount === 0 ? 'red' : 'amber'} />
       </div>
 
-      <div className="rounded-xl shadow-sm border p-5" style={panelStyle}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-4" style={headingStyle}>
+      <div className="rounded shadow-sm border p-3" style={panelStyle}>
+        <h2 className="text-sm font-semibold uppercase tracking-wide bb-head mb-2" style={headingStyle}>
           NAV Impact by Scenario
         </h2>
         <ResponsiveContainer width="100%" height={220}>
@@ -72,8 +72,8 @@ export default function StressTests() {
         </ResponsiveContainer>
       </div>
 
-      <div className="rounded-xl shadow-sm border overflow-auto" style={panelStyle}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide p-4 pb-2" style={headingStyle}>
+      <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
+        <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={headingStyle}>
           Scenario Results
         </h2>
         <table className="w-full text-sm">
@@ -122,8 +122,8 @@ export default function StressTests() {
         </table>
       </div>
 
-      <div className="rounded-xl shadow-sm border overflow-auto" style={panelStyle}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide p-4 pb-2" style={headingStyle}>
+      <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
+        <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={headingStyle}>
           Scenario Parameters
         </h2>
         <table className="w-full text-sm">

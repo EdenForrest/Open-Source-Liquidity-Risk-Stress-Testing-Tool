@@ -8,8 +8,8 @@ import { pct, fmtEur } from '../utils/formatters'
 function Row({ label, value, sub, highlight }) {
   return (
     <tr style={highlight ? { background: 'var(--kpi-red-bg)' } : {}}>
-      <td className="px-4 py-2.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</td>
-      <td className="px-4 py-2.5 text-sm font-semibold text-right" style={{ color: highlight ? 'var(--kpi-red-text)' : 'var(--text-primary)' }}>
+      <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{label}</td>
+      <td className="px-3 py-1.5 text-sm font-semibold text-right" style={{ color: highlight ? 'var(--kpi-red-text)' : 'var(--text-primary)' }}>
         {value}
         {sub && <span className="ml-2 text-xs font-normal opacity-60">{sub}</span>}
       </td>
@@ -42,7 +42,7 @@ export default function Leverage() {
   const surfaceStyle = { background: 'var(--bg-surface)' }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 space-y-3">
       <div>
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
           AIFMD II Leverage — {liq?.fund_name ?? ''}
@@ -53,7 +53,7 @@ export default function Leverage() {
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <KPICard
           label={<MetricTooltip id="gross_leverage">Gross Leverage</MetricTooltip>}
           value={grossPct}
@@ -82,17 +82,17 @@ export default function Leverage() {
 
       {/* Warnings */}
       {warnings.length > 0 && (
-        <div className="rounded-xl border p-4 space-y-1" style={{ background: 'var(--kpi-amber-bg)', borderColor: 'var(--kpi-amber-border)' }}>
+        <div className="rounded border p-3 space-y-1" style={{ background: 'var(--kpi-amber-bg)', borderColor: 'var(--kpi-amber-border)' }}>
           {warnings.map((w, i) => (
             <p key={i} className="text-sm" style={{ color: 'var(--kpi-amber-text)' }}>⚠ {w}</p>
           ))}
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {/* Leverage detail table */}
-        <div className="rounded-xl shadow-sm border overflow-hidden" style={panelStyle}>
-          <h2 className="text-sm font-semibold uppercase tracking-wide px-4 py-3" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
+        <div className="rounded shadow-sm border overflow-hidden" style={panelStyle}>
+          <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
             Leverage Metrics
           </h2>
           <table className="w-full">
@@ -110,8 +110,8 @@ export default function Leverage() {
         </div>
 
         {/* Loan origination & constraints */}
-        <div className="rounded-xl shadow-sm border overflow-hidden" style={panelStyle}>
-          <h2 className="text-sm font-semibold uppercase tracking-wide px-4 py-3" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
+        <div className="rounded shadow-sm border overflow-hidden" style={panelStyle}>
+          <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
             Loan Origination AIF
           </h2>
           <table className="w-full">
@@ -138,8 +138,8 @@ export default function Leverage() {
       </div>
 
       {/* LMT panel */}
-      <div className="rounded-xl shadow-sm border p-5 space-y-3" style={panelStyle}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+      <div className="rounded shadow-sm border p-3 space-y-2" style={panelStyle}>
+        <h2 className="text-sm font-semibold uppercase tracking-wide bb-head" style={{ color: 'var(--text-secondary)' }}>
           Liquidity Management Tools — AIFMD II Art. 16 &amp; Annex V
         </h2>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>

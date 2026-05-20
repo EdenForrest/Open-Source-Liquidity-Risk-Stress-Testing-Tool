@@ -46,16 +46,16 @@ export default function AllPortfolios() {
   })
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 space-y-3">
       <div>
-        <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>All Portfolios</h1>
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>All Portfolios</h1>
         <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
           {portfolioCodes.length} portfolio{portfolioCodes.length !== 1 ? 's' : ''} — click a row to drill into that portfolio
         </p>
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-2">
         {rows.map(({ code, m }) => (
           <button
             key={code}
@@ -64,7 +64,7 @@ export default function AllPortfolios() {
               ? { background: 'var(--bg-surface)', border: '1px solid var(--text-accent)' }
               : { background: 'var(--bg-panel)', border: '1px solid var(--border)' }
             }
-            className="text-left rounded-xl p-4 shadow-sm transition-all hover:opacity-80"
+            className="text-left rounded p-3 shadow-sm transition-all hover:opacity-80"
           >
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-bold truncate" style={{ color: 'var(--text-secondary)' }}>{code}</span>
@@ -82,17 +82,17 @@ export default function AllPortfolios() {
       </div>
 
       {/* Detail table */}
-      <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
-        <div className="px-5 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Metric Comparison</h2>
+      <div className="rounded border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
+        <div className="bb-head px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Metric Comparison</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs uppercase tracking-wide" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
               <tr>
-                <th className="px-4 py-3 text-left" style={{ background: 'var(--bg-surface)' }}>Metric</th>
+                <th className="px-3 py-2 text-left" style={{ background: 'var(--bg-surface)' }}>Metric</th>
                 {portfolioCodes.map(code => (
-                  <th key={code} className="px-4 py-3 text-right whitespace-nowrap">{code}</th>
+                  <th key={code} className="px-3 py-2 text-right whitespace-nowrap">{code}</th>
                 ))}
               </tr>
             </thead>
@@ -134,11 +134,11 @@ function MetricRow({ label, codes, allData, getter }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}
       className="transition-colors hover:opacity-80">
-      <td className="px-4 py-2.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>{label}</td>
+      <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>{label}</td>
       {codes.map(code => {
         const m = allData[code]?.liquidity?.liquidity_metrics
         return (
-          <td key={code} className="px-4 py-2.5 text-right" style={{ color: 'var(--text-primary)' }}>
+          <td key={code} className="px-3 py-1.5 text-right" style={{ color: 'var(--text-primary)' }}>
             {getter(m)}
           </td>
         )
@@ -150,7 +150,7 @@ function MetricRow({ label, codes, allData, getter }) {
 function SectionHeaderRow({ label, colSpan }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="px-4 py-2 text-xs font-semibold uppercase tracking-wide"
+      <td colSpan={colSpan} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
         style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', borderTop: '2px solid var(--border)' }}>
         {label}
       </td>
@@ -162,11 +162,11 @@ function LeverageMetricRow({ label, codes, allData, getter }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}
       className="transition-colors hover:opacity-80">
-      <td className="px-4 py-2.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>{label}</td>
+      <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>{label}</td>
       {codes.map(code => {
         const a = allData[code]?.aifmd2
         return (
-          <td key={code} className="px-4 py-2.5 text-right" style={{ color: 'var(--text-primary)' }}>
+          <td key={code} className="px-3 py-1.5 text-right" style={{ color: 'var(--text-primary)' }}>
             {getter(a)}
           </td>
         )

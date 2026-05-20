@@ -37,7 +37,7 @@ function ScoreBadge({ passed, total }) {
   const allPassed = failed === 0
   return (
     <div className="flex items-center gap-3">
-      <span className="text-3xl font-bold tabular-nums" style={{ color: allPassed ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)' }}>
+      <span className="text-2xl font-bold tabular-nums bb-num" style={{ color: allPassed ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)' }}>
         {passed}/{total}
       </span>
       <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
@@ -53,8 +53,8 @@ function CategorySection({ category, checks }) {
   const allOk = passed === checks.length
 
   return (
-    <div className="rounded-xl border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
-      <div className="px-5 py-3 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+    <div className="rounded border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
+      <div className="px-3 py-2 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
         <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{category}</h2>
         <span className="text-xs font-semibold tabular-nums" style={{ color: allOk ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)' }}>
           {passed}/{checks.length}
@@ -70,13 +70,13 @@ function CategorySection({ category, checks }) {
                 background: check.passed ? 'transparent' : 'color-mix(in srgb, var(--kpi-red-text) 6%, transparent)',
               }}
             >
-              <td className="px-4 py-2.5 w-6">
+              <td className="px-3 py-1.5 w-6">
                 {check.passed ? <PassIcon /> : <FailIcon />}
               </td>
-              <td className="px-2 py-2.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+              <td className="px-2 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
                 {check.name}
               </td>
-              <td className="px-4 py-2.5 text-right" style={{ color: check.passed ? 'var(--text-muted)' : 'var(--kpi-red-text)' }}>
+              <td className="px-3 py-1.5 text-right" style={{ color: check.passed ? 'var(--text-muted)' : 'var(--kpi-red-text)' }}>
                 {check.message}
               </td>
             </tr>
@@ -105,15 +105,15 @@ export default function Validation() {
   ]
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 space-y-3">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Validation Report</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Validation Report</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
             Business-logic integrity checks on the computed pipeline output
           </p>
         </div>
-        <div className="rounded-xl border px-5 py-4 shrink-0" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
+        <div className="rounded border px-3 py-3 shrink-0" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
           <ScoreBadge passed={v.passed} total={v.total} />
         </div>
       </div>

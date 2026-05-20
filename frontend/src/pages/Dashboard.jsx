@@ -33,12 +33,12 @@ export default function Dashboard() {
   const rowOdd  = { background: 'var(--bg-surface)' }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 space-y-3">
       <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
         {liq.fund_name} — {liq.reporting_date}
       </h1>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         <KPICard label={<MetricTooltip id="lcr_t1">LCR T+1</MetricTooltip>} value={fmt(m.lcr_t1)} color="blue" />
         <KPICard label={<MetricTooltip id="lcr_t3">LCR T+3</MetricTooltip>} value={fmt(m.lcr_t3)} color="blue" />
         <KPICard label={<MetricTooltip id="lcr_t7">LCR T+7</MetricTooltip>} value={fmt(m.lcr_t7)} color="blue" />
@@ -52,8 +52,8 @@ export default function Dashboard() {
         />
       </div>
 
-      <div className="rounded-xl shadow-sm border p-5" style={panelStyle}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: 'var(--text-secondary)' }}>
+      <div className="rounded shadow-sm border p-3" style={panelStyle}>
+        <h2 className="text-sm font-semibold uppercase tracking-wide mb-2 bb-head" style={{ color: 'var(--text-secondary)' }}>
           Liquidity Ladder — Normal vs Stressed (% NAV)
         </h2>
         <ResponsiveContainer width="100%" height={260}>
@@ -74,7 +74,7 @@ export default function Dashboard() {
         </ResponsiveContainer>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <KPICard label={<MetricTooltip id="days_to_50pct">Days to 50% NAV</MetricTooltip>} value={m.days_to_50pct?.toFixed(1) ?? '—'} color="slate" />
         <KPICard label={<MetricTooltip id="days_to_75pct">Days to 75% NAV</MetricTooltip>} value={m.days_to_75pct?.toFixed(1) ?? '—'} color="slate" />
         <KPICard label={<MetricTooltip id="days_to_90pct">Days to 90% NAV</MetricTooltip>} value={m.days_to_90pct?.toFixed(1) ?? '—'} color="slate" />
@@ -82,11 +82,11 @@ export default function Dashboard() {
       </div>
 
       {aifmd2 && aifmd2.gross_leverage != null ? (
-        <div className="rounded-xl shadow-sm border p-5" style={panelStyle}>
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: 'var(--text-secondary)' }}>
+        <div className="rounded shadow-sm border p-3" style={panelStyle}>
+          <h2 className="text-sm font-semibold uppercase tracking-wide mb-2 bb-head" style={{ color: 'var(--text-secondary)' }}>
             AIFMD II — Directive (EU) 2024/927
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <KPICard
               label={<MetricTooltip id="gross_leverage">Gross Leverage</MetricTooltip>}
               value={(aifmd2.gross_leverage * 100).toFixed(1) + '%'}
@@ -125,7 +125,7 @@ export default function Dashboard() {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border p-4 flex items-center gap-3"
+        <div className="rounded border p-3 flex items-center gap-3"
           style={{ background: 'var(--kpi-amber-bg)', borderColor: 'var(--kpi-amber-border)' }}>
           <span style={{ color: 'var(--kpi-amber-text)' }}>⚠</span>
           <p className="text-sm" style={{ color: 'var(--kpi-amber-text)' }}>
@@ -134,8 +134,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="rounded-xl shadow-sm border overflow-auto" style={panelStyle}>
-        <h2 className="text-sm font-semibold uppercase tracking-wide p-4 pb-2" style={{ color: 'var(--text-secondary)' }}>
+      <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
+        <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={{ color: 'var(--text-secondary)' }}>
           Positions
         </h2>
         <table className="w-full text-sm">

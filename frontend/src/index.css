@@ -94,6 +94,19 @@ body {
   letter-spacing: 0.02em;
 }
 
+/* Bloomberg Terminal — dense monospaced tables */
+[data-theme="bloomberg"] table {
+  font-family: 'Roboto Mono', 'Courier New', monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
+/* Bloomberg Terminal — section header left-accent */
+[data-theme="bloomberg"] .bb-head {
+  border-left: 2px solid var(--text-accent);
+  padding-left: 6px;
+}
+
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }

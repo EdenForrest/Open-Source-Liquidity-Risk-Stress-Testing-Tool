@@ -22,8 +22,8 @@ function Alert({ triggered }) {
 function RedemptionTable({ rows, label }) {
   if (!rows?.length) return null
   return (
-    <div className="rounded-xl overflow-auto th-panel border" style={{ background: 'var(--bg-panel)' }}>
-      <h2 className="text-sm font-semibold uppercase tracking-wide p-4 pb-2" style={{ color: 'var(--text-secondary)' }}>{label}</h2>
+    <div className="rounded overflow-auto th-panel border" style={{ background: 'var(--bg-panel)' }}>
+      <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={{ color: 'var(--text-secondary)' }}>{label}</h2>
       <table className="w-full text-sm">
         <thead className="text-xs uppercase" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
           <tr>
@@ -89,7 +89,7 @@ export default function Redemption() {
   if (!redemption) return <EmptyState />
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 space-y-3">
       <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Redemption Coverage</h1>
       <RedemptionTable rows={redemption.redemption_results} label="Normal Regime" />
       <RedemptionTable rows={redemption.redemption_stress_results} label="Stressed Regime" />
