@@ -48,9 +48,13 @@ data/*.xlsx
 data/*.json
 data/real/
 data/cache/
-# Allow the synthetic sample directory
+# Allow the synthetic sample directory (synthetic holdings/NAV only)
 !data/sample/
 !data/sample/**
+# Exclude Refinitiv market data and licensed rate files from sample/
+data/sample/market_data_ALL.csv
+data/sample/market_data_ERRORS.csv
+data/sample/zero_coupon_yields.xlsx
 
 # Generated output reports and charts
 output/
@@ -66,6 +70,9 @@ data/market_data_ALL.csv
 data/market_data_ERRORS.csv
 integrations/refinitiv/.env
 integrations/refinitiv/secrets.py
+
+# Internal documentation (not for public release)
+docs/
 
 # Local tooling
 .claude/
