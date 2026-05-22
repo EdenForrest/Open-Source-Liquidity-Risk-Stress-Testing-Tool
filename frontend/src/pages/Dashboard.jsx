@@ -9,7 +9,6 @@ import StatusBanner from '../components/StatusBanner'
 import { SERIES_COLORS, bucketBadgeStyle, chartTheme } from '../theme'
 import MetricTooltip from '../components/MetricTooltip'
 import { fmt, fmtEur } from '../utils/formatters'
-import { GeoWorldMap, GeoBarChart, GeoDonut, GeoLegend } from './Charts'
 
 export default function Dashboard() {
   const { data, error } = useAnalysis()
@@ -150,28 +149,6 @@ export default function Dashboard() {
           <p className="text-sm" style={{ color: 'var(--kpi-amber-text)' }}>
             AIFMD II leverage data is not available for this portfolio. Upload a holdings file with leveraged positions or derivative exposures to enable this section.
           </p>
-        </div>
-      )}
-
-      {m.geo_top_country != null && (
-        <div className="rounded shadow-sm border p-3" style={panelStyle}>
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-2 bb-head" style={{ color: 'var(--text-secondary)' }}>
-            Geographical Concentration (AIFMD Annex IV)
-          </h2>
-          <div className="flex gap-4 text-sm mb-3">
-            <span style={{ color: m.geo_breach_flag ? 'var(--kpi-red-text)' : m.geo_warning_flag ? 'var(--kpi-amber-text)' : 'var(--kpi-green-text)' }} className="font-semibold">
-              {m.geo_breach_flag ? 'BREACH — Non-EU >50%' : m.geo_warning_flag ? 'Warning — Single country >35%' : 'Geo OK'}
-            </span>
-            <span style={{ color: 'var(--text-secondary)' }}>
-              Top: <strong style={{ color: 'var(--text-primary)' }}>{m.geo_top_country}</strong> {fmt(m.geo_top_country_pct)}
-            </span>
-          </div>
-          <GeoWorldMap topCountries={m.top_countries} />
-          <GeoLegend />
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <GeoBarChart topCountries={m.top_countries} />
-            <GeoDonut euPct={m.eu_pct} nonEuPct={m.non_eu_pct} />
-          </div>
         </div>
       )}
 

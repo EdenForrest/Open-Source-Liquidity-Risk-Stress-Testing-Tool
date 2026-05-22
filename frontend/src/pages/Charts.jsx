@@ -19,6 +19,7 @@ export default function Charts() {
   const wf = data?.waterfall
   if (!liq) return <EmptyState />
 
+  const m = liq.liquidity_metrics
   const ladder = liq.liquidity_ladder || []
   const stressLadder = liq.stress_ladder || []
   const positions = liq.position_buckets || []
@@ -171,6 +172,29 @@ export default function Charts() {
             </LineChart>
           </ChartCard>
         )}
+        {/* 7. Geographical Concentration */}
+        {m?.geo_top_country != null && (
+          <div className="lg:col-span-2 rounded-xl shadow-sm border p-5"
+            style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
+            <h2 className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-secondary)' }}>
+              Geographical Concentration (AIFMD Annex IV)
+            </h2>
+            <div className="flex gap-4 text-sm mb-3">
+              <span className="font-semibold" style={{ color: m.geo_breach_flag ? 'var(--kpi-red-text)' : m.geo_warning_flag ? 'var(--kpi-amber-text)' : 'var(--kpi-green-text)' }}>
+                {m.geo_breach_flag ? 'BREACH — Non-EU >50%' : m.geo_warning_flag ? 'Warning — Single country >35%' : 'Geo OK'}
+              </span>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                Top: <strong style={{ color: 'var(--text-primary)' }}>{m.geo_top_country}</strong> {m.geo_top_country_pct != null ? (m.geo_top_country_pct * 100).toFixed(1) + '%' : '—'}
+              </span>
+            </div>
+            <GeoWorldMap topCountries={m.top_countries} />
+            <GeoLegend />
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <GeoBarChart topCountries={m.top_countries} />
+              <GeoDonut euPct={m.eu_pct} nonEuPct={m.non_eu_pct} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -319,7 +343,7 @@ export function GeoBarChart({ topCountries = {} }) {
           contentStyle={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
         <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
           {data.map((d, i) => (
-            <Cell key={i} fill={d.country === 'Other' ? '#64748b' : d.eu ? '#3b82f6' : '#f59e0b'} />
+            <Cell key={i} fill={d.country === 'Other' ? '#64748b' : d.pct > 35 ? '#ef4444' : d.pct > 15 ? '#f59e0b' : '#fde68a'} />
           ))}
         </Bar>
       </BarChart>

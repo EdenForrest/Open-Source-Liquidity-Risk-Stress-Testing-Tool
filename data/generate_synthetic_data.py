@@ -189,7 +189,7 @@ ISIN_COUNTRIES = ["DE", "FR", "NL", "BE", "AT", "ES", "IT", "FI",
                   "IE", "LU", "GB", "US", "CH", "SE", "DK"]
 
 EQUITY_COUNTRIES = ["DE", "FR", "NL", "BE", "AT", "ES", "IT",
-                    "FI", "GB", "US", "CH", "SE", "DK"]
+                    "FI", "GB", "US", "CH", "SE", "IE", "LU", "PT"]
 
 BOND_COUNTRIES   = ["DE", "FR", "IT", "ES", "NL", "AT", "FI", "BE", "US", "GB"]
 
@@ -199,10 +199,12 @@ ETF_COUNTRIES    = ["IE", "LU"]   # UCITS domicile for ETFs
 # to trigger AIFMD Annex IV geo flags in two demo portfolios.
 # probability is per-position (applied independently to each bond/equity row).
 PORTFOLIO_GEO_OVERRIDES: dict[str, dict] = {
-    # SYN-GOVBOND: ~45% of positions get DE ISINs → single country DE > 35% NAV → Warning
-    "SYN-GOVBOND": {"country": "DE", "probability": 0.45},
-    # SYN-ILLIQ: ~65% of positions get US ISINs → non-EU aggregate > 50% NAV → Breach
-    "SYN-ILLIQ":   {"country": "US", "probability": 0.65},
+    # SYN-GOVBOND: force ~75% of positions to DE → single country DE > 35% NAV → Warning
+    "SYN-GOVBOND": {"country": "DE", "probability": 0.75},
+    # SYN-ILLIQ: force ~38% of positions to US → single country US ~37-43% NAV → Warning (not breach)
+    "SYN-ILLIQ":   {"country": "US", "probability": 0.38},
+    # SYN-MIXED: strongly anchor positions to DE to dilute SE accumulation → OK
+    "SYN-MIXED":   {"country": "DE", "probability": 0.80},
 }
 
 
@@ -275,8 +277,8 @@ def _gen_cash_row(portfolio: str, report_date: str) -> dict:
     }
 
 
-def _gen_equity_row(portfolio: str, report_date: str) -> dict:
-    country  = random.choice(EQUITY_COUNTRIES)
+def _gen_equity_row(portfolio: str, report_date: str, forced_country: str | None = None) -> dict:
+    country  = forced_country if forced_country else random.choice(EQUITY_COUNTRIES)
     isin     = _isin(country)
     ccy      = "EUR" if country not in ("GB", "US", "CH", "SE", "DK") else (
                 "GBP" if country == "GB" else
@@ -599,7 +601,9 @@ def generate_holdings(
         except (ValueError, AttributeError):
             return 0.0
 
-    for pcode in portfolios:
+    for p_idx, pcode in enumerate(portfolios):
+        # Re-seed per portfolio so changes to one portfolio don't shift others.
+        random.seed(42 + p_idx * 1000)
         n = random.randint(*positions_per_portfolio)
 
         # ── SYN-LOANFUND: two-pass to guarantee one borrower > 20% NAV ──────
@@ -718,7 +722,10 @@ def generate_holdings(
         _geo = PORTFOLIO_GEO_OVERRIDES.get(pcode)
         for ac in _holdings_per_portfolio(n - 1, portfolio=pcode):
             if ac == "listed_equity":
-                _add(_gen_equity_row(pcode, report_date), pcode, ac)
+                _fc = None
+                if _geo and random.random() < _geo["probability"]:
+                    _fc = _geo["country"]
+                _add(_gen_equity_row(pcode, report_date, forced_country=_fc), pcode, ac)
             elif ac in ("government_bond", "ig_corporate_bond", "hy_corporate_bond"):
                 _fc = None
                 if _geo and random.random() < _geo["probability"]:
