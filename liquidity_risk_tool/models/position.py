@@ -53,6 +53,9 @@ class Position:
     # Gross Method leverage computation (CDR 231/2013 Art.7).
     exposure_base: Optional[float] = None
 
+    # ISO 3166-1 alpha-2 country code derived from ISIN prefix (e.g. "DE", "US")
+    country: Optional[str] = None
+
     @property
     def effective_convexity(self) -> float:
         if self.convexity is not None:
@@ -180,6 +183,7 @@ class Portfolio:
                 "settlement_days":    p.settlement_days,
                 "is_government":      p.is_government,
                 "exposure_base":      p.exposure_base,
+                "country":            p.country,
             })
         self._positions_df_cache = pd.DataFrame(rows)
         return self._positions_df_cache

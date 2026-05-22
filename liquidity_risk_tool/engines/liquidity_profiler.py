@@ -25,6 +25,9 @@ from ..config.settings import (
     MAX_HAIRCUT,
     LIQUIDITY_WARNING_THRESHOLD,
     LIQUIDITY_BREACH_THRESHOLD,
+    GEO_CONCENTRATION_WARNING_SINGLE,
+    GEO_CONCENTRATION_BREACH_NON_EU,
+    EU_COUNTRIES,
 )
 from ..models.position import Portfolio
 
@@ -109,6 +112,28 @@ class LiquidityProfiler:
             "warning":  liquid_1d < LIQUIDITY_WARNING_THRESHOLD,
             "breach":   liquid_1d < LIQUIDITY_BREACH_THRESHOLD,
         }
+
+        # Geographical concentration (AIFMD Annex IV / ESMA34-39-897 Section 4.2)
+        if "country" in self._result.columns:
+            geo_df = self._result.dropna(subset=["country"])
+            if not geo_df.empty:
+                total_nav = self._result["market_value_eur"].sum()
+                if total_nav > 0:
+                    geo_groups = geo_df.groupby("country")["market_value_eur"].sum() / total_nav
+                    top_countries = geo_groups.sort_values(ascending=False).head(10).to_dict()
+                    non_eu_pct = float(geo_groups[~geo_groups.index.isin(EU_COUNTRIES)].sum())
+                    max_single = float(geo_groups.max())
+                    geo_top_country = str(geo_groups.idxmax())
+                    flags.update({
+                        "top_countries":      top_countries,
+                        "eu_pct":             1.0 - non_eu_pct,
+                        "non_eu_pct":         non_eu_pct,
+                        "geo_top_country":    geo_top_country,
+                        "geo_top_country_pct": max_single,
+                        "geo_warning_flag":   max_single > GEO_CONCENTRATION_WARNING_SINGLE,
+                        "geo_breach_flag":    non_eu_pct > GEO_CONCENTRATION_BREACH_NON_EU,
+                    })
+
         return flags
 
     # ------------------------------------------------------------------

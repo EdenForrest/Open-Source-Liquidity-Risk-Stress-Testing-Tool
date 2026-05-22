@@ -137,6 +137,25 @@ export default function AllPortfolios() {
               <MetricRow label="Days to 90% liquidated" codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.days_to_90pct} warnAt={14} redAt={30} display={fmtDays(m?.days_to_90pct)} />
               )} />
+              <MetricRow label="Geo Top Country" codes={portfolioCodes} allData={allData} getter={m => (
+                m?.geo_top_country
+                  ? `${m.geo_top_country} ${fmt(m.geo_top_country_pct)}`
+                  : '—'
+              )} />
+              <MetricRow label="Non-EU Exposure" codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.non_eu_pct} warnAt={0.35} redAt={0.50} display={fmt(m?.non_eu_pct)} />
+              )} />
+              <MetricRow label="Geo Status" codes={portfolioCodes} allData={allData} getter={m => {
+                if (m?.geo_breach_flag) return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+                if (m?.geo_warning_flag) return <span className="font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>Warning</span>
+                return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+              }} />
+              <LeverageMetricRow label="AIFMD II Status" codes={portfolioCodes} allData={allData} getter={a => {
+                if (!a) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+                if (a.leverage_breach) return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+                if (!a.lmt_compliant) return <span className="font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>INCOMPLETE</span>
+                return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+              }} />
               <LeverageMetricRow label="Gross Leverage" codes={portfolioCodes} allData={allData} getter={a => (
                 <RiskCell value={a?.gross_leverage} warnAt={1.5} redAt={1.75} display={a?.gross_leverage != null ? (a.gross_leverage * 100).toFixed(1) + '%' : null} />
               )} />

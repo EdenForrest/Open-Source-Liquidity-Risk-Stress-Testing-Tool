@@ -195,6 +195,16 @@ BOND_COUNTRIES   = ["DE", "FR", "IT", "ES", "NL", "AT", "FI", "BE", "US", "GB"]
 
 ETF_COUNTRIES    = ["IE", "LU"]   # UCITS domicile for ETFs
 
+# Geo concentration overrides — force specific country ISINs at given probability
+# to trigger AIFMD Annex IV geo flags in two demo portfolios.
+# probability is per-position (applied independently to each bond/equity row).
+PORTFOLIO_GEO_OVERRIDES: dict[str, dict] = {
+    # SYN-GOVBOND: ~45% of positions get DE ISINs → single country DE > 35% NAV → Warning
+    "SYN-GOVBOND": {"country": "DE", "probability": 0.45},
+    # SYN-ILLIQ: ~65% of positions get US ISINs → non-EU aggregate > 50% NAV → Breach
+    "SYN-ILLIQ":   {"country": "US", "probability": 0.65},
+}
+
 
 # ---------------------------------------------------------------------------
 # Security name generation (no real issuer names — fully synthetic)
@@ -304,8 +314,8 @@ def _gen_equity_row(portfolio: str, report_date: str) -> dict:
     }
 
 
-def _gen_bond_row(portfolio: str, report_date: str, asset_class: str) -> dict:
-    country      = random.choice(BOND_COUNTRIES)
+def _gen_bond_row(portfolio: str, report_date: str, asset_class: str, forced_country: str | None = None) -> dict:
+    country      = forced_country if forced_country is not None else random.choice(BOND_COUNTRIES)
     isin         = _isin(country)
     ccy          = "EUR" if country not in ("GB", "US") else ("GBP" if country == "GB" else "USD")
     fx           = _FX_BASE[ccy] * random.uniform(0.97, 1.03)
@@ -705,11 +715,15 @@ def generate_holdings(
         else:
             cash_row = _gen_cash_row(pcode, report_date)
         _add(cash_row, pcode, "cash")
+        _geo = PORTFOLIO_GEO_OVERRIDES.get(pcode)
         for ac in _holdings_per_portfolio(n - 1, portfolio=pcode):
             if ac == "listed_equity":
                 _add(_gen_equity_row(pcode, report_date), pcode, ac)
             elif ac in ("government_bond", "ig_corporate_bond", "hy_corporate_bond"):
-                _add(_gen_bond_row(pcode, report_date, ac), pcode, ac)
+                _fc = None
+                if _geo and random.random() < _geo["probability"]:
+                    _fc = _geo["country"]
+                _add(_gen_bond_row(pcode, report_date, ac, forced_country=_fc), pcode, ac)
             elif ac == "etf":
                 _add(_gen_etf_row(pcode, report_date), pcode, ac)
             elif ac == "option":

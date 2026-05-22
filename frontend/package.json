@@ -11,12 +11,13 @@
     "start": "serve dist"
   },
   "dependencies": {
-    "serve": "^14.2.4",
     "axios": "^1.16.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "react-router-dom": "^7.15.1",
-    "recharts": "^3.8.1"
+    "react-simple-maps": "^3.0.0",
+    "recharts": "^3.8.1",
+    "serve": "^14.2.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

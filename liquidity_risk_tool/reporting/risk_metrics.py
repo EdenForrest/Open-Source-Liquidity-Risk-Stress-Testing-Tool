@@ -24,8 +24,8 @@ RedemptionMetrics
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 import pandas as pd
 import numpy as np
@@ -70,6 +70,15 @@ class LiquidityMetrics:
     days_to_50pct: float
     days_to_75pct: float
     days_to_90pct: float
+
+    # Geographical concentration (AIFMD Annex IV / ESMA34-39-897 Section 4.2)
+    top_countries: Dict[str, float] = field(default_factory=dict)
+    eu_pct: Optional[float] = None
+    non_eu_pct: Optional[float] = None
+    geo_top_country: Optional[str] = None
+    geo_top_country_pct: Optional[float] = None
+    geo_warning_flag: bool = False
+    geo_breach_flag: bool = False
 
     def summary(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if k != "bucket_breakdown"}
@@ -125,12 +134,19 @@ class RiskMetricsBuilder:
             illiquid_pct           = illiquid,
             top10_concentration    = self.portfolio.top_10_investor_concentration,
             liquidity_vs_concentration = lcr_t1 / self.portfolio.top_10_investor_concentration,
-            warning_flag           = flags["warning"],
-            breach_flag            = flags["breach"],
+            warning_flag           = flags["warning"] or flags.get("geo_warning_flag", False),
+            breach_flag            = flags["breach"]  or flags.get("geo_breach_flag", False),
             liquid_T0_T1_pct       = flags["liquid_T0_T1_pct"],
             days_to_50pct          = d50,
             days_to_75pct          = d75,
             days_to_90pct          = d90,
+            top_countries          = flags.get("top_countries", {}),
+            eu_pct                 = flags.get("eu_pct"),
+            non_eu_pct             = flags.get("non_eu_pct"),
+            geo_top_country        = flags.get("geo_top_country"),
+            geo_top_country_pct    = flags.get("geo_top_country_pct"),
+            geo_warning_flag       = flags.get("geo_warning_flag", False),
+            geo_breach_flag        = flags.get("geo_breach_flag", False),
         )
 
     def build_stress_summary(self) -> pd.DataFrame:

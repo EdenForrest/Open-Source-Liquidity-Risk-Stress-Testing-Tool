@@ -360,9 +360,12 @@ def load_portfolio_from_csv(
             isin = f"CASH-{currency}"
             name = f"Cash {currency}"
 
+        eff_isin = isin or csc
+        _country = eff_isin[:2] if len(eff_isin) == 12 and eff_isin[:2].isalpha() else None
+
         positions.append(
             Position(
-                isin=isin or csc,
+                isin=eff_isin,
                 name=name,
                 asset_class=asset_class,
                 market_value=market_value,  # preserve sign (negative for short derivatives)
@@ -374,6 +377,7 @@ def load_portfolio_from_csv(
                 duration=duration,
                 beta=beta,
                 exposure_base=exposure_base,
+                country=_country,
             )
         )
 

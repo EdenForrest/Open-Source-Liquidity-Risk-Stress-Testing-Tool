@@ -27,6 +27,7 @@
 16. [Asset-Class Parameter Table](#16-asset-class-parameter-table)
 17. [Scenario Parameter Table](#17-scenario-parameter-table)
 18. [AIFMD II — Directive (EU) 2024/927](#18-aifmd-ii--directive-eu-2024927)
+19. [Geographical Concentration Risk](#19-geographical-concentration-risk)
 
 ---
 
@@ -671,6 +672,101 @@ An explicit levy on redeeming investors as an alternative/complement to swing pr
 $$\text{ADL} = \text{ADL\_LEVY\_RATE} \times \text{RedemptionAmount}$$
 
 Default rate: `ADL_LEVY_RATE = 0.005` (50 bps). The ADL is shown in basis points on the Redemption page alongside the swing factor.
+
+---
+
+## 19. Geographical Concentration Risk
+
+**Regulatory basis:** AIFMD Annex IV / ESMA LST Guidelines (ESMA34-39-897, Section 4.2) / AIFMD II Art.16  
+**Code:** `LiquidityProfiler.regulatory_flags()` — `liquidity_profiler.py`; `LiquidityMetrics` — `risk_metrics.py`  
+**Displayed:** Dashboard → Geographical Concentration panel; AllPortfolios → Geo rows
+
+### 19.1 Country Derivation from ISIN
+
+Country of risk is derived from the first two characters of the ISIN, which encode the ISO 3166-1 alpha-2 country code per ISO 6166:
+
+$$\text{country}_i = \text{ISIN}_i[0:2] \quad \text{if } |\text{ISIN}_i| = 12 \text{ and } \text{ISIN}_i[0:2] \in \text{alpha}$$
+
+Non-standard identifiers (cash placeholders `CASH-EUR`, TRS positions `TRS-SYN`, synthetic loan keys) have length ≠ 12 or non-alphabetic prefixes and return `country = None`. These positions are excluded from geographical concentration calculations.
+
+### 19.2 EU Country Set
+
+The tool applies AIFMD Annex IV geographical reporting to a defined set of EU member states:
+
+```
+EU_COUNTRIES = { DE, FR, NL, BE, AT, ES, IT, FI, IE, LU, SE, DK }
+```
+
+This set covers the 12 largest EU fund domiciles and investment markets by AuM. Countries not in this set are treated as non-EU for the purposes of the non-EU aggregate concentration breach threshold.
+
+### 19.3 Geographical Concentration Metric
+
+For each country $c$, the NAV fraction is:
+
+$$w_c = \frac{\sum_{i:\,\text{country}_i = c} MV_i}{\sum_j MV_j}$$
+
+where the sum in the denominator runs over all positions with non-null country. The top-10 countries by $w_c$ are reported in the `top_countries` dict.
+
+### 19.4 Regulatory Thresholds
+
+**Warning — Single-country concentration:**
+
+$$\text{GeoWarning} = \mathbf{1}\!\left[\max_c\, w_c > 0.35\right]$$
+
+Triggered when any single country represents more than 35% of NAV. Calibrated to ESMA's guidance on significant geographic concentration for LST purposes.
+
+**Breach — Non-EU aggregate concentration:**
+
+$$\text{GeoBreach} = \mathbf{1}\!\left[\sum_{c \notin \text{EU}} w_c > 0.50\right]$$
+
+Triggered when the aggregate non-EU exposure exceeds 50% of NAV. This threshold reflects AIFMD Annex IV reporting requirements for AIFs with material non-EU exposure and is consistent with the ESMA34-39-897 guidance on third-country market stress scenarios.
+
+### 19.5 Output Fields (LiquidityMetrics)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `top_countries` | `Dict[str, float]` | Top-10 countries → NAV fraction |
+| `eu_pct` | `float` | Aggregate EU exposure as fraction of NAV |
+| `non_eu_pct` | `float` | Aggregate non-EU exposure as fraction of NAV |
+| `geo_top_country` | `str` | ISO alpha-2 code of the largest country |
+| `geo_top_country_pct` | `float` | NAV fraction of the largest country |
+| `geo_warning_flag` | `bool` | True if any single country > 35% NAV |
+| `geo_breach_flag` | `bool` | True if non-EU aggregate > 50% NAV |
+
+The portfolio-level `warning_flag` and `breach_flag` OR in the geo flags:
+
+$$\text{warning\_flag} = \text{LiqWarning} \lor \text{GeoWarning}$$
+$$\text{breach\_flag} = \text{LiqBreach} \lor \text{GeoBreach}$$
+
+### 19.6 Synthetic Trigger Portfolios
+
+Two portfolios are configured to reliably trigger geo flags via `PORTFOLIO_GEO_OVERRIDES` in `generate_synthetic_data.py`:
+
+| Portfolio | Override | Expected Flag |
+|-----------|----------|--------------|
+| `SYN-GOVBOND` | DE ISINs at 45% probability across bond positions | `geo_warning_flag = True` (DE ≈ 40–50% NAV) |
+| `SYN-ILLIQ` | US ISINs at 65% probability across bond positions | `geo_breach_flag = True` (non-EU ≈ 60–75% NAV) |
+
+All other portfolios draw from a diversified ISIN country pool (≤15 countries, no single country above 25% NAV) and produce `geo_warning_flag = geo_breach_flag = False`.
+
+### 19.7 Visualisations
+
+**GeoWorldMap** — interactive SVG world map rendered with `react-simple-maps`. Countries are filled using a three-tier gradient:
+
+| NAV fraction | Fill | Status |
+|---|---|---|
+| 0% | `#2a3550` (neutral) | No exposure |
+| 0–15% | `#fde68a` (light amber) | Normal |
+| 15–35% | `#f59e0b` (amber) | Elevated |
+| >35% | `#ef4444` (red) | Warning/Breach zone |
+
+Hover shows a floating tooltip with country name, NAV%, and a status badge (BREACH / WARNING / OK). `ZoomableGroup` enables zoom and pan.
+
+**GeoBarChart** — horizontal recharts `BarChart` of top-10 countries. EU countries coloured blue (`#3b82f6`), non-EU amber/red. An "Other" bar collects the remainder.
+
+**GeoDonut** — recharts `PieChart` donut with two slices: EU (blue if non-EU < 50%; dimmed otherwise) and Non-EU (amber if < 50%; red if ≥ 50%).
+
+**GeoLegend** — horizontal gradient bar (light amber → amber → red) with threshold markers at 35% and 50%.
 
 ---
 

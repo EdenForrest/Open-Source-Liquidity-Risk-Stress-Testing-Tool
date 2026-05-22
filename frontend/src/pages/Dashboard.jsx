@@ -9,6 +9,7 @@ import StatusBanner from '../components/StatusBanner'
 import { SERIES_COLORS, bucketBadgeStyle, chartTheme } from '../theme'
 import MetricTooltip from '../components/MetricTooltip'
 import { fmt, fmtEur } from '../utils/formatters'
+import { GeoWorldMap, GeoBarChart, GeoDonut, GeoLegend } from './Charts'
 
 export default function Dashboard() {
   const { data, error } = useAnalysis()
@@ -38,7 +39,7 @@ export default function Dashboard() {
         {liq.fund_name} — {liq.reporting_date}
       </h1>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
         <KPICard label={<MetricTooltip id="lcr_t1">LCR T+1</MetricTooltip>} value={fmt(m.lcr_t1)} color="blue" />
         <KPICard label={<MetricTooltip id="lcr_t3">LCR T+3</MetricTooltip>} value={fmt(m.lcr_t3)} color="blue" />
         <KPICard label={<MetricTooltip id="lcr_t7">LCR T+7</MetricTooltip>} value={fmt(m.lcr_t7)} color="blue" />
@@ -49,6 +50,12 @@ export default function Dashboard() {
           value={m.breach_flag ? 'BREACH' : m.warning_flag ? 'WARNING' : 'OK'}
           color={m.breach_flag ? 'red' : m.warning_flag ? 'amber' : 'green'}
           alert={m.breach_flag}
+        />
+        <KPICard
+          label="Geo Status"
+          value={m.geo_breach_flag ? 'BREACH' : m.geo_warning_flag ? 'WARNING' : 'OK'}
+          color={m.geo_breach_flag ? 'red' : m.geo_warning_flag ? 'amber' : 'green'}
+          alert={m.geo_breach_flag}
         />
       </div>
 
@@ -82,47 +89,59 @@ export default function Dashboard() {
       </div>
 
       {aifmd2 && aifmd2.gross_leverage != null ? (
-        <div className="rounded shadow-sm border p-3" style={panelStyle}>
-          <h2 className="text-sm font-semibold uppercase tracking-wide mb-2 bb-head" style={{ color: 'var(--text-secondary)' }}>
+        <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
+          <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
             AIFMD II — Directive (EU) 2024/927
           </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <KPICard
-              label={<MetricTooltip id="gross_leverage">Gross Leverage</MetricTooltip>}
-              value={(aifmd2.gross_leverage * 100).toFixed(1) + '%'}
-              sub={`cap ${aifmd2.leverage_cap != null ? (aifmd2.leverage_cap * 100).toFixed(0) + '%' : '—'}`}
-              color={aifmd2.leverage_breach ? 'red' : 'slate'}
-              alert={aifmd2.leverage_breach}
-            />
-            <KPICard
-              label={<MetricTooltip id="commitment_leverage">Commitment Leverage</MetricTooltip>}
-              value={aifmd2.commitment_leverage != null ? (aifmd2.commitment_leverage * 100).toFixed(1) + '%' : '—'}
-              color="slate"
-            />
-            <KPICard
-              label={<MetricTooltip id="lmt_count">LMTs Pre-selected</MetricTooltip>}
-              value={aifmd2.lmt_count ?? '—'}
-              sub={aifmd2.lmt_compliant ? 'compliant' : 'insufficient'}
-              color={aifmd2.lmt_compliant ? 'green' : 'red'}
-            />
-            <KPICard
-              label="AIFMD II Status"
-              value={aifmd2.leverage_breach ? 'BREACH' : aifmd2.lmt_compliant ? 'OK' : 'INCOMPLETE'}
-              color={aifmd2.leverage_breach ? 'red' : aifmd2.lmt_compliant ? 'green' : 'amber'}
-              alert={aifmd2.leverage_breach}
-            />
-          </div>
-          {aifmd2.warnings && (
-            <p className="mt-3 text-xs" style={{ color: 'var(--kpi-amber-text)' }}>⚠ {aifmd2.warnings}</p>
-          )}
-          <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-            LMTs: {Array.isArray(aifmd2.lmt_preselected) ? aifmd2.lmt_preselected.join(', ') : aifmd2.lmt_preselected}
-            {aifmd2.is_loan_origination_aif && (
-              <span className="ml-3 font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>
-                Loan origination AIF regime applies ({(aifmd2.loan_pct_nav * 100).toFixed(1)}% in loans)
-              </span>
-            )}
-          </p>
+          <table className="w-full">
+            <tbody>
+              <tr>
+                <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Status</td>
+                <td className="px-3 py-1.5 text-sm font-semibold text-right">
+                  {aifmd2.leverage_breach
+                    ? <span style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+                    : !aifmd2.lmt_compliant
+                    ? <span style={{ color: 'var(--kpi-amber-text)' }}>INCOMPLETE</span>
+                    : <span style={{ color: 'var(--kpi-green-text)' }}>OK</span>}
+                </td>
+              </tr>
+              <tr>
+                <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  <MetricTooltip id="gross_leverage">Gross Leverage (Art. 7 CDR 231/2013)</MetricTooltip>
+                </td>
+                <td className="px-3 py-1.5 text-sm font-semibold text-right"
+                  style={{ color: aifmd2.leverage_breach ? 'var(--kpi-red-text)' : 'var(--text-primary)' }}>
+                  {(aifmd2.gross_leverage * 100).toFixed(1)}%
+                  {aifmd2.leverage_cap != null && <span className="ml-2 text-xs font-normal opacity-60">cap {(aifmd2.leverage_cap * 100).toFixed(0)}%</span>}
+                </td>
+              </tr>
+              <tr>
+                <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  <MetricTooltip id="commitment_leverage">Commitment Leverage</MetricTooltip>
+                </td>
+                <td className="px-3 py-1.5 text-sm font-semibold text-right" style={{ color: 'var(--text-primary)' }}>
+                  {aifmd2.commitment_leverage != null ? (aifmd2.commitment_leverage * 100).toFixed(1) + '%' : '—'}
+                </td>
+              </tr>
+              <tr>
+                <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  <MetricTooltip id="lmt_count">LMTs Pre-selected</MetricTooltip>
+                </td>
+                <td className="px-3 py-1.5 text-sm font-semibold text-right"
+                  style={{ color: aifmd2.lmt_compliant ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)' }}>
+                  {aifmd2.lmt_count ?? '—'}
+                  <span className="ml-2 text-xs font-normal opacity-60">{aifmd2.lmt_compliant ? 'compliant' : 'insufficient'}</span>
+                </td>
+              </tr>
+              {aifmd2.warnings && (
+                <tr style={{ background: 'var(--kpi-amber-bg)' }}>
+                  <td colSpan={2} className="px-3 py-1.5 text-xs" style={{ color: 'var(--kpi-amber-text)' }}>
+                    ⚠ {aifmd2.warnings}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       ) : (
         <div className="rounded border p-3 flex items-center gap-3"
@@ -131,6 +150,28 @@ export default function Dashboard() {
           <p className="text-sm" style={{ color: 'var(--kpi-amber-text)' }}>
             AIFMD II leverage data is not available for this portfolio. Upload a holdings file with leveraged positions or derivative exposures to enable this section.
           </p>
+        </div>
+      )}
+
+      {m.geo_top_country != null && (
+        <div className="rounded shadow-sm border p-3" style={panelStyle}>
+          <h2 className="text-sm font-semibold uppercase tracking-wide mb-2 bb-head" style={{ color: 'var(--text-secondary)' }}>
+            Geographical Concentration (AIFMD Annex IV)
+          </h2>
+          <div className="flex gap-4 text-sm mb-3">
+            <span style={{ color: m.geo_breach_flag ? 'var(--kpi-red-text)' : m.geo_warning_flag ? 'var(--kpi-amber-text)' : 'var(--kpi-green-text)' }} className="font-semibold">
+              {m.geo_breach_flag ? 'BREACH — Non-EU >50%' : m.geo_warning_flag ? 'Warning — Single country >35%' : 'Geo OK'}
+            </span>
+            <span style={{ color: 'var(--text-secondary)' }}>
+              Top: <strong style={{ color: 'var(--text-primary)' }}>{m.geo_top_country}</strong> {fmt(m.geo_top_country_pct)}
+            </span>
+          </div>
+          <GeoWorldMap topCountries={m.top_countries} />
+          <GeoLegend />
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <GeoBarChart topCountries={m.top_countries} />
+            <GeoDonut euPct={m.eu_pct} nonEuPct={m.non_eu_pct} />
+          </div>
         </div>
       )}
 

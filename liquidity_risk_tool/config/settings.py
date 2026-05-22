@@ -194,6 +194,13 @@ AIFMD2_RISK_RETENTION_MINIMUM: float = 0.05
 # Borrower concentration: no single borrower > 20% NAV (ESMA guidance)
 AIFMD2_BORROWER_CONCENTRATION_LIMIT: float = 0.20
 
+# Geographical concentration — AIFMD Annex IV / ESMA34-39-897 Section 4.2
+GEO_CONCENTRATION_WARNING_SINGLE: float = 0.35   # single country > 35% NAV → Warning
+GEO_CONCENTRATION_BREACH_NON_EU: float = 0.50    # non-EU aggregate > 50% NAV → Breach
+EU_COUNTRIES: frozenset = frozenset({
+    "DE", "FR", "NL", "BE", "AT", "ES", "IT", "FI", "IE", "LU", "SE", "DK",
+})
+
 # Swing pricing — activates when net redemptions exceed the threshold
 SWING_PRICING_THRESHOLD: float = 0.02   # 2% NAV
 SWING_FACTOR_MAX: float = 0.02          # cap swing adjustment at 200 bps (2%)
