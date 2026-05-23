@@ -135,7 +135,31 @@ export default function Charts() {
           </ChartCard>
         )}
 
-        {/* 5. Days to Liquidate — full width */}
+        {/* 5. Geographical Concentration — full width */}
+        {m?.geo_top_country != null && (
+          <div className="lg:col-span-2 rounded-xl shadow-sm border p-5"
+            style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
+            <h2 className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-secondary)' }}>
+              Geographical Concentration (AIFMD Annex IV)
+            </h2>
+            <div className="flex gap-4 text-sm mb-3">
+              <span className="font-semibold" style={{ color: m.geo_breach_flag ? 'var(--kpi-red-text)' : m.geo_warning_flag ? 'var(--kpi-amber-text)' : 'var(--kpi-green-text)' }}>
+                {m.geo_breach_flag ? 'BREACH — Non-EU >50%' : m.geo_warning_flag ? 'Warning — Single country >35%' : 'Geo OK'}
+              </span>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                Top: <strong style={{ color: 'var(--text-primary)' }}>{m.geo_top_country}</strong> {m.geo_top_country_pct != null ? (m.geo_top_country_pct * 100).toFixed(1) + '%' : '—'}
+              </span>
+            </div>
+            <GeoWorldMap topCountries={m.top_countries} />
+            <GeoLegend />
+            <div className="grid grid-cols-2 gap-3 mt-3">
+              <GeoBarChart topCountries={m.top_countries} />
+              <GeoDonut euPct={m.eu_pct} nonEuPct={m.non_eu_pct} />
+            </div>
+          </div>
+        )}
+
+        {/* 6. Days to Liquidate — full width */}
         {ttlData.length > 0 && (
           <div className="lg:col-span-2 rounded-xl shadow-sm border p-5"
             style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
@@ -159,40 +183,23 @@ export default function Charts() {
           </div>
         )}
 
-        {/* 6. Waterfall Cumulative */}
+        {/* 7. Waterfall Cumulative — full width */}
         {cumulChart.length > 0 && (
-          <ChartCard title="Waterfall — Cumulative Proceeds (€M)">
-            <LineChart data={cumulChart}>
-              {grid}
-              <XAxis dataKey="day" tick={{ fontSize: 11, ...axisTick }} axisLine={{ stroke: ct.axisColor }} tickLine={false}
-                label={{ value: 'Day', position: 'insideBottom', offset: -2, fill: ct.tickColor }} />
-              <YAxis unit="M" tick={{ fontSize: 11, ...axisTick }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v) => '€' + v + 'M'} {...tooltip} />
-              <Line type="monotone" dataKey="cumulative" stroke={SERIES_COLORS.normal} strokeWidth={2} dot={{ r: 3, fill: SERIES_COLORS.normal }} />
-            </LineChart>
-          </ChartCard>
-        )}
-        {/* 7. Geographical Concentration */}
-        {m?.geo_top_country != null && (
           <div className="lg:col-span-2 rounded-xl shadow-sm border p-5"
             style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
-            <h2 className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-secondary)' }}>
-              Geographical Concentration (AIFMD Annex IV)
+            <h2 className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: 'var(--text-secondary)' }}>
+              Waterfall — Cumulative Proceeds (€M)
             </h2>
-            <div className="flex gap-4 text-sm mb-3">
-              <span className="font-semibold" style={{ color: m.geo_breach_flag ? 'var(--kpi-red-text)' : m.geo_warning_flag ? 'var(--kpi-amber-text)' : 'var(--kpi-green-text)' }}>
-                {m.geo_breach_flag ? 'BREACH — Non-EU >50%' : m.geo_warning_flag ? 'Warning — Single country >35%' : 'Geo OK'}
-              </span>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                Top: <strong style={{ color: 'var(--text-primary)' }}>{m.geo_top_country}</strong> {m.geo_top_country_pct != null ? (m.geo_top_country_pct * 100).toFixed(1) + '%' : '—'}
-              </span>
-            </div>
-            <GeoWorldMap topCountries={m.top_countries} />
-            <GeoLegend />
-            <div className="grid grid-cols-2 gap-3 mt-3">
-              <GeoBarChart topCountries={m.top_countries} />
-              <GeoDonut euPct={m.eu_pct} nonEuPct={m.non_eu_pct} />
-            </div>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={cumulChart}>
+                {grid}
+                <XAxis dataKey="day" tick={{ fontSize: 11, ...axisTick }} axisLine={{ stroke: ct.axisColor }} tickLine={false}
+                  label={{ value: 'Day', position: 'insideBottom', offset: -2, fill: ct.tickColor }} />
+                <YAxis unit="M" tick={{ fontSize: 11, ...axisTick }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v) => '€' + v + 'M'} {...tooltip} />
+                <Line type="monotone" dataKey="cumulative" stroke={SERIES_COLORS.normal} strokeWidth={2} dot={{ r: 3, fill: SERIES_COLORS.normal }} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         )}
       </div>
@@ -247,11 +254,22 @@ function geoFill(pct) {
 export function GeoWorldMap({ topCountries = {} }) {
   const [tip, setTip] = useState(null)
   const [pos, setPos] = useState({ x: 0, y: 0 })
+  const [zoom, setZoom] = useState(1)
+  const btnStyle = {
+    background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)',
+    borderRadius: 4, width: 26, height: 26, cursor: 'pointer', fontSize: 16, lineHeight: '24px',
+    textAlign: 'center', userSelect: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  }
 
   return (
     <div style={{ position: 'relative', width: '100%' }}>
+      <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <button style={btnStyle} onClick={() => setZoom((z) => Math.min(z * 1.5, 10))} title="Zoom in">+</button>
+        <button style={btnStyle} onClick={() => setZoom((z) => Math.max(z / 1.5, 0.5))} title="Zoom out">−</button>
+        <button style={{ ...btnStyle, fontSize: 10 }} onClick={() => setZoom(1)} title="Reset zoom">↺</button>
+      </div>
       <ComposableMap projectionConfig={{ scale: 130 }} style={{ width: '100%', height: 280, display: 'block' }}>
-        <ZoomableGroup>
+        <ZoomableGroup zoom={zoom} onMoveEnd={({ zoom: z }) => setZoom(z)}>
           <Geographies geography={GEO_URL}>
             {({ geographies }) =>
               geographies.map((geo) => {
@@ -340,7 +358,9 @@ export function GeoBarChart({ topCountries = {} }) {
         <XAxis type="number" unit="%" tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
         <YAxis type="category" dataKey="country" width={52} tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
         <Tooltip formatter={(v) => v.toFixed(1) + '%'}
-          contentStyle={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--text-primary)' }} />
+          contentStyle={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+          labelStyle={{ color: 'var(--text-primary)' }}
+          itemStyle={{ color: 'var(--text-primary)' }} />
         <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
           {data.map((d, i) => (
             <Cell key={i} fill={d.country === 'Other' ? '#64748b' : d.pct > 35 ? '#ef4444' : d.pct > 15 ? '#f59e0b' : '#fde68a'} />
