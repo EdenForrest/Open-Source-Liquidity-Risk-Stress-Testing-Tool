@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
 import { pct, eur } from '../utils/formatters'
+import client from '../api/client'
 
 // ---------------------------------------------------------------------------
 // AIFMD II tool taxonomy
@@ -361,13 +362,10 @@ export default function LMTSimulator() {
     setError(null)
     try {
       const lmtConfig = buildLmtConfig(enabled, paramValues)
-      const resp = await fetch(`/api/run/${runId}/lmt-simulate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lmt_config: lmtConfig, portfolio: selectedPortfolio || null }),
+      const { data: json } = await client.post(`/run/${runId}/lmt-simulate`, {
+        lmt_config: lmtConfig,
+        portfolio: selectedPortfolio || null,
       })
-      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
-      const json = await resp.json()
       setSimResults(json)
     } catch (e) {
       setError(e.message)
