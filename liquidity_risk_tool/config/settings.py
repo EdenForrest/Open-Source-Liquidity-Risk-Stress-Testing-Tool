@@ -199,6 +199,8 @@ GEO_CONCENTRATION_WARNING_SINGLE: float = 0.35   # single country > 35% NAV → 
 GEO_CONCENTRATION_BREACH_NON_EU: float = 0.50    # non-EU aggregate > 50% NAV → Breach
 EU_COUNTRIES: frozenset = frozenset({
     "DE", "FR", "NL", "BE", "AT", "ES", "IT", "FI", "IE", "LU", "SE", "DK",
+    "PT", "PL", "CZ", "HU", "RO", "SK", "SI", "BG", "HR", "LT", "LV", "EE",
+    "CY", "MT", "GR",
 })
 
 # Swing pricing — activates when net redemptions exceed the threshold

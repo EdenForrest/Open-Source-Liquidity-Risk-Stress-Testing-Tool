@@ -691,13 +691,16 @@ Non-standard identifiers (cash placeholders `CASH-EUR`, TRS positions `TRS-SYN`,
 
 ### 19.2 EU Country Set
 
-The tool applies AIFMD Annex IV geographical reporting to a defined set of EU member states:
+The tool applies AIFMD Annex IV geographical reporting to all 27 EU member states per ISO 3166-1:
 
 ```
-EU_COUNTRIES = { DE, FR, NL, BE, AT, ES, IT, FI, IE, LU, SE, DK }
+EU_COUNTRIES = {
+  DE, FR, NL, BE, AT, ES, IT, FI, IE, LU, SE, DK,
+  PT, PL, CZ, HU, RO, SK, SI, BG, HR, LT, LV, EE, CY, MT, GR
+}
 ```
 
-This set covers the 12 largest EU fund domiciles and investment markets by AuM. Countries not in this set are treated as non-EU for the purposes of the non-EU aggregate concentration breach threshold.
+Countries not in this set are treated as non-EU for the purposes of the non-EU aggregate concentration breach threshold.
 
 ### 19.3 Geographical Concentration Metric
 
