@@ -385,9 +385,9 @@ export default function LMTSimulator() {
   }
 
   return (
-    <div className="p-4 flex gap-4 min-h-0" style={{ maxWidth: '100%' }}>
+    <div className="flex gap-4" style={{ height: 'calc(100vh - 90px)', padding: '1rem', overflow: 'hidden' }}>
       {/* Left — Tool Configurator */}
-      <div className="w-72 shrink-0 flex flex-col gap-3">
+      <div className="w-72 shrink-0 flex flex-col gap-3 overflow-y-auto pr-1">
         <div className="text-sm font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>
           LMT Configurator
         </div>
@@ -441,7 +441,7 @@ export default function LMTSimulator() {
       </div>
 
       {/* Right — Impact Dashboard */}
-      <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-auto">
+      <div className="flex-1 flex flex-col gap-4 min-w-0 overflow-y-auto">
         <div className="text-sm font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>
           Impact Dashboard
         </div>
