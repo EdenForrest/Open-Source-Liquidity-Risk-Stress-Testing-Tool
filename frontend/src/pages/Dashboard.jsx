@@ -182,12 +182,8 @@ export default function Dashboard() {
       {m.ucits_issuer_weights && Object.keys(m.ucits_issuer_weights).length > 0 && (
         <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
           <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
-            UCITS 5/10/40 Issuer Concentration (ESMA Art. 52)
+            <MetricTooltip id="ucits_5_10_40">UCITS 5/10/40 Issuer Concentration (ESMA Art. 52)</MetricTooltip>
           </h2>
-          <div className="px-3 py-2 text-xs" style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-            <strong style={{ color: 'var(--text-primary)' }}>ESMA Art. 52 UCITS Directive — Issuer Diversification Rule:</strong>{' '}
-            No single transferable security issuer may represent more than <strong style={{ color: 'var(--text-primary)' }}>10% of NAV</strong>. Issuers between 5–10% are placed in a bucket whose aggregate must not exceed <strong style={{ color: 'var(--text-primary)' }}>40% of NAV</strong> (the "5/10/40 rule"). Cash positions are excluded from this calculation as they are not transferable securities.
-          </div>
           <div className="px-3 py-2 flex gap-4 text-sm flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
             <span className="font-semibold" style={{ color: m.ucits_single_breach || m.ucits_aggregate_breach ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>
               {m.ucits_single_breach ? 'BREACH — issuer >5% NAV' : m.ucits_aggregate_breach ? 'BREACH — 5–10% bucket >40%' : 'UCITS Compliant'}

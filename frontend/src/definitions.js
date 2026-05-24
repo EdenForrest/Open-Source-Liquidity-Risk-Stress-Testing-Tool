@@ -222,4 +222,10 @@ export const DEFINITIONS = {
     section: '§2.2',
     body: 'Trading days to fully exit this position at the 20% ADV cap: d_i = ⌈MV_i / (0.20 × ADV_i)⌉. Drives bucket assignment — if d_i > 7 the position is classified >T+7 regardless of asset class.',
   },
+
+  ucits_5_10_40: {
+    label: 'UCITS 5/10/40 Rule',
+    section: '§Art. 52',
+    body: 'ESMA Art. 52 UCITS Directive — Issuer Diversification Rule.\n\nNo single transferable security issuer may represent more than 10% of NAV.\n\nIssuers between 5–10% of NAV are placed in a "5–10% bucket" whose aggregate must not exceed 40% of NAV.\n\nCash positions are excluded — cash is not a transferable security and falls outside the Art. 52 issuer limits.',
+  },
 }
