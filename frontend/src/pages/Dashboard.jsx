@@ -182,10 +182,10 @@ export default function Dashboard() {
       {m.ucits_issuer_weights && Object.keys(m.ucits_issuer_weights).length > 0 && (
         <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
           <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
-            UCITS 5/10/40 Issuer Concentration (Art. 52)
+            UCITS 5/10/40 Issuer Concentration (ESMA Art. 52)
           </h2>
           <div className="px-3 py-2 text-xs" style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
-            <strong style={{ color: 'var(--text-primary)' }}>Art. 52 UCITS Directive — Issuer Diversification Rule:</strong>{' '}
+            <strong style={{ color: 'var(--text-primary)' }}>ESMA Art. 52 UCITS Directive — Issuer Diversification Rule:</strong>{' '}
             No single transferable security issuer may represent more than <strong style={{ color: 'var(--text-primary)' }}>10% of NAV</strong>. Issuers between 5–10% are placed in a bucket whose aggregate must not exceed <strong style={{ color: 'var(--text-primary)' }}>40% of NAV</strong> (the "5/10/40 rule"). Cash positions are excluded from this calculation as they are not transferable securities.
           </div>
           <div className="px-3 py-2 flex gap-4 text-sm flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
