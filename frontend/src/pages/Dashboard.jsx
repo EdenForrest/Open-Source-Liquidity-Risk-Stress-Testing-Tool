@@ -179,6 +179,58 @@ export default function Dashboard() {
         </div>
       )}
 
+      {m.ucits_issuer_weights && Object.keys(m.ucits_issuer_weights).length > 0 && (
+        <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
+          <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
+            UCITS 5/10/40 Issuer Concentration (Art. 52)
+          </h2>
+          <div className="px-3 py-2 flex gap-4 text-sm flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
+            <span className="font-semibold" style={{ color: m.ucits_single_breach || m.ucits_aggregate_breach ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>
+              {m.ucits_single_breach ? 'BREACH — issuer >5% NAV' : m.ucits_aggregate_breach ? 'BREACH — 5–10% bucket >40%' : 'UCITS Compliant'}
+            </span>
+            <span style={{ color: 'var(--text-secondary)' }}>
+              5–10% bucket aggregate: <strong style={{ color: m.ucits_aggregate_breach ? 'var(--kpi-red-text)' : 'var(--text-primary)' }}>{(m.ucits_aggregate_5_10 * 100).toFixed(1)}%</strong>
+              <span className="ml-1 opacity-60 text-xs">/ 40% limit</span>
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead style={surfaceStyle}>
+              <tr>
+                <th className="px-3 py-2 text-left text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>ISIN</th>
+                <th className="px-3 py-2 text-left text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>Name</th>
+                <th className="px-3 py-2 text-right text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>Weight</th>
+                <th className="px-3 py-2 text-right text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>5/10/40 Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(m.ucits_issuer_weights).map(([isin, w], i) => {
+                const pct = w * 100
+                const breach = w > 0.10
+                const inBucket = w > 0.05 && w <= 0.10
+                const pos = liq.position_buckets?.find(p => p.isin === isin)
+                return (
+                  <tr key={isin} style={i % 2 === 0 ? rowEven : rowOdd}>
+                    <td className="px-3 py-1.5 font-mono text-xs">{isin}</td>
+                    <td className="px-3 py-1.5 max-w-[200px] truncate">{pos?.name ?? '—'}</td>
+                    <td className="px-3 py-1.5 text-right font-semibold"
+                      style={{ color: breach ? 'var(--kpi-red-text)' : inBucket ? 'var(--kpi-amber-text)' : 'var(--text-primary)' }}>
+                      {pct.toFixed(2)}%
+                    </td>
+                    <td className="px-3 py-1.5 text-right text-xs">
+                      {breach
+                        ? <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH (&gt;10%)</span>
+                        : inBucket
+                        ? <span style={{ color: 'var(--kpi-amber-text)' }}>In 5–10% bucket</span>
+                        : <span style={{ color: 'var(--kpi-green-text)' }}>OK</span>}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={{ color: 'var(--text-secondary)' }}>
           {t('dashboard.positionsTitle')}

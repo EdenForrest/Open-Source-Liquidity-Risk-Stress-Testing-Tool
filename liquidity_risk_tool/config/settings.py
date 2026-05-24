@@ -203,6 +203,13 @@ EU_COUNTRIES: frozenset = frozenset({
     "CY", "MT", "GR",
 })
 
+# UCITS 5/10/40 issuer concentration rule (UCITS Directive Art. 52)
+# No single transferable security issuer may exceed 5% NAV; up to 40% may be held
+# in issuers where the individual weight is between 5% and 10%.
+UCITS_SINGLE_ISSUER_LIMIT: float = 0.05       # hard limit per issuer
+UCITS_AGGREGATE_BUCKET_LIMIT: float = 0.40    # max aggregate of positions 5-10%
+UCITS_AGGREGATE_BUCKET_SINGLE_CAP: float = 0.10  # upper bound of the bucket
+
 # Swing pricing — activates when net redemptions exceed the threshold
 SWING_PRICING_THRESHOLD: float = 0.02   # 2% NAV
 SWING_FACTOR_MAX: float = 0.02          # cap swing adjustment at 200 bps (2%)

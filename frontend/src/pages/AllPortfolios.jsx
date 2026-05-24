@@ -207,6 +207,18 @@ export default function AllPortfolios() {
                 if (m?.geo_warning_flag) return <span className="font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>{t('allPortfolios.warning')}</span>
                 return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('allPortfolios.ok')}</span>
               }} />
+              <MetricRow label="UCITS Status" codes={portfolioCodes} allData={allData} getter={m => {
+                if (m?.ucits_single_breach || m?.ucits_aggregate_breach)
+                  return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+                return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+              }} />
+              <MetricRow label="UCITS 5–10% Bucket" codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.ucits_aggregate_5_10} warnAt={0.30} redAt={0.40} display={m?.ucits_aggregate_5_10 != null ? (m.ucits_aggregate_5_10 * 100).toFixed(1) + '%' : null} />
+              )} />
+              <MetricRow label="UCITS Breaching Issuers" codes={portfolioCodes} allData={allData} getter={m => {
+                const count = m?.ucits_breaching_issuers ? Object.keys(m.ucits_breaching_issuers).length : 0
+                return <span style={{ color: count > 0 ? 'var(--kpi-red-text)' : 'var(--text-primary)' }} className={count > 0 ? 'font-semibold' : ''}>{count}</span>
+              }} />
               <LeverageMetricRow label={t('dashboard.aifmd.status')} codes={portfolioCodes} allData={allData} getter={a => {
                 if (!a) return <span style={{ color: 'var(--text-muted)' }}>—</span>
                 if (a.leverage_breach) return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>{t('allPortfolios.breach')}</span>

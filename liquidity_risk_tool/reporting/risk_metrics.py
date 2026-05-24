@@ -80,6 +80,14 @@ class LiquidityMetrics:
     geo_warning_flag: bool = False
     geo_breach_flag: bool = False
 
+    # UCITS 5/10/40 issuer concentration (Art. 52 UCITS Directive)
+    ucits_issuer_weights: Dict[str, float] = field(default_factory=dict)
+    ucits_breaching_issuers: Dict[str, float] = field(default_factory=dict)
+    ucits_aggregate_5_10: float = 0.0
+    ucits_single_breach: bool = False
+    ucits_aggregate_breach: bool = False
+    ucits_compliant: bool = True
+
     def summary(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if k != "bucket_breakdown"}
 
@@ -147,6 +155,12 @@ class RiskMetricsBuilder:
             geo_top_country_pct    = flags.get("geo_top_country_pct"),
             geo_warning_flag       = flags.get("geo_warning_flag", False),
             geo_breach_flag        = flags.get("geo_breach_flag", False),
+            ucits_issuer_weights   = flags.get("ucits_issuer_weights", {}),
+            ucits_breaching_issuers = flags.get("ucits_breaching_issuers", {}),
+            ucits_aggregate_5_10   = flags.get("ucits_aggregate_5_10", 0.0),
+            ucits_single_breach    = flags.get("ucits_single_breach", False),
+            ucits_aggregate_breach = flags.get("ucits_aggregate_breach", False),
+            ucits_compliant        = flags.get("ucits_compliant", True),
         )
 
     def build_stress_summary(self) -> pd.DataFrame:

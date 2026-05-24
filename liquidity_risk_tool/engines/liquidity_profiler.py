@@ -28,6 +28,9 @@ from ..config.settings import (
     GEO_CONCENTRATION_WARNING_SINGLE,
     GEO_CONCENTRATION_BREACH_NON_EU,
     EU_COUNTRIES,
+    UCITS_SINGLE_ISSUER_LIMIT,
+    UCITS_AGGREGATE_BUCKET_LIMIT,
+    UCITS_AGGREGATE_BUCKET_SINGLE_CAP,
 )
 from ..models.position import Portfolio
 
@@ -133,6 +136,31 @@ class LiquidityProfiler:
                         "geo_warning_flag":   max_single > GEO_CONCENTRATION_WARNING_SINGLE,
                         "geo_breach_flag":    non_eu_pct > GEO_CONCENTRATION_BREACH_NON_EU,
                     })
+
+        # UCITS 5/10/40 issuer concentration rule (Art. 52 UCITS Directive)
+        # Issuer = first 12-char ISIN prefix (or full ISIN for non-standard identifiers)
+        total_nav = self._result["market_value_eur"].sum()
+        if total_nav > 0:
+            issuer_weights = (
+                self._result.groupby("isin")["market_value_eur"].sum() / total_nav
+            ).sort_values(ascending=False)
+
+            breaching = issuer_weights[issuer_weights > UCITS_SINGLE_ISSUER_LIMIT]
+            bucket_5_10 = issuer_weights[
+                (issuer_weights > UCITS_SINGLE_ISSUER_LIMIT) &
+                (issuer_weights <= UCITS_AGGREGATE_BUCKET_SINGLE_CAP)
+            ]
+            aggregate_5_10 = float(bucket_5_10.sum())
+            top_issuers = issuer_weights.head(10).to_dict()
+
+            flags.update({
+                "ucits_issuer_weights":       top_issuers,
+                "ucits_breaching_issuers":    breaching.to_dict(),
+                "ucits_aggregate_5_10":       aggregate_5_10,
+                "ucits_single_breach":        bool(len(breaching) > 0),
+                "ucits_aggregate_breach":     aggregate_5_10 > UCITS_AGGREGATE_BUCKET_LIMIT,
+                "ucits_compliant":            len(breaching) == 0 and aggregate_5_10 <= UCITS_AGGREGATE_BUCKET_LIMIT,
+            })
 
         return flags
 
