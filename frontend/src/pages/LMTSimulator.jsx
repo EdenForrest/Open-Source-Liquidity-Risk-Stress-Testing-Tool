@@ -361,11 +361,10 @@ export default function LMTSimulator() {
     setError(null)
     try {
       const lmtConfig = buildLmtConfig(enabled, paramValues)
-      const url = `/api/run/${runId}/lmt-simulate${selectedPortfolio ? `?portfolio=${selectedPortfolio}` : ''}`
-      const resp = await fetch(url, {
+      const resp = await fetch(`/api/run/${runId}/lmt-simulate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lmt_config: lmtConfig }),
+        body: JSON.stringify({ lmt_config: lmtConfig, portfolio: selectedPortfolio || null }),
       })
       if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
       const json = await resp.json()
