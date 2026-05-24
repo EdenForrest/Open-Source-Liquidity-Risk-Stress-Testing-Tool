@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from backend import store
 
@@ -142,4 +142,20 @@ def get_report(run_id: str):
     return JSONResponse(
         content=r,
         headers={"Content-Disposition": f'attachment; filename="liquidity_report_{run_id[:8]}.json"'},
+    )
+
+
+@router.get("/run/{run_id}/export/excel")
+def export_excel(run_id: str, portfolio: Optional[str] = Query(default=None)):
+    """Return a structured Excel (.xlsx) workbook for a single portfolio."""
+    from backend.services.export_service import build_excel
+
+    r = _portfolio_results(run_id, portfolio)
+    code = portfolio or "portfolio"
+    xlsx_bytes = build_excel(r)
+    filename = f"liquidity_report_{code}_{run_id[:8]}.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
