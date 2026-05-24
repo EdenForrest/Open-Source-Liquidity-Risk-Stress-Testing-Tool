@@ -26,6 +26,7 @@ import numpy as np
 
 from ..config.settings import (
     STRESS_SCENARIOS,
+    REVOLUTION_SCENARIOS,
     ASSET_CLASS_LIQUIDITY,
     BUCKET_ORDER,
     DURATION_BY_ASSET_CLASS,
@@ -91,9 +92,17 @@ class StressEngine:
         self,
         portfolio: Portfolio,
         scenarios: Optional[List[StressScenario]] = None,
+        scenario_library: str = "esma",
     ):
         self.portfolio = portfolio
-        self.scenarios = scenarios or STRESS_SCENARIOS
+        if scenarios is not None:
+            self.scenarios = scenarios
+        elif scenario_library == "revolution":
+            self.scenarios = REVOLUTION_SCENARIOS
+        elif scenario_library == "all":
+            self.scenarios = STRESS_SCENARIOS + REVOLUTION_SCENARIOS
+        else:
+            self.scenarios = STRESS_SCENARIOS
 
     # ------------------------------------------------------------------
     # Public API

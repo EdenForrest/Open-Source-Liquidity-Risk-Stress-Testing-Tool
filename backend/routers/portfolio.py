@@ -13,12 +13,12 @@ import traceback
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, Form, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 
 from backend import store
 from backend.services.pipeline_service import run_all_portfolios
-from liquidity_risk_tool.config.settings import STRESS_SCENARIOS
+from liquidity_risk_tool.config.settings import STRESS_SCENARIOS, REVOLUTION_SCENARIOS
 
 router = APIRouter(tags=["portfolio"])
 logger = logging.getLogger(__name__)
@@ -50,13 +50,14 @@ async def _run_pipeline_bg(
     holdings_path: Path,
     nav_path: Path,
     market_data_path: Path | None,
+    scenario_library: str = "esma",
 ) -> None:
     store.update(run_id, status="running")
     try:
         loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(
             None,
-            lambda: run_all_portfolios(holdings_path, nav_path, market_data_path),
+            lambda: run_all_portfolios(holdings_path, nav_path, market_data_path, scenario_library=scenario_library),
         )
         store.update(run_id, status="complete", results=results)
     except Exception as exc:
@@ -79,6 +80,7 @@ async def upload_portfolio(
     holdings_file: UploadFile = File(...),
     nav_file: UploadFile = File(...),
     market_data_file: UploadFile | None = File(default=None),
+    scenario_library: str = Form(default="esma"),
 ):
     """Upload MVHOL + NAV CSV files and trigger the full pipeline run."""
     try:
@@ -102,7 +104,7 @@ async def upload_portfolio(
         store.create(run_id)
 
         asyncio.create_task(
-            _run_pipeline_bg(run_id, holdings_path, nav_path, market_data_path)
+            _run_pipeline_bg(run_id, holdings_path, nav_path, market_data_path, scenario_library=scenario_library)
         )
 
         return {"run_id": run_id, "status": "pending"}
@@ -186,9 +188,17 @@ async def run_demo():
 
 
 @router.get("/scenarios")
-def list_scenarios():
-    """Return all stress scenario definitions from config/settings.py."""
+def list_scenarios(library: str = "esma"):
+    """Return stress scenario definitions. library: esma | revolution | all"""
+    from fastapi import Query as _Q
+    if library == "revolution":
+        source = REVOLUTION_SCENARIOS
+    elif library == "all":
+        source = STRESS_SCENARIOS + REVOLUTION_SCENARIOS
+    else:
+        source = STRESS_SCENARIOS
     return {
+        "library": library,
         "scenarios": [
             {
                 "name": sc.name,
@@ -203,6 +213,6 @@ def list_scenarios():
                 "is_worst_case": getattr(sc, "is_worst_case", False),
                 "version": getattr(sc, "version", ""),
             }
-            for sc in STRESS_SCENARIOS
+            for sc in source
         ]
     }

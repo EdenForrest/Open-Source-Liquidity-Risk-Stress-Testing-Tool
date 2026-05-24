@@ -216,6 +216,50 @@ GATE_THRESHOLD: float       = 0.10   # UCITS/AIFMD common practice
 SUSPENSION_THRESHOLD: float = 0.25
 
 
+REVOLUTION_SCENARIOS: List[StressScenario] = [
+    StressScenario(
+        name="Normal",
+        equity_shock=0.00, credit_spread_shock_bps=0,
+        liquidity_haircut_multiplier=1.0, redemption_rate=0.05,
+        adv_stress_scalar=1.00, rate_shock_bps=0,
+        version="1.0",
+        description="Current market conditions with modest redemption pressure.",
+        regulatory_basis="Revolution Framework — baseline calibration",
+        is_worst_case=False, last_reviewed="2026-01-01",
+    ),
+    StressScenario(
+        name="Stressed (H1 2008)",
+        equity_shock=-0.15, credit_spread_shock_bps=150,
+        liquidity_haircut_multiplier=1.4, redemption_rate=0.15,
+        adv_stress_scalar=0.75, rate_shock_bps=50,
+        version="1.0",
+        description="Sub-prime deterioration: equity -15%, spreads +150bps, ADV at 75% of normal.",
+        regulatory_basis="Revolution Framework — historically calibrated (H1 2008)",
+        is_worst_case=False, last_reviewed="2026-01-01",
+    ),
+    StressScenario(
+        name="Highly Stressed (Sep 2008–Mar 2009)",
+        equity_shock=-0.35, credit_spread_shock_bps=400,
+        liquidity_haircut_multiplier=2.0, redemption_rate=0.30,
+        adv_stress_scalar=0.45, rate_shock_bps=100,
+        version="1.0",
+        description="Lehman collapse: equity -35%, spreads +400bps, severe ADV compression to 45%.",
+        regulatory_basis="Revolution Framework — historically calibrated (Lehman, Sep 2008–Mar 2009)",
+        is_worst_case=False, last_reviewed="2026-01-01",
+    ),
+    StressScenario(
+        name="Extreme (Covid-19)",
+        equity_shock=-0.30, credit_spread_shock_bps=250,
+        liquidity_haircut_multiplier=2.2, redemption_rate=0.40,
+        adv_stress_scalar=0.40, rate_shock_bps=-75,
+        version="1.0",
+        description="Pandemic liquidity freeze: equity -30%, spreads +250bps, rate rally -75bps, ADV at 40%.",
+        regulatory_basis="Revolution Framework — historically calibrated (Covid-19, Mar 2020)",
+        is_worst_case=True, last_reviewed="2026-01-01",
+    ),
+]
+
+
 def validate_scenario_severity_monotonic(scenarios: List[StressScenario] = None) -> bool:
     """Return True if liquidity_haircut_multiplier is non-decreasing across scenarios."""
     if scenarios is None:

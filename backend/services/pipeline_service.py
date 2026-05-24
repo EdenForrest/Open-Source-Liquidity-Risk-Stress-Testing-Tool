@@ -20,7 +20,9 @@ from liquidity_risk_tool.engines.waterfall_engine import WaterfallEngine
 from liquidity_risk_tool.engines.leverage_engine import LeverageEngine
 from liquidity_risk_tool.reporting.risk_metrics import RiskMetricsBuilder
 from liquidity_risk_tool.reporting.report_builder import ReportBuilder
-from liquidity_risk_tool.config.settings import STRESS_SCENARIOS, AIFMD2_PRESELECTED_LMTS, AIFMD2_MIN_LMT_COUNT
+from liquidity_risk_tool.config.settings import (
+    STRESS_SCENARIOS, REVOLUTION_SCENARIOS, AIFMD2_PRESELECTED_LMTS, AIFMD2_MIN_LMT_COUNT,
+)
 
 
 def _safe(v):
@@ -59,6 +61,7 @@ def run_full_pipeline(
     nav_path: str | Path,
     market_data_path: Optional[str | Path] = None,
     portfolio_code: Optional[str] = None,
+    scenario_library: str = "esma",
 ) -> dict:
     """Run the full analytics pipeline and return a serialisable results dict."""
 
@@ -77,7 +80,7 @@ def run_full_pipeline(
     redemption_normal = redemption_sim.run(stress=False)
     redemption_stress = redemption_sim.run(stress=True)
 
-    stress_engine = StressEngine(portfolio, STRESS_SCENARIOS)
+    stress_engine = StressEngine(portfolio, scenario_library=scenario_library)
     stress_detail = stress_engine.run_detail()
 
     worst = max(stress_detail, key=lambda s: abs(s.nav_impact_pct))
@@ -106,9 +109,10 @@ def run_full_pipeline(
     _stressed_agg["nav_pct"] = _stressed_agg["market_value_eur"] / _stressed_nav if _stressed_nav > 0 else 0.0
     _stressed_agg["cumulative_nav_pct"] = _stressed_agg["nav_pct"].cumsum()
 
-    # Scenario metadata (name + governance fields) from settings
+    # Scenario metadata (name + governance fields) from the active scenario list
+    _active_scenarios = stress_engine.scenarios
     scenario_meta = []
-    for sc in STRESS_SCENARIOS:
+    for sc in _active_scenarios:
         scenario_meta.append({
             "name": sc.name,
             "equity_shock": sc.equity_shock,
@@ -182,12 +186,16 @@ def run_all_portfolios(
     holdings_path: str | Path,
     nav_path: str | Path,
     market_data_path: Optional[str | Path] = None,
+    scenario_library: str = "esma",
 ) -> dict:
     """Run the full pipeline for every portfolio code found in the holdings file."""
     codes = available_portfolio_codes(holdings_path)
     portfolios: dict[str, dict] = {}
     for code in codes:
-        portfolios[code] = run_full_pipeline(holdings_path, nav_path, market_data_path, portfolio_code=code)
+        portfolios[code] = run_full_pipeline(
+            holdings_path, nav_path, market_data_path,
+            portfolio_code=code, scenario_library=scenario_library,
+        )
     return {"portfolios": portfolios, "portfolio_codes": codes}
 
 
