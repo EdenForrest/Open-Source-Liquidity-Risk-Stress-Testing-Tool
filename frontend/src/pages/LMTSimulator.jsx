@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
 import { pct, eur } from '../utils/formatters'
@@ -342,11 +342,24 @@ export default function LMTSimulator() {
   const [paramValues, setParamValues] = useState({})
   const [loading, setLoading] = useState(false)
   const [simResults, setSimResults] = useState(null)
+  const [baseSimResults, setBaseSimResults] = useState(null)
   const [error, setError] = useState(null)
 
-  // Baseline = redemption results already in the run (no LMT config)
-  const baseNormal = data?.redemption_results || []
-  const baseStress  = data?.redemption_stress_results || []
+  // Auto-run baseline (pipeline default tools) whenever runId changes
+  useEffect(() => {
+    if (!runId) return
+    const defaultConfig = { active_tools: ['gate', 'suspension', 'swing_pricing'] }
+    client.post(`/run/${runId}/lmt-simulate`, {
+      lmt_config: defaultConfig,
+      portfolio: selectedPortfolio || null,
+    }).then(({ data: json }) => setBaseSimResults(json)).catch(() => {
+      // Fall back to stored pipeline results on error
+      setBaseSimResults(null)
+    })
+  }, [runId, selectedPortfolio])
+
+  const baseNormal = baseSimResults?.normal || data?.redemption_results || []
+  const baseStress  = baseSimResults?.stress  || data?.redemption_stress_results || []
 
   const handleToggle = useCallback((id) => {
     setEnabled(prev => ({ ...prev, [id]: !prev[id] }))

@@ -280,11 +280,13 @@ def lmt_simulate(run_id: str, body: LMTSimRequest):
         lmt_config=body.lmt_config,
     )
 
+    from backend.services.pipeline_service import _clean_records
+
     normal_df = sim.run(scenarios=body.scenarios, stress=False)
     stress_df  = sim.run(scenarios=body.scenarios, stress=True)
 
     return {
-        "normal":            normal_df.to_dict(orient="records"),
-        "stress":            stress_df.to_dict(orient="records"),
+        "normal":            _clean_records(normal_df.to_dict(orient="records")),
+        "stress":            _clean_records(stress_df.to_dict(orient="records")),
         "lmt_config_applied": body.lmt_config,
     }
