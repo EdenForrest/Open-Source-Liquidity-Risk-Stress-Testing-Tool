@@ -211,12 +211,12 @@ function ComplianceStrip({ enabled, onRun, loading }) {
   )
 }
 
-function CoverageTable({ normal, stress, baseNormal, baseStress }) {
-  if (!normal?.length) return null
+function CoverageTable({ normal, stress, baseNormal, baseStress, hasConfigured }) {
+  if (!baseNormal?.length) return null
 
-  const rows = normal.map((n, i) => {
-    const s = stress?.[i] || {}
-    const bn = baseNormal?.[i] || {}
+  const rows = baseNormal.map((bn, i) => {
+    const n = (hasConfigured ? normal?.[i] : bn) || bn
+    const s = (hasConfigured ? stress?.[i] : baseStress?.[i]) || {}
     const bs = baseStress?.[i] || {}
     return { n, s, bn, bs }
   })
@@ -242,22 +242,27 @@ function CoverageTable({ normal, stress, baseNormal, baseStress }) {
         <tbody>
           {rows.map(({ n, s, bn, bs }, i) => {
             const baseSf = bn.shortfall_eur ?? 0
-            const cfgSf = n.shortfall_eur ?? 0
-            const delta = cfgSf - baseSf
+            const cfgSf = hasConfigured ? (n.shortfall_eur ?? 0) : null
+            const delta = cfgSf != null ? cfgSf - baseSf : null
             const rowBg = i % 2 === 0 ? 'var(--bg-panel)' : 'var(--bg-surface)'
-            const sfColor = cfgSf <= 0 ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
+            const sfColor = cfgSf != null ? (cfgSf <= 0 ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)') : 'var(--text-muted)'
+            const stressSf = (hasConfigured ? s : bs).shortfall_eur ?? 0
             return (
               <tr key={i} style={{ background: rowBg }}>
-                <td className="px-3 py-2 font-semibold" style={{ color: 'var(--text-primary)' }}>{pct(n.scenario_pct)}</td>
+                <td className="px-3 py-2 font-semibold" style={{ color: 'var(--text-primary)' }}>{pct(bn.scenario_pct)}</td>
                 <td className="px-3 py-2 text-right" style={{ color: shortfallColor(baseSf) }}>{baseSf > 0 ? eur(baseSf) : '—'}</td>
-                <td className="px-3 py-2 text-right font-semibold" style={{ color: sfColor }}>{cfgSf > 0 ? eur(cfgSf) : '—'}</td>
-                <td className="px-3 py-2 text-right font-semibold" style={{ color: deltaColor(delta) }}>
-                  {delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${eur(delta)}`}
+                <td className="px-3 py-2 text-right font-semibold" style={{ color: sfColor }}>
+                  {cfgSf == null ? <span style={{ color: 'var(--text-muted)' }}>—</span> : cfgSf > 0 ? eur(cfgSf) : '—'}
+                </td>
+                <td className="px-3 py-2 text-right font-semibold" style={{ color: delta != null ? deltaColor(delta) : 'var(--text-muted)' }}>
+                  {delta == null ? '—' : delta === 0 ? '—' : `${delta > 0 ? '+' : ''}${eur(delta)}`}
                 </td>
                 <td className="px-3 py-2 text-right" style={{ color: 'var(--text-muted)' }}>{bn.days_to_clear != null ? bn.days_to_clear.toFixed(1) : '—'}</td>
-                <td className="px-3 py-2 text-right" style={{ color: 'var(--text-primary)' }}>{n.days_to_clear != null ? n.days_to_clear.toFixed(1) : '—'}</td>
-                <td className="px-3 py-2 text-right" style={{ color: s.shortfall_eur > 0 ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>{s.shortfall_eur > 0 ? eur(s.shortfall_eur) : '—'}</td>
-                <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{n.lmt_tools_used || '—'}</td>
+                <td className="px-3 py-2 text-right" style={{ color: 'var(--text-primary)' }}>
+                  {hasConfigured ? (n.days_to_clear != null ? n.days_to_clear.toFixed(1) : '—') : '—'}
+                </td>
+                <td className="px-3 py-2 text-right" style={{ color: stressSf > 0 ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>{stressSf > 0 ? eur(stressSf) : '—'}</td>
+                <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{bn.lmt_tools_used || '—'}</td>
               </tr>
             )
           })}
@@ -463,28 +468,34 @@ export default function LMTSimulator() {
           </div>
         )}
 
-        {!simResults && !loading && (
+        {!baseSimResults && !loading && (
           <div className="rounded border p-6 text-center text-xs" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-            Configure tools on the left and click <strong>Run Simulation</strong> to see the impact.
+            Loading baseline simulation…
           </div>
         )}
 
         {loading && (
-          <div className="rounded border p-6 text-center text-xs" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+          <div className="rounded border p-3 text-xs text-center" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
             Running simulation…
           </div>
         )}
 
-        {simResults && (
+        {baseSimResults && (
           <>
             <CoverageTable
-              normal={simResults.normal}
-              stress={simResults.stress}
+              normal={simResults?.normal}
+              stress={simResults?.stress}
               baseNormal={baseNormal}
               baseStress={baseStress}
+              hasConfigured={!!simResults}
             />
-            <InvestorCostSummary results={simResults.normal} />
-            <RecommendationCard normal={simResults.normal} base={baseNormal} />
+            {simResults && <InvestorCostSummary results={simResults.normal} />}
+            {simResults && <RecommendationCard normal={simResults.normal} base={baseNormal} />}
+            {!simResults && (
+              <div className="rounded border p-3 text-xs text-center" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                Configure tools on the left and click <strong>Run Simulation</strong> to compare impact.
+              </div>
+            )}
           </>
         )}
       </div>
