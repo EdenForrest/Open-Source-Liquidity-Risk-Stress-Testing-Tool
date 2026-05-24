@@ -262,7 +262,7 @@ function CoverageTable({ normal, stress, baseNormal, baseStress, hasConfigured }
                   {hasConfigured ? (n.days_to_clear != null ? n.days_to_clear.toFixed(1) : '—') : '—'}
                 </td>
                 <td className="px-3 py-2 text-right" style={{ color: stressSf > 0 ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>{stressSf > 0 ? eur(stressSf) : '—'}</td>
-                <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{bn.lmt_tools_used || '—'}</td>
+                <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{(hasConfigured ? n.lmt_tools_used : bn.lmt_tools_used) || '—'}</td>
               </tr>
             )
           })}
