@@ -55,7 +55,7 @@ export default function Dashboard() {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
         <KPICard label={<MetricTooltip id="lcr_t1">LCR T+1</MetricTooltip>} value={fmt(m.lcr_t1)} color="blue" />
         <KPICard label={<MetricTooltip id="lcr_t3">LCR T+3</MetricTooltip>} value={fmt(m.lcr_t3)} color="blue" />
         <KPICard label={<MetricTooltip id="lcr_t7">LCR T+7</MetricTooltip>} value={fmt(m.lcr_t7)} color="blue" />
@@ -66,12 +66,6 @@ export default function Dashboard() {
           value={m.breach_flag ? 'BREACH' : m.warning_flag ? 'WARNING' : 'OK'}
           color={m.breach_flag ? 'red' : m.warning_flag ? 'amber' : 'green'}
           alert={m.breach_flag}
-        />
-        <KPICard
-          label="Geo Status"
-          value={m.geo_breach_flag ? 'BREACH' : m.geo_warning_flag ? 'WARNING' : 'OK'}
-          color={m.geo_breach_flag ? 'red' : m.geo_warning_flag ? 'amber' : 'green'}
-          alert={m.geo_breach_flag}
         />
       </div>
 
