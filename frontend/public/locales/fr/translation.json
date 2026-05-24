@@ -1,0 +1,350 @@
+{
+  "nav": {
+    "allPortfolios": "Tous les portefeuilles",
+    "dashboard": "Tableau de bord",
+    "stressTests": "Tests de résistance",
+    "redemption": "Rachats",
+    "waterfall": "Cascade de vente",
+    "charts": "Graphiques",
+    "leverage": "Effet de levier",
+    "riskSummary": "Résumé du risque de liquidité",
+    "validation": "Validation"
+  },
+  "sidebar": {
+    "title": "Risque de liquidité",
+    "subtitle": "Plateforme analytique",
+    "version": "v1.1 — ESMA/AIFMD"
+  },
+  "header": {
+    "portfolio": "Portefeuille",
+    "language": "Langue"
+  },
+  "uploader": {
+    "holdingsCsv": "CSV des positions",
+    "navCsv": "CSV de la VNI",
+    "marketData": "Données de marché (optionnel)",
+    "chooseFile": "Choisir un fichier…",
+    "running": "En cours…",
+    "runAnalysis": "Lancer l'analyse",
+    "downloadReport": "Télécharger le rapport",
+    "runDemo": "Démo"
+  },
+  "status": {
+    "uploading": "Téléversement des fichiers…",
+    "runningDemo": "Exécution du pipeline de démonstration — chargement des données synthétiques…",
+    "complete": "Analyse terminée.",
+    "error": "Erreur : {{message}}",
+    "pipelineFailed": "Échec du pipeline — consultez le terminal uvicorn pour la trace."
+  },
+  "empty": {
+    "default": "Téléversez des fichiers CSV et lancez une analyse pour voir les résultats."
+  },
+  "export": {
+    "title": "Télécharger le rapport",
+    "close": "Fermer",
+    "format": "Format",
+    "excel": "Excel (.xlsx)",
+    "pdf": "PDF (.pdf)",
+    "xml": "XML (.xml)",
+    "downloading": "Téléchargement…",
+    "download": "Télécharger",
+    "failed": "Échec du téléchargement : {{message}}"
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "kpi": {
+      "lcrT1": "RLC T+1",
+      "lcrT3": "RLC T+3",
+      "lcrT7": "RLC T+7",
+      "illiquid": "Illiquide",
+      "totalNav": "VNI totale",
+      "geoStatus": "Statut géo."
+    },
+    "downloadReport": "Télécharger le rapport",
+    "ladderTitle": "Échelle de liquidité — Normal vs Stressé (% VNI)",
+    "positionsTitle": "Positions",
+    "columns": {
+      "isin": "ISIN",
+      "name": "Nom",
+      "assetClass": "Classe d'actif",
+      "marketValue": "Valeur de marché (€)",
+      "weight": "Poids",
+      "bucket": "Tranche",
+      "haircut": "Décote",
+      "realisable": "Valeur réalisable (€)",
+      "daysToLiq": "Jours de liquidation"
+    },
+    "aifmd": {
+      "title": "AIFMD II — Directive (UE) 2024/927",
+      "status": "Statut",
+      "breach": "DÉPASSEMENT",
+      "incomplete": "INCOMPLET",
+      "ok": "OK",
+      "warningText": "Un ou plusieurs indicateurs AIFMD II sont en dépassement ou le bilan de conformité est incomplet. Consultez la page Effet de levier pour plus de détails.",
+      "lmtLabel": "OGL présélectionnés"
+    },
+    "geo": {
+      "title": "Concentration géographique (Annexe IV AIFMD)",
+      "breach": "DÉPASSEMENT — Hors UE >50 %",
+      "warning": "Avertissement — Pays unique >35 %",
+      "ok": "Géo OK",
+      "top": "Principal :"
+    }
+  },
+  "allPortfolios": {
+    "title": "Tous les portefeuilles",
+    "portfolioCount_one": "{{count}} portefeuille",
+    "portfolioCount_other": "{{count}} portefeuilles",
+    "metricComparison": "Comparaison des indicateurs",
+    "metric": "Indicateur",
+    "breach": "DÉPASSEMENT",
+    "warning": "Avertissement",
+    "ok": "OK",
+    "compliant": "conforme",
+    "insufficient": "insuffisant",
+    "metrics": {
+      "totalNav": "VNI totale (€)",
+      "lcrT1": "RLC T+1",
+      "lcrT3": "RLC T+3",
+      "lcrT7": "RLC T+7",
+      "illiquidPct": "% illiquide",
+      "warningFlag": "Indicateur d'avertissement",
+      "breachFlag": "Indicateur de dépassement",
+      "grossLev": "Levier brut",
+      "commitLev": "Levier d'engagement",
+      "leverageCap": "Plafond de levier",
+      "leverageBreach": "Dépassement du plafond",
+      "lmtCount": "Nombre d'OGL",
+      "lmtCompliant": "Conformité OGL",
+      "geoTopCountry": "Pays principal",
+      "nonEuExposure": "Exposition hors UE",
+      "geoStatus": "Statut géographique"
+    }
+  },
+  "stress": {
+    "title": "Tests de résistance",
+    "kpi": {
+      "worstNavImpact": "Pire impact VNI",
+      "worstLiqAfter": "Pire liquidité post-choc",
+      "maxDaysToLiq": "Jours max. de liquidation",
+      "redemptionsMet": "Rachats couverts"
+    },
+    "navImpactChart": "Impact VNI par scénario",
+    "resultsTable": "Résultats des scénarios",
+    "paramsTable": "Paramètres des scénarios",
+    "columns": {
+      "scenario": "Scénario",
+      "navBefore": "VNI avant (€)",
+      "navAfter": "VNI après (€)",
+      "navImpact": "Impact VNI",
+      "equityLoss": "Perte actions (€)",
+      "creditLoss": "Perte crédit (€)",
+      "liquidBefore": "Liquidité avant",
+      "liquidAfter": "Liquidité après",
+      "ttl": "TTL (jours)",
+      "redemptionPct": "% rachats",
+      "canMeet": "Couvert",
+      "equityShock": "Choc actions",
+      "spreadShock": "Choc spread (bps)",
+      "rateShock": "Choc taux (bps)",
+      "haircutMult": "Mult. décote",
+      "advScalar": "Scalaire ADV",
+      "redemptionRate": "Taux de rachat",
+      "description": "Description",
+      "regulatoryBasis": "Base réglementaire"
+    },
+    "yes": "Oui",
+    "no": "Non"
+  },
+  "redemption": {
+    "title": "Couverture des rachats",
+    "normalRegime": "Régime normal",
+    "stressedRegime": "Régime stressé",
+    "columns": {
+      "redemptionPct": "% rachats",
+      "redemptionEur": "Rachats (€)",
+      "liquidAvail": "Liquidités disponibles (€)",
+      "coverageRatio": "Ratio de couverture",
+      "canMeet": "Couvert",
+      "gateTriggered": "Plafond activé",
+      "suspensionTriggered": "Suspension activée",
+      "swingPricing": "Swing pricing",
+      "swingFactor": "Facteur swing"
+    },
+    "yes": "Oui",
+    "no": "Non",
+    "triggered": "Activé"
+  },
+  "waterfall": {
+    "title": "Cascade de vente forcée",
+    "kpi": {
+      "target": "Objectif (€)",
+      "totalProceeds": "Produit total (€)",
+      "daysToTarget": "Jours pour atteindre l'objectif",
+      "targetMet": "Objectif atteint",
+      "residualShortfall": "Déficit résiduel (€)",
+      "navBefore": "VNI avant (€)",
+      "navAfter": "VNI après (€)",
+      "navImpact": "Impact VNI"
+    },
+    "dailyProceedsChart": "Produits journaliers par tranche de liquidité",
+    "sellOrders": "Ordres de vente",
+    "columns": {
+      "isin": "ISIN",
+      "name": "Nom",
+      "bucket": "Tranche",
+      "day": "Jour",
+      "sellAmount": "Montant vendu (€)",
+      "proceeds": "Produit (€)",
+      "partial": "Partiel",
+      "cumProceeds": "Produit cumulé (€)"
+    },
+    "yes": "Oui",
+    "no": "Non",
+    "partialBadge": "Partiel"
+  },
+  "charts": {
+    "title": "Graphiques",
+    "ladderTitle": "Échelle de liquidité — Normal vs Stressé",
+    "compositionTitle": "Composition du portefeuille par classe d'actif",
+    "stressNavTitle": "Impact VNI sous stress (%)",
+    "liquidityScenarioTitle": "Liquidité avant/après par scénario",
+    "geoTitle": "Concentration géographique (Annexe IV AIFMD)",
+    "daysToLiqTitle": "Jours de liquidation — par position",
+    "waterfallCumTitle": "Cascade — Produits cumulés (M€)",
+    "geo": {
+      "breach": "DÉPASSEMENT — Hors UE >50 %",
+      "warning": "Avertissement — Pays unique >35 %",
+      "ok": "Géo OK",
+      "top": "Principal :"
+    },
+    "legend": {
+      "normal": "Normal",
+      "stressed": "Stressé",
+      "liqBefore": "Liq. avant",
+      "liqAfter": "Liq. après",
+      "navDelta": "VNI Δ%",
+      "eu": "UE",
+      "nonEu": "Hors UE",
+      "other": "Autres"
+    },
+    "axis": {
+      "days": "jours",
+      "day": "Jour"
+    },
+    "tooltip": {
+      "nav": "VNI :",
+      "noExposure": "Aucune exposition",
+      "warning": "AVERTISSEMENT",
+      "elevated": "ÉLEVÉ"
+    },
+    "geoLegend": {
+      "warn": "Avert.",
+      "breach": "Dépass."
+    }
+  },
+  "leverage": {
+    "title": "Levier AIFMD II — {{fundName}}",
+    "kpi": {
+      "grossLeverage": "Levier brut",
+      "commitmentLeverage": "Levier d'engagement",
+      "capUtilization": "Utilisation du plafond",
+      "lmtsPreselected": "OGL présélectionnés"
+    },
+    "kpiSub": {
+      "cap": "plafond {{pct}}",
+      "headroom": "marge {{pct}}",
+      "compliant": "conforme",
+      "insufficient": "insuffisant"
+    },
+    "section": {
+      "leverageMetrics": "Indicateurs de levier",
+      "loanOrigination": "FIA originateur de prêts",
+      "lmt": "Outils de gestion de la liquidité — AIFMD II Art. 16 & Annexe V"
+    },
+    "rows": {
+      "grossLeverage": "Levier brut (Art. 7 RD 231/2013)",
+      "commitmentLeverage": "Levier d'engagement",
+      "applicableCap": "Plafond applicable",
+      "capHeadroom": "Marge sur plafond",
+      "capUtilization": "Utilisation du plafond",
+      "nav": "VNI",
+      "loanOriginationAif": "Régime FIA originateur de prêts",
+      "loansPctNav": "Prêts % VNI",
+      "riskRetention": "Rétention du risque (≥5 %)",
+      "borrowerConcentration": "Dépassements de concentration emprunteur"
+    },
+    "values": {
+      "yesApplies": "OUI — applicable",
+      "no": "Non",
+      "threshold50": "seuil 50 %",
+      "ok": "OK",
+      "breach": "DÉPASSEMENT",
+      "none": "Aucun"
+    },
+    "lmtText": "{{n}} outil présélectionné — {{status}} (AIFMD II Art. 16 exige ≥ 2).",
+    "lmtText_plural": "{{n}} outils présélectionnés — {{status}} (AIFMD II Art. 16 exige ≥ 2).",
+    "lmtCompliant": "conforme",
+    "lmtNonCompliant": "non conforme",
+    "footer": "Levier calculé conformément à l'AIFMD II (Directive (UE) 2024/927), article 15 et au règlement délégué de la Commission (UE) 231/2013, article 7 (méthode brute) et article 8 (méthode de l'engagement)."
+  },
+  "riskStory": {
+    "title": "Résumé du risque de liquidité",
+    "copyText": "Copier le texte",
+    "downloadJson": "Télécharger JSON",
+    "copyError": "Impossible de copier dans le presse-papiers — essayez de sélectionner le texte manuellement.",
+    "downloadError": "Échec du téléchargement — vérifiez les autorisations du navigateur.",
+    "statusBreach": "⚠️ DÉPASSEMENT : {{message}}",
+    "statusWarning": "⚠️ AVERTISSEMENT : {{message}}",
+    "statusOk": "✅ Le profil de liquidité du fonds est dans les paramètres normaux."
+  },
+  "validation": {
+    "title": "Rapport de validation",
+    "subtitle": "Contrôles d'intégrité de la logique métier sur les résultats du pipeline",
+    "passed_one": "{{count}} réussi",
+    "passed_other": "{{count}} réussis",
+    "failed_one": "{{count}} échoué",
+    "failed_other": "{{count}} échoués"
+  },
+  "infoModal": {
+    "title": "Référence des formats de fichiers",
+    "tabs": {
+      "holdings": "CSV des positions",
+      "nav": "CSV de la VNI",
+      "marketData": "CSV données de marché (optionnel)",
+      "assetDefaults": "Valeurs par défaut des classes d'actifs"
+    },
+    "meta": {
+      "required": "Obligatoire",
+      "delimiter": "Délimiteur",
+      "decimalFormat": "Format décimal",
+      "naming": "Nommage"
+    },
+    "table": {
+      "columnName": "Nom de colonne",
+      "required": "Obligatoire",
+      "example": "Exemple",
+      "notes": "Notes"
+    },
+    "values": {
+      "yes": "Oui",
+      "no": "Non (optionnel)"
+    },
+    "assetDefaults": {
+      "assetClass": "Classe d'actif",
+      "defaultAdv": "ADV par défaut (EUR)",
+      "defaultBidAsk": "Spread bid-ask par défaut"
+    },
+    "footer": "Les noms de colonnes sont reconnus sans tenir compte de la casse. Tout synonyme reconnu est accepté.",
+    "marketNote": "Toutes les colonnes sauf isin sont facultatives. Les valeurs manquantes reviennent aux valeurs par défaut de la classe d'actifs.",
+    "noMarketDataNote": "En l'absence de fichier CSV de données de marché, ces valeurs par défaut sont utilisées. Fournissez un CSV de données de marché pour personnaliser par position."
+  },
+  "common": {
+    "breach": "DÉPASSEMENT",
+    "warning": "Avertissement",
+    "ok": "OK",
+    "yes": "Oui",
+    "no": "Non",
+    "na": "—"
+  }
+}

@@ -1,8 +1,10 @@
+import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import { useAnalysisPoller } from '../hooks/useAnalysis'
 
 export default function StatusBanner() {
   const { runId, status, error, fetchPortfolios, markError } = useAnalysis()
+  const { t } = useTranslation()
 
   useAnalysisPoller(runId, async (statusData) => {
     if (statusData.status === 'complete') {
@@ -13,7 +15,7 @@ export default function StatusBanner() {
         markError(e.message)
       }
     } else {
-      const detail = statusData.error || 'Pipeline failed — check uvicorn terminal for traceback.'
+      const detail = statusData.error || t('status.pipelineFailed')
       markError(detail)
     }
   })
@@ -21,10 +23,10 @@ export default function StatusBanner() {
   if (status === 'idle') return null
 
   const states = {
-    uploading: { bg: 'bg-blue-50 border-blue-300 text-blue-800', msg: 'Uploading files…' },
-    running:   { bg: 'bg-amber-50 border-amber-300 text-amber-800', msg: 'Running demo pipeline — loading synthetic portfolio data…' },
-    complete:  { bg: 'bg-green-50 border-green-300 text-green-800', msg: 'Analysis complete.' },
-    error:     { bg: 'bg-red-50 border-red-300 text-red-800', msg: `Error: ${error}` },
+    uploading: { bg: 'bg-blue-50 border-blue-300 text-blue-800', msg: t('status.uploading') },
+    running:   { bg: 'bg-amber-50 border-amber-300 text-amber-800', msg: t('status.runningDemo') },
+    complete:  { bg: 'bg-green-50 border-green-300 text-green-800', msg: t('status.complete') },
+    error:     { bg: 'bg-red-50 border-red-300 text-red-800', msg: t('status.error', { message: error }) },
   }
 
   const { bg, msg } = states[status] || states.running

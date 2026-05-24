@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -15,6 +16,7 @@ import { fmt, fmtEur } from '../utils/formatters'
 export default function Dashboard() {
   const { data, error } = useAnalysis()
   const { theme } = useTheme()
+  const { t } = useTranslation()
   const ct = chartTheme(theme)
   const liq = data?.liquidity
   const [exportOpen, setExportOpen] = useState(false)
@@ -35,6 +37,18 @@ export default function Dashboard() {
   const rowEven = { background: 'var(--bg-panel)' }
   const rowOdd  = { background: 'var(--bg-surface)' }
 
+  const colHeaders = [
+    [t('dashboard.columns.isin'), null],
+    [t('dashboard.columns.name'), null],
+    [t('dashboard.columns.assetClass'), null],
+    [t('dashboard.columns.marketValue'), null],
+    [t('dashboard.columns.weight'), null],
+    [t('dashboard.columns.bucket'), 'bucket'],
+    [t('dashboard.columns.haircut'), 'haircut'],
+    [t('dashboard.columns.realisable'), 'realisable_value'],
+    [t('dashboard.columns.daysToLiq'), 'pos_days_to_liq'],
+  ]
+
   return (
     <div className="p-3 space-y-3">
       <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
@@ -46,24 +60,24 @@ export default function Dashboard() {
           onClick={() => setExportOpen(true)}
           className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium"
           style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer' }}
-          title="Download report (Excel, PDF, or XML)"
+          title={t('dashboard.downloadReport')}
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          Download Report
+          {t('dashboard.downloadReport')}
         </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-        <KPICard label={<MetricTooltip id="lcr_t1">LCR T+1</MetricTooltip>} value={fmt(m.lcr_t1)} color="blue" />
-        <KPICard label={<MetricTooltip id="lcr_t3">LCR T+3</MetricTooltip>} value={fmt(m.lcr_t3)} color="blue" />
-        <KPICard label={<MetricTooltip id="lcr_t7">LCR T+7</MetricTooltip>} value={fmt(m.lcr_t7)} color="blue" />
-        <KPICard label={<MetricTooltip id="illiquid_pct">Illiquid</MetricTooltip>} value={fmt(m.illiquid_pct)} color={m.illiquid_pct > 0.2 ? 'red' : 'slate'} />
-        <KPICard label={<MetricTooltip id="total_nav">Total NAV</MetricTooltip>} value={fmtEur(liq.total_nav_eur)} color="slate" />
+        <KPICard label={<MetricTooltip id="lcr_t1">{t('dashboard.kpi.lcrT1')}</MetricTooltip>} value={fmt(m.lcr_t1)} color="blue" />
+        <KPICard label={<MetricTooltip id="lcr_t3">{t('dashboard.kpi.lcrT3')}</MetricTooltip>} value={fmt(m.lcr_t3)} color="blue" />
+        <KPICard label={<MetricTooltip id="lcr_t7">{t('dashboard.kpi.lcrT7')}</MetricTooltip>} value={fmt(m.lcr_t7)} color="blue" />
+        <KPICard label={<MetricTooltip id="illiquid_pct">{t('dashboard.kpi.illiquid')}</MetricTooltip>} value={fmt(m.illiquid_pct)} color={m.illiquid_pct > 0.2 ? 'red' : 'slate'} />
+        <KPICard label={<MetricTooltip id="total_nav">{t('dashboard.kpi.totalNav')}</MetricTooltip>} value={fmtEur(liq.total_nav_eur)} color="slate" />
         <KPICard
-          label={<MetricTooltip id="status">Status</MetricTooltip>}
-          value={m.breach_flag ? 'BREACH' : m.warning_flag ? 'WARNING' : 'OK'}
+          label={<MetricTooltip id="status">{t('dashboard.aifmd.status')}</MetricTooltip>}
+          value={m.breach_flag ? t('common.breach') : m.warning_flag ? t('common.warning') : t('common.ok')}
           color={m.breach_flag ? 'red' : m.warning_flag ? 'amber' : 'green'}
           alert={m.breach_flag}
         />
@@ -71,7 +85,7 @@ export default function Dashboard() {
 
       <div className="rounded shadow-sm border p-3" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide mb-2 bb-head" style={{ color: 'var(--text-secondary)' }}>
-          Liquidity Ladder — Normal vs Stressed (% NAV)
+          {t('dashboard.ladderTitle')}
         </h2>
         <ResponsiveContainer width="100%" height={260}>
           <BarChart data={ladderData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
@@ -101,18 +115,18 @@ export default function Dashboard() {
       {aifmd2 && aifmd2.gross_leverage != null ? (
         <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
           <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
-            AIFMD II — Directive (EU) 2024/927
+            {t('dashboard.aifmd.title')}
           </h2>
           <table className="w-full">
             <tbody>
               <tr>
-                <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Status</td>
+                <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{t('dashboard.aifmd.status')}</td>
                 <td className="px-3 py-1.5 text-sm font-semibold text-right">
                   {aifmd2.leverage_breach
-                    ? <span style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+                    ? <span style={{ color: 'var(--kpi-red-text)' }}>{t('dashboard.aifmd.breach')}</span>
                     : !aifmd2.lmt_compliant
-                    ? <span style={{ color: 'var(--kpi-amber-text)' }}>INCOMPLETE</span>
-                    : <span style={{ color: 'var(--kpi-green-text)' }}>OK</span>}
+                    ? <span style={{ color: 'var(--kpi-amber-text)' }}>{t('dashboard.aifmd.incomplete')}</span>
+                    : <span style={{ color: 'var(--kpi-green-text)' }}>{t('dashboard.aifmd.ok')}</span>}
                 </td>
               </tr>
               <tr>
@@ -135,12 +149,14 @@ export default function Dashboard() {
               </tr>
               <tr>
                 <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  <MetricTooltip id="lmt_count">LMTs Pre-selected</MetricTooltip>
+                  <MetricTooltip id="lmt_count">{t('dashboard.aifmd.lmtLabel')}</MetricTooltip>
                 </td>
                 <td className="px-3 py-1.5 text-sm font-semibold text-right"
                   style={{ color: aifmd2.lmt_compliant ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)' }}>
                   {aifmd2.lmt_count ?? '—'}
-                  <span className="ml-2 text-xs font-normal opacity-60">{aifmd2.lmt_compliant ? 'compliant' : 'insufficient'}</span>
+                  <span className="ml-2 text-xs font-normal opacity-60">
+                    {aifmd2.lmt_compliant ? t('allPortfolios.compliant') : t('allPortfolios.insufficient')}
+                  </span>
                 </td>
               </tr>
               {aifmd2.warnings && (
@@ -165,17 +181,12 @@ export default function Dashboard() {
 
       <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={{ color: 'var(--text-secondary)' }}>
-          Positions
+          {t('dashboard.positionsTitle')}
         </h2>
         <table className="w-full text-sm">
           <thead style={surfaceStyle}>
             <tr>
-              {[
-                ['ISIN', null], ['Name', null], ['Asset Class', null],
-                ['Market Value (€)', null], ['Weight', null],
-                ['Bucket', 'bucket'], ['Haircut', 'haircut'],
-                ['Realisable (€)', 'realisable_value'], ['Days to Liq.', 'pos_days_to_liq'],
-              ].map(([h, id]) => (
+              {colHeaders.map(([h, id]) => (
                 <th key={h} className="px-3 py-2 text-left whitespace-nowrap text-xs uppercase"
                   style={{ color: 'var(--text-secondary)' }}>
                   {id ? <MetricTooltip id={id}>{h}</MetricTooltip> : h}

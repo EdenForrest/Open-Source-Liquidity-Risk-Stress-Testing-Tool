@@ -1,0 +1,350 @@
+{
+  "nav": {
+    "allPortfolios": "Alle Portfolios",
+    "dashboard": "Dashboard",
+    "stressTests": "Stresstests",
+    "redemption": "Rücknahmen",
+    "waterfall": "Verkaufskaskade",
+    "charts": "Diagramme",
+    "leverage": "Hebelwirkung",
+    "riskSummary": "Liquiditätsrisiko-Zusammenfassung",
+    "validation": "Validierung"
+  },
+  "sidebar": {
+    "title": "Liquiditätsrisiko",
+    "subtitle": "Analyseplattform",
+    "version": "v1.1 — ESMA/AIFMD"
+  },
+  "header": {
+    "portfolio": "Portfolio",
+    "language": "Sprache"
+  },
+  "uploader": {
+    "holdingsCsv": "Positionen CSV",
+    "navCsv": "NAV CSV",
+    "marketData": "Marktdaten (optional)",
+    "chooseFile": "Datei auswählen…",
+    "running": "Läuft…",
+    "runAnalysis": "Analyse starten",
+    "downloadReport": "Bericht herunterladen",
+    "runDemo": "Demo"
+  },
+  "status": {
+    "uploading": "Dateien werden hochgeladen…",
+    "runningDemo": "Demo-Pipeline wird ausgeführt — synthetische Portfoliodaten werden geladen…",
+    "complete": "Analyse abgeschlossen.",
+    "error": "Fehler: {{message}}",
+    "pipelineFailed": "Pipeline fehlgeschlagen — Uvicorn-Terminal auf Fehlermeldungen prüfen."
+  },
+  "empty": {
+    "default": "CSV-Dateien hochladen und eine Analyse starten, um Ergebnisse anzuzeigen."
+  },
+  "export": {
+    "title": "Bericht herunterladen",
+    "close": "Schließen",
+    "format": "Format",
+    "excel": "Excel (.xlsx)",
+    "pdf": "PDF (.pdf)",
+    "xml": "XML (.xml)",
+    "downloading": "Wird heruntergeladen…",
+    "download": "Herunterladen",
+    "failed": "Download fehlgeschlagen: {{message}}"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "kpi": {
+      "lcrT1": "LCR T+1",
+      "lcrT3": "LCR T+3",
+      "lcrT7": "LCR T+7",
+      "illiquid": "Illiquide",
+      "totalNav": "Gesamt-NAV",
+      "geoStatus": "Geo-Status"
+    },
+    "downloadReport": "Bericht herunterladen",
+    "ladderTitle": "Liquiditätsleiter — Normal vs. Gestresst (% NAV)",
+    "positionsTitle": "Positionen",
+    "columns": {
+      "isin": "ISIN",
+      "name": "Name",
+      "assetClass": "Anlageklasse",
+      "marketValue": "Marktwert (€)",
+      "weight": "Gewichtung",
+      "bucket": "Eimer",
+      "haircut": "Abschlag",
+      "realisable": "Realisierbarer Wert (€)",
+      "daysToLiq": "Liquidationstage"
+    },
+    "aifmd": {
+      "title": "AIFMD II — Richtlinie (EU) 2024/927",
+      "status": "Status",
+      "breach": "VERLETZUNG",
+      "incomplete": "UNVOLLSTÄNDIG",
+      "ok": "OK",
+      "warningText": "Eine oder mehrere AIFMD-II-Kennzahlen sind verletzt oder das Compliance-Bild ist unvollständig. Details siehe Seite Hebelwirkung.",
+      "lmtLabel": "LMT vorausgewählt"
+    },
+    "geo": {
+      "title": "Geografische Konzentration (AIFMD Anhang IV)",
+      "breach": "VERLETZUNG — Nicht-EU >50 %",
+      "warning": "Warnung — Einzelland >35 %",
+      "ok": "Geo OK",
+      "top": "Top:"
+    }
+  },
+  "allPortfolios": {
+    "title": "Alle Portfolios",
+    "portfolioCount_one": "{{count}} Portfolio",
+    "portfolioCount_other": "{{count}} Portfolios",
+    "metricComparison": "Kennzahlenvergleich",
+    "metric": "Kennzahl",
+    "breach": "VERLETZUNG",
+    "warning": "Warnung",
+    "ok": "OK",
+    "compliant": "konform",
+    "insufficient": "unzureichend",
+    "metrics": {
+      "totalNav": "Gesamt-NAV (€)",
+      "lcrT1": "LCR T+1",
+      "lcrT3": "LCR T+3",
+      "lcrT7": "LCR T+7",
+      "illiquidPct": "Illiquide %",
+      "warningFlag": "Warnindikator",
+      "breachFlag": "Verletzungsindikator",
+      "grossLev": "Brutto-Hebel",
+      "commitLev": "Engagement-Hebel",
+      "leverageCap": "Hebelgrenze",
+      "leverageBreach": "Grenzüberschreitung",
+      "lmtCount": "LMT-Anzahl",
+      "lmtCompliant": "LMT-Konformität",
+      "geoTopCountry": "Geografisches Hauptland",
+      "nonEuExposure": "Nicht-EU-Exponierung",
+      "geoStatus": "Geografischer Status"
+    }
+  },
+  "stress": {
+    "title": "Stresstests",
+    "kpi": {
+      "worstNavImpact": "Schlimmste NAV-Auswirkung",
+      "worstLiqAfter": "Schlechteste Liquidität danach",
+      "maxDaysToLiq": "Max. Liquidationstage",
+      "redemptionsMet": "Rücknahmen erfüllt"
+    },
+    "navImpactChart": "NAV-Auswirkung pro Szenario",
+    "resultsTable": "Szenarioergebnisse",
+    "paramsTable": "Szenarioparameter",
+    "columns": {
+      "scenario": "Szenario",
+      "navBefore": "NAV vorher (€)",
+      "navAfter": "NAV nachher (€)",
+      "navImpact": "NAV-Auswirkung",
+      "equityLoss": "Aktienverlust (€)",
+      "creditLoss": "Kreditverlust (€)",
+      "liquidBefore": "Liquidität vorher",
+      "liquidAfter": "Liquidität nachher",
+      "ttl": "TTL (Tage)",
+      "redemptionPct": "Rücknahme %",
+      "canMeet": "Erfüllbar",
+      "equityShock": "Aktienerschütterung",
+      "spreadShock": "Spread-Schock (Bps)",
+      "rateShock": "Zinsschock (Bps)",
+      "haircutMult": "Abschlags-Mult.",
+      "advScalar": "ADV-Skalar",
+      "redemptionRate": "Rücknahmerate",
+      "description": "Beschreibung",
+      "regulatoryBasis": "Regulierungsgrundlage"
+    },
+    "yes": "Ja",
+    "no": "Nein"
+  },
+  "redemption": {
+    "title": "Rücknahmendeckung",
+    "normalRegime": "Normalbetrieb",
+    "stressedRegime": "Stressbetrieb",
+    "columns": {
+      "redemptionPct": "Rücknahme %",
+      "redemptionEur": "Rücknahmen (€)",
+      "liquidAvail": "Verfügbare Liquidität (€)",
+      "coverageRatio": "Deckungsquote",
+      "canMeet": "Erfüllbar",
+      "gateTriggered": "Gate ausgelöst",
+      "suspensionTriggered": "Suspension ausgelöst",
+      "swingPricing": "Swing Pricing",
+      "swingFactor": "Swing-Faktor"
+    },
+    "yes": "Ja",
+    "no": "Nein",
+    "triggered": "Ausgelöst"
+  },
+  "waterfall": {
+    "title": "Erzwungene Verkaufskaskade",
+    "kpi": {
+      "target": "Ziel (€)",
+      "totalProceeds": "Gesamterlös (€)",
+      "daysToTarget": "Tage bis Ziel",
+      "targetMet": "Ziel erreicht",
+      "residualShortfall": "Verbleibendes Defizit (€)",
+      "navBefore": "NAV vorher (€)",
+      "navAfter": "NAV nachher (€)",
+      "navImpact": "NAV-Auswirkung"
+    },
+    "dailyProceedsChart": "Tageserlöse nach Liquiditätseimer",
+    "sellOrders": "Verkaufsaufträge",
+    "columns": {
+      "isin": "ISIN",
+      "name": "Name",
+      "bucket": "Eimer",
+      "day": "Tag",
+      "sellAmount": "Verkaufsbetrag (€)",
+      "proceeds": "Erlös (€)",
+      "partial": "Teilweise",
+      "cumProceeds": "Kumulierter Erlös (€)"
+    },
+    "yes": "Ja",
+    "no": "Nein",
+    "partialBadge": "Teilweise"
+  },
+  "charts": {
+    "title": "Diagramme",
+    "ladderTitle": "Liquiditätsleiter — Normal vs. Gestresst",
+    "compositionTitle": "Portfoliozusammensetzung nach Anlageklasse",
+    "stressNavTitle": "NAV-Auswirkung unter Stress (%)",
+    "liquidityScenarioTitle": "Liquidität vorher/nachher — je Szenario",
+    "geoTitle": "Geografische Konzentration (AIFMD Anhang IV)",
+    "daysToLiqTitle": "Liquidationstage — je Position",
+    "waterfallCumTitle": "Kaskade — Kumulierter Erlös (Mio. €)",
+    "geo": {
+      "breach": "VERLETZUNG — Nicht-EU >50 %",
+      "warning": "Warnung — Einzelland >35 %",
+      "ok": "Geo OK",
+      "top": "Top:"
+    },
+    "legend": {
+      "normal": "Normal",
+      "stressed": "Gestresst",
+      "liqBefore": "Liq. vorher",
+      "liqAfter": "Liq. nachher",
+      "navDelta": "NAV Δ%",
+      "eu": "EU",
+      "nonEu": "Nicht-EU",
+      "other": "Sonstige"
+    },
+    "axis": {
+      "days": "Tage",
+      "day": "Tag"
+    },
+    "tooltip": {
+      "nav": "NAV:",
+      "noExposure": "Keine Exponierung",
+      "warning": "WARNUNG",
+      "elevated": "ERHÖHT"
+    },
+    "geoLegend": {
+      "warn": "Warn.",
+      "breach": "Verletz."
+    }
+  },
+  "leverage": {
+    "title": "AIFMD-II-Hebelwirkung — {{fundName}}",
+    "kpi": {
+      "grossLeverage": "Brutto-Hebel",
+      "commitmentLeverage": "Engagement-Hebel",
+      "capUtilization": "Grenznutzung",
+      "lmtsPreselected": "LMT vorausgewählt"
+    },
+    "kpiSub": {
+      "cap": "Grenze {{pct}}",
+      "headroom": "Spielraum {{pct}}",
+      "compliant": "konform",
+      "insufficient": "unzureichend"
+    },
+    "section": {
+      "leverageMetrics": "Hebelkennzahlen",
+      "loanOrigination": "Kreditvergabe-AIF",
+      "lmt": "Liquiditätsmanagement-Instrumente — AIFMD II Art. 16 & Anhang V"
+    },
+    "rows": {
+      "grossLeverage": "Brutto-Hebel (Art. 7 DelVO 231/2013)",
+      "commitmentLeverage": "Engagement-Hebel",
+      "applicableCap": "Anwendbare Grenze",
+      "capHeadroom": "Spielraum zur Grenze",
+      "capUtilization": "Grenznutzung",
+      "nav": "NAV",
+      "loanOriginationAif": "Kreditvergabe-AIF-Regime",
+      "loansPctNav": "Kredite % NAV",
+      "riskRetention": "Risikoretention (≥5 %)",
+      "borrowerConcentration": "Schuldnerkonzentrations-Verletzungen"
+    },
+    "values": {
+      "yesApplies": "JA — anwendbar",
+      "no": "Nein",
+      "threshold50": "Schwelle 50 %",
+      "ok": "OK",
+      "breach": "VERLETZUNG",
+      "none": "Keine"
+    },
+    "lmtText": "{{n}} Instrument vorausgewählt — {{status}} (AIFMD II Art. 16 erfordert ≥ 2).",
+    "lmtText_plural": "{{n}} Instrumente vorausgewählt — {{status}} (AIFMD II Art. 16 erfordert ≥ 2).",
+    "lmtCompliant": "konform",
+    "lmtNonCompliant": "nicht konform",
+    "footer": "Hebelwirkung berechnet gemäß AIFMD II (Richtlinie (EU) 2024/927), Artikel 15 und der Delegierten Verordnung der Kommission (EU) 231/2013, Artikel 7 (Bruttomethode) und Artikel 8 (Commitment-Methode)."
+  },
+  "riskStory": {
+    "title": "Liquiditätsrisiko-Zusammenfassung",
+    "copyText": "Text kopieren",
+    "downloadJson": "JSON herunterladen",
+    "copyError": "In die Zwischenablage kopieren nicht möglich — versuchen Sie, den Text manuell auszuwählen.",
+    "downloadError": "Download fehlgeschlagen — Browserberechtigungen prüfen.",
+    "statusBreach": "⚠️ VERLETZUNG: {{message}}",
+    "statusWarning": "⚠️ WARNUNG: {{message}}",
+    "statusOk": "✅ Das Liquiditätsprofil des Fonds liegt innerhalb der Normalparameter."
+  },
+  "validation": {
+    "title": "Validierungsbericht",
+    "subtitle": "Integritätsprüfungen der Geschäftslogik für die berechnete Pipeline-Ausgabe",
+    "passed_one": "{{count}} bestanden",
+    "passed_other": "{{count}} bestanden",
+    "failed_one": "{{count}} fehlgeschlagen",
+    "failed_other": "{{count}} fehlgeschlagen"
+  },
+  "infoModal": {
+    "title": "Dateiformat-Referenz",
+    "tabs": {
+      "holdings": "Positionen CSV",
+      "nav": "NAV CSV",
+      "marketData": "Marktdaten CSV (optional)",
+      "assetDefaults": "Standardwerte der Anlageklassen"
+    },
+    "meta": {
+      "required": "Erforderlich",
+      "delimiter": "Trennzeichen",
+      "decimalFormat": "Dezimalformat",
+      "naming": "Benennung"
+    },
+    "table": {
+      "columnName": "Spaltenname",
+      "required": "Erforderlich",
+      "example": "Beispiel",
+      "notes": "Hinweise"
+    },
+    "values": {
+      "yes": "Ja",
+      "no": "Nein (optional)"
+    },
+    "assetDefaults": {
+      "assetClass": "Anlageklasse",
+      "defaultAdv": "Standard-ADV (EUR)",
+      "defaultBidAsk": "Standard-Bid-Ask-Spread"
+    },
+    "footer": "Spaltennamen werden ohne Berücksichtigung der Groß-/Kleinschreibung abgeglichen. Alle anerkannten Synonyme werden akzeptiert.",
+    "marketNote": "Alle Spalten außer isin sind optional. Fehlende Werte werden durch Anlageklassen-Standardwerte ersetzt.",
+    "noMarketDataNote": "Wenn keine Marktdaten-CSV bereitgestellt wird, werden diese Standardwerte verwendet. Stellen Sie eine Marktdaten-CSV bereit, um positionsspezifische Werte zu überschreiben."
+  },
+  "common": {
+    "breach": "VERLETZUNG",
+    "warning": "Warnung",
+    "ok": "OK",
+    "yes": "Ja",
+    "no": "Nein",
+    "na": "—"
+  }
+}

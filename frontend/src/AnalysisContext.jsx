@@ -88,11 +88,11 @@ export function AnalysisProvider({ children }) {
     let cancelled = false
     let pollTimer = null
 
-    async function waitForBackend(retries = 20, delayMs = 3000) {
+    async function waitForBackend(retries = 40, delayMs = 3000) {
       for (let i = 0; i < retries; i++) {
         if (cancelled) return false
         try {
-          await client.get('/health')
+          await client.get('/health', { timeout: 5000 })
           return true
         } catch {
           await new Promise(r => setTimeout(r, delayMs))

@@ -1,14 +1,16 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 
 const FORMATS = [
-  { id: 'excel', label: 'Excel (.xlsx)', ext: '.xlsx' },
-  { id: 'pdf',   label: 'PDF (.pdf)',    ext: '.pdf'  },
-  { id: 'xml',   label: 'XML (.xml)',    ext: '.xml'  },
+  { id: 'excel', labelKey: 'export.excel', ext: '.xlsx' },
+  { id: 'pdf',   labelKey: 'export.pdf',   ext: '.pdf'  },
+  { id: 'xml',   labelKey: 'export.xml',   ext: '.xml'  },
 ]
 
 export default function ExportModal({ open, onClose }) {
   const { runId, selectedPortfolio } = useAnalysis()
+  const { t } = useTranslation()
   const [selected, setSelected] = useState('excel')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState(null)
@@ -40,7 +42,7 @@ export default function ExportModal({ open, onClose }) {
       URL.revokeObjectURL(url)
       onClose()
     } catch (e) {
-      setErr(`Download failed: ${e.message}`)
+      setErr(t('export.failed', { message: e.message }))
     } finally {
       setLoading(false)
     }
@@ -59,7 +61,7 @@ export default function ExportModal({ open, onClose }) {
         <div className="flex items-center justify-between px-4 pt-3 pb-2"
           style={{ borderBottom: '1px solid var(--border)' }}>
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Download Report
+            {t('export.title')}
           </h2>
           <button
             onClick={onClose}
@@ -76,7 +78,7 @@ export default function ExportModal({ open, onClose }) {
         <div className="px-4 py-3 flex flex-col gap-3">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
-              Format
+              {t('export.format')}
             </label>
             <select
               value={selected}
@@ -85,7 +87,7 @@ export default function ExportModal({ open, onClose }) {
               style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)', color: 'var(--text-primary)', cursor: 'pointer' }}
             >
               {FORMATS.map((f) => (
-                <option key={f.id} value={f.id}>{f.label}</option>
+                <option key={f.id} value={f.id}>{t(f.labelKey)}</option>
               ))}
             </select>
           </div>
@@ -100,7 +102,7 @@ export default function ExportModal({ open, onClose }) {
             className="rounded px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ background: 'var(--text-accent)', cursor: loading ? 'wait' : 'pointer' }}
           >
-            {loading ? 'Downloading…' : 'Download'}
+            {loading ? t('export.downloading') : t('export.download')}
           </button>
         </div>
       </div>
