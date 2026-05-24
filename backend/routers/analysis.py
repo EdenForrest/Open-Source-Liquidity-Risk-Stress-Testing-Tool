@@ -6,9 +6,12 @@ GET /api/run/{run_id}/stress       — stress scenario results
 GET /api/run/{run_id}/redemption   — redemption coverage matrix
 GET /api/run/{run_id}/waterfall    — day-by-day sell schedule
 GET /api/run/{run_id}/report       — full results as JSON download
+GET /api/run/{run_id}/export/all   — zip of all portfolio reports in chosen format
 """
 from __future__ import annotations
 
+import io
+import zipfile
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -190,4 +193,36 @@ def export_xml(run_id: str, portfolio: Optional[str] = Query(default=None)):
         content=xml_bytes,
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/run/{run_id}/export/all")
+def export_all(run_id: str, format: str = Query(default="excel")):
+    """Return a zip archive containing one report per portfolio in the chosen format."""
+    from backend.services.export_service import build_excel, build_pdf, build_xml
+
+    r = _require_complete(run_id)
+    portfolios: dict = r.get("portfolios", {})
+    if not portfolios:
+        raise HTTPException(status_code=404, detail="No portfolios found in this run")
+
+    fmt = format.lower()
+    if fmt not in ("excel", "pdf", "xml"):
+        raise HTTPException(status_code=400, detail=f"Unsupported format '{format}'. Use excel, pdf, or xml.")
+
+    builders = {"excel": (build_excel, "xlsx"), "pdf": (build_pdf, "pdf"), "xml": (build_xml, "xml")}
+    build_fn, ext = builders[fmt]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for code, portfolio_data in portfolios.items():
+            file_bytes = build_fn(portfolio_data)
+            zf.writestr(f"liquidity_report_{code}_{run_id[:8]}.{ext}", file_bytes)
+
+    zip_bytes = buf.getvalue()
+    archive_name = f"liquidity_reports_{run_id[:8]}.zip"
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{archive_name}"'},
     )

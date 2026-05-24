@@ -51,7 +51,6 @@ export default function AllPortfolios() {
   const { allData, portfolioCodes, status, selectedPortfolio, selectPortfolio, runId } = useAnalysis()
   const { t } = useTranslation()
   const [exportOpen, setExportOpen] = useState(false)
-  const [downloadingAll, setDownloadingAll] = useState(false)
 
   if (status === 'idle' || status === 'uploading' || status === 'running') {
     return <EmptyState />
@@ -67,30 +66,6 @@ export default function AllPortfolios() {
     const a = entry?.aifmd2
     return { code, entry, m, a }
   })
-
-  async function downloadAll() {
-    if (!runId || downloadingAll) return
-    setDownloadingAll(true)
-    const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '') + '/api'
-    try {
-      await Promise.all(portfolioCodes.map(async (code) => {
-        const url = `${base}/run/${runId}/export/excel?portfolio=${encodeURIComponent(code)}`
-        const resp = await fetch(url)
-        if (!resp.ok) throw new Error(`${code}: server returned ${resp.status}`)
-        const blob = await resp.blob()
-        const objUrl = URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = objUrl
-        a.download = `liquidity_report_${code}.xlsx`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(objUrl)
-      }))
-    } finally {
-      setDownloadingAll(false)
-    }
-  }
 
   return (
     <div className="p-3 space-y-3">
@@ -113,18 +88,6 @@ export default function AllPortfolios() {
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
             {t('uploader.downloadReport')}
-          </button>
-          <button
-            onClick={downloadAll}
-            disabled={downloadingAll}
-            className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium disabled:opacity-50"
-            style={{ background: 'var(--text-accent)', border: '1px solid transparent', color: '#fff', cursor: downloadingAll ? 'wait' : 'pointer' }}
-            title={t('allPortfolios.downloadAll', 'Download all portfolios')}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-            {downloadingAll ? t('export.downloading') : t('allPortfolios.downloadAll', 'Download All')}
           </button>
         </div>
       </div>
