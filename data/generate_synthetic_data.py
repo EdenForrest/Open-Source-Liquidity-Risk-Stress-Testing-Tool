@@ -203,8 +203,20 @@ PORTFOLIO_GEO_OVERRIDES: dict[str, dict] = {
     "SYN-GOVBOND": {"country": "DE", "probability": 0.75},
     # SYN-ILLIQ: force ~38% of positions to US → single country US ~37-43% NAV → Warning (not breach)
     "SYN-ILLIQ":   {"country": "US", "probability": 0.38},
-    # SYN-MIXED: strongly anchor positions to DE to dilute SE accumulation → OK
-    "SYN-MIXED":   {"country": "DE", "probability": 0.80},
+}
+
+# Per-portfolio equity position size caps (EUR MV). Prevents a single large-price equity
+# position from dominating a portfolio's geo distribution under an unlucky random seed.
+# SYN-EQUITY cap keeps all positions T+1 liquidatable within ADV limits.
+# All other equity-holding portfolios are capped at 30M to keep single-country exposure < 35% NAV.
+EQUITY_MAX_MV: dict[str, float] = {
+    "SYN-EQUITY":    8_000_000.0,
+    "SYN-GOVBOND":  30_000_000.0,
+    "SYN-FIXEDINC": 30_000_000.0,
+    "SYN-MIXED":    30_000_000.0,
+    "SYN-ILLIQ":    30_000_000.0,
+    "SYN-LOANFUND": 30_000_000.0,
+    "SYN-LEVERAGED":30_000_000.0,
 }
 
 
@@ -277,7 +289,12 @@ def _gen_cash_row(portfolio: str, report_date: str) -> dict:
     }
 
 
-def _gen_equity_row(portfolio: str, report_date: str, forced_country: str | None = None) -> dict:
+def _gen_equity_row(
+    portfolio: str,
+    report_date: str,
+    forced_country: str | None = None,
+    max_mv_eur: float | None = None,
+) -> dict:
     country  = forced_country if forced_country else random.choice(EQUITY_COUNTRIES)
     isin     = _isin(country)
     ccy      = "EUR" if country not in ("GB", "US", "CH", "SE", "DK") else (
@@ -287,11 +304,7 @@ def _gen_equity_row(portfolio: str, report_date: str, forced_country: str | None
                 "SEK" if country == "SE" else "DKK")
     fx       = _FX_BASE[ccy] * random.uniform(0.97, 1.03)
     price    = random.uniform(5.0, 500.0)
-    # For SYN-EQUITY: cap position size so market value stays well within T+1 ADV
-    # capacity. With ADV floor of €200M and MAX_ADV_PARTICIPATION=0.20, daily
-    # capacity = €40M. Cap MV at €8M (20% of floor) to guarantee days_to_liq ≤ 1.
-    if portfolio == "SYN-EQUITY":
-        max_mv_eur = 8_000_000.0
+    if max_mv_eur is not None:
         max_qty = max(1, int(max_mv_eur * fx / price))
         qty = random.randint(100, max(100, min(max_qty, 50_000)))
     else:
@@ -643,7 +656,7 @@ def generate_holdings(
             base_rows: list[tuple[dict, str]] = []
             for ac in base_classes:
                 if ac == "listed_equity":
-                    r = _gen_equity_row(pcode, report_date)
+                    r = _gen_equity_row(pcode, report_date, max_mv_eur=EQUITY_MAX_MV.get(pcode))
                     base_rows.append((r, ac))
                 elif ac in ("government_bond", "ig_corporate_bond"):
                     r = _gen_bond_row(pcode, report_date, ac)
@@ -719,13 +732,14 @@ def generate_holdings(
         else:
             cash_row = _gen_cash_row(pcode, report_date)
         _add(cash_row, pcode, "cash")
-        _geo = PORTFOLIO_GEO_OVERRIDES.get(pcode)
+        _geo     = PORTFOLIO_GEO_OVERRIDES.get(pcode)
+        _eq_cap  = EQUITY_MAX_MV.get(pcode)
         for ac in _holdings_per_portfolio(n - 1, portfolio=pcode):
             if ac == "listed_equity":
                 _fc = None
                 if _geo and random.random() < _geo["probability"]:
                     _fc = _geo["country"]
-                _add(_gen_equity_row(pcode, report_date, forced_country=_fc), pcode, ac)
+                _add(_gen_equity_row(pcode, report_date, forced_country=_fc, max_mv_eur=_eq_cap), pcode, ac)
             elif ac in ("government_bond", "ig_corporate_bond", "hy_corporate_bond"):
                 _fc = None
                 if _geo and random.random() < _geo["probability"]:
