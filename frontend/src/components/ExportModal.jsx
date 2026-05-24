@@ -19,7 +19,7 @@ export default function ExportModal({ open, onClose }) {
 
   function buildUrl(fmtId) {
     const code = selectedPortfolio || ''
-    const base = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/+$/, '')
+    const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '') + '/api'
     return `${base}/run/${runId}/export/${fmtId}${code ? `?portfolio=${encodeURIComponent(code)}` : ''}`
   }
 
