@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
@@ -6,15 +7,17 @@ import { useTheme } from '../ThemeContext'
 import KPICard from '../components/KPICard'
 import EmptyState from '../components/EmptyState'
 import StatusBanner from '../components/StatusBanner'
+import ExportModal from '../components/ExportModal'
 import { SERIES_COLORS, bucketBadgeStyle, chartTheme } from '../theme'
 import MetricTooltip from '../components/MetricTooltip'
 import { fmt, fmtEur } from '../utils/formatters'
 
 export default function Dashboard() {
-  const { data, error, runId, selectedPortfolio } = useAnalysis()
+  const { data, error } = useAnalysis()
   const { theme } = useTheme()
   const ct = chartTheme(theme)
   const liq = data?.liquidity
+  const [exportOpen, setExportOpen] = useState(false)
   if (error) return <StatusBanner />
   if (!liq) return <EmptyState />
 
@@ -32,35 +35,23 @@ export default function Dashboard() {
   const rowEven = { background: 'var(--bg-panel)' }
   const rowOdd  = { background: 'var(--bg-surface)' }
 
-  function handleExcel() {
-    if (!runId) return
-    const code = selectedPortfolio || ''
-    const base = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/+$/, '')
-    const url = `${base}/run/${runId}/export/excel${code ? `?portfolio=${encodeURIComponent(code)}` : ''}`
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `liquidity_report_${code || 'portfolio'}.xlsx`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-  }
-
   return (
     <div className="p-3 space-y-3">
+      <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
           {liq.fund_name} — {liq.reporting_date}
         </h1>
         <button
-          onClick={handleExcel}
+          onClick={() => setExportOpen(true)}
           className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium"
           style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer' }}
-          title="Export full report as Excel (.xlsx)"
+          title="Download report (Excel, PDF, or XML)"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
-          Export Excel
+          Download Report
         </button>
       </div>
 

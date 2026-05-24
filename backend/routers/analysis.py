@@ -159,3 +159,35 @@ def export_excel(run_id: str, portfolio: Optional[str] = Query(default=None)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/run/{run_id}/export/pdf")
+def export_pdf(run_id: str, portfolio: Optional[str] = Query(default=None)):
+    """Return a PDF liquidity risk report for a single portfolio."""
+    from backend.services.export_service import build_pdf
+
+    r = _portfolio_results(run_id, portfolio)
+    code = portfolio or "portfolio"
+    pdf_bytes = build_pdf(r)
+    filename = f"liquidity_report_{code}_{run_id[:8]}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/run/{run_id}/export/xml")
+def export_xml(run_id: str, portfolio: Optional[str] = Query(default=None)):
+    """Return a structured XML liquidity risk report for a single portfolio."""
+    from backend.services.export_service import build_xml
+
+    r = _portfolio_results(run_id, portfolio)
+    code = portfolio or "portfolio"
+    xml_bytes = build_xml(r)
+    filename = f"liquidity_report_{code}_{run_id[:8]}.xml"
+    return Response(
+        content=xml_bytes,
+        media_type="application/xml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
