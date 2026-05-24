@@ -138,11 +138,13 @@ class LiquidityProfiler:
                     })
 
         # UCITS 5/10/40 issuer concentration rule (Art. 52 UCITS Directive)
-        # Issuer = first 12-char ISIN prefix (or full ISIN for non-standard identifiers)
+        # Cash positions (ISIN starting with "CASH") are excluded — cash is not
+        # a transferable security and falls outside the Art. 52 issuer limits.
         total_nav = self._result["market_value_eur"].sum()
         if total_nav > 0:
+            non_cash = self._result[~self._result["isin"].str.startswith("CASH", na=False)]
             issuer_weights = (
-                self._result.groupby("isin")["market_value_eur"].sum() / total_nav
+                non_cash.groupby("isin")["market_value_eur"].sum() / total_nav
             ).sort_values(ascending=False)
 
             breaching = issuer_weights[issuer_weights > UCITS_SINGLE_ISSUER_LIMIT]
