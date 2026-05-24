@@ -3,7 +3,7 @@ import axios from 'axios'
 // In dev: Vite proxies /api → localhost:8080
 // In prod: set VITE_API_BASE_URL=https://your-api.onrender.com in Vercel env vars
 const client = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
+  baseURL: (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '') + '/api',
   timeout: 90000,
 })
 

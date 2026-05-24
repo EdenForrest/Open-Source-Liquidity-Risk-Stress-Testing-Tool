@@ -92,7 +92,7 @@ export function AnalysisProvider({ children }) {
       for (let i = 0; i < retries; i++) {
         if (cancelled) return false
         try {
-          await client.get('/api/health', { timeout: 5000 })
+          await client.get('/health', { timeout: 5000 })
           return true
         } catch {
           await new Promise(r => setTimeout(r, delayMs))

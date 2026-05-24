@@ -71,7 +71,7 @@ export default function AllPortfolios() {
   async function downloadAll() {
     if (!runId || downloadingAll) return
     setDownloadingAll(true)
-    const base = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/+$/, '')
+    const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '') + '/api'
     try {
       await Promise.all(portfolioCodes.map(async (code) => {
         const url = `${base}/run/${runId}/export/excel?portfolio=${encodeURIComponent(code)}`
