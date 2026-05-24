@@ -143,7 +143,7 @@ async def run_demo():
     Result is cached — subsequent calls return the same run_id instantly.
     Pairs HOLDINGS and NAV files by matching timestamp prefix to prevent mismatches.
     """
-    global _DEMO_RUN_ID
+    global _DEMO_RUN_ID, _DEMO_HOLDINGS_MTIME
 
     # Find best matched HOLDINGS+NAV pair by shared timestamp prefix
     holdings_files = sorted(DATA_DIR.glob("HOLDINGS_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
