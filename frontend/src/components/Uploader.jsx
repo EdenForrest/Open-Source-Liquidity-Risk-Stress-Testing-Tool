@@ -1,13 +1,16 @@
 import { useRef, useState } from 'react'
 import { useAnalysis } from '../AnalysisContext'
 import InfoModal from './InfoModal'
+import ExportModal from './ExportModal'
 
 export default function Uploader() {
-  const { upload, markError, status } = useAnalysis()
+  const { upload, markError, status, runId } = useAnalysis()
   const [holdings, setHoldings] = useState(null)
   const [nav, setNav] = useState(null)
   const [mkt, setMkt] = useState(null)
+  const [exportOpen, setExportOpen] = useState(false)
   const busy = status === 'uploading' || status === 'running'
+  const canDownload = status === 'complete' && !!runId
 
   async function handleRun() {
     if (!holdings || !nav) return
@@ -20,6 +23,7 @@ export default function Uploader() {
 
   return (
     <div className="flex flex-wrap items-end gap-2">
+      <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
       <FileInput label="Holdings CSV" accept=".csv" onChange={setHoldings} />
       <FileInput label="NAV CSV" accept=".csv" onChange={setNav} />
       <FileInput label="Market Data (optional)" accept=".csv" onChange={setMkt} />
@@ -31,6 +35,18 @@ export default function Uploader() {
         style={{ background: 'var(--text-accent)' }}
       >
         {busy ? 'Running…' : 'Run Analysis'}
+      </button>
+      <button
+        onClick={() => setExportOpen(true)}
+        disabled={!canDownload}
+        className="flex items-center gap-1.5 rounded px-3 py-1 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: canDownload ? 'pointer' : 'not-allowed' }}
+        title={canDownload ? 'Download report (Excel, PDF, or XML)' : 'Run analysis first'}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download Report
       </button>
     </div>
   )
