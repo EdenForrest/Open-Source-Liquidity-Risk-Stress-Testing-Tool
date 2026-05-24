@@ -276,6 +276,21 @@ def load_portfolio_from_csv(
     nav_df[_nav_amt_col] = nav_df[_nav_amt_col].apply(
         lambda v: _eu_float(str(v).strip().strip('"'))
     )
+
+    # Multi-date NAV files: pick the latest row per portfolio
+    _NAV_DATE_KEYWORDS = {"date", "datum", "valuation date", "nav date"}
+    _nav_date_col = _match_col(nav_df, _NAV_DATE_KEYWORDS)
+    if _nav_date_col:
+        nav_df[_nav_date_col] = pd.to_datetime(
+            nav_df[_nav_date_col].str.strip().str.strip('"'),
+            dayfirst=True, errors="coerce"
+        )
+        nav_df = (
+            nav_df.sort_values(_nav_date_col)
+                  .groupby(nav_df[_nav_code_col].str.strip().str.strip('"'), as_index=False)
+                  .last()
+        )
+
     nav_by_code: dict[str, float] = dict(
         zip(
             nav_df[_nav_code_col].str.strip().str.strip('"'),

@@ -8,7 +8,8 @@
     "charts": "Charts",
     "leverage": "Leverage",
     "riskSummary": "Liquidity Risk Summary",
-    "validation": "Validation"
+    "validation": "Validation",
+    "lmtSimulator": "LMT Simulator"
   },
   "sidebar": {
     "title": "Liquidity Risk",

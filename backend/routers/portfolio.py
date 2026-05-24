@@ -13,6 +13,8 @@ import traceback
 import uuid
 from pathlib import Path
 
+import json as _json
+
 from fastapi import APIRouter, Form, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 
@@ -51,13 +53,14 @@ async def _run_pipeline_bg(
     nav_path: Path,
     market_data_path: Path | None,
     scenario_library: str = "esma",
+    lmt_config: dict | None = None,
 ) -> None:
     store.update(run_id, status="running")
     try:
         loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(
             None,
-            lambda: run_all_portfolios(holdings_path, nav_path, market_data_path, scenario_library=scenario_library),
+            lambda: run_all_portfolios(holdings_path, nav_path, market_data_path, scenario_library=scenario_library, lmt_config=lmt_config),
         )
         store.update(run_id, status="complete", results=results)
     except Exception as exc:
@@ -81,8 +84,13 @@ async def upload_portfolio(
     nav_file: UploadFile = File(...),
     market_data_file: UploadFile | None = File(default=None),
     scenario_library: str = Form(default="esma"),
+    lmt_config_json: str = Form(default="{}"),
 ):
     """Upload MVHOL + NAV CSV files and trigger the full pipeline run."""
+    try:
+        lmt_config = _json.loads(lmt_config_json) if lmt_config_json else {}
+    except _json.JSONDecodeError:
+        lmt_config = {}
     try:
         tmp_dir = Path(tempfile.mkdtemp())
 
@@ -104,7 +112,7 @@ async def upload_portfolio(
         store.create(run_id)
 
         asyncio.create_task(
-            _run_pipeline_bg(run_id, holdings_path, nav_path, market_data_path, scenario_library=scenario_library)
+            _run_pipeline_bg(run_id, holdings_path, nav_path, market_data_path, scenario_library=scenario_library, lmt_config=lmt_config)
         )
 
         return {"run_id": run_id, "status": "pending"}

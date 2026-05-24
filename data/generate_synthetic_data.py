@@ -776,7 +776,30 @@ def generate_holdings(
 # NAV file
 # ---------------------------------------------------------------------------
 
-NAV_COLUMNS = ["PortfolioCode", "Date", "TotalAssets"]
+NAV_COLUMNS = [
+    "PortfolioCode", "Date", "TotalAssets",
+    "Subscriptions", "Redemptions", "NetCashFlows",
+]
+
+
+def _last_n_working_days(end: date, n: int) -> list[date]:
+    """Return n working days (Mon–Fri) ending on end (inclusive)."""
+    days: list[date] = []
+    cur = end
+    while len(days) < n:
+        if cur.weekday() < 5:
+            days.append(cur)
+        cur -= timedelta(days=1)
+    return list(reversed(days))
+
+
+def _random_walk_backward(final: float, steps: int, daily_vol: float = 0.005) -> list[float]:
+    """Produce `steps` values ending at `final` via a geometric random walk."""
+    vals = [final]
+    for _ in range(steps - 1):
+        shock = random.gauss(0, daily_vol)
+        vals.append(vals[-1] / (1 + shock))
+    return list(reversed(vals))
 
 
 def generate_nav(
@@ -785,25 +808,33 @@ def generate_nav(
     output_path: Path,
     nav_map: Optional[dict[str, float]] = None,
 ) -> dict[str, float]:
-    """Write a synthetic NAV CSV and return {portfolio: total_assets}.
+    """Write a synthetic NAV CSV (20 working days per portfolio) and return {portfolio: total_assets}.
 
     If nav_map is provided (computed from the MVHOL position sums) those values
-    are written directly so that NAV file and MVHOL always agree exactly.
-    Otherwise a random NAV is assigned per portfolio.
+    are used as the latest-date NAV so that NAV file and MVHOL always agree exactly.
     """
     if nav_map is None:
         nav_map = {pcode: random.uniform(20_000_000, 1_200_000_000) for pcode in portfolios}
 
-    rows: list[dict] = []
     dd, mm, yyyy = report_date.split(".")
-    iso_date = f"{yyyy}-{mm}-{dd}"
+    end_date = date(int(yyyy), int(mm), int(dd))
+    trading_days = _last_n_working_days(end_date, 20)
+
+    rows: list[dict] = []
     for pcode in portfolios:
-        nav = nav_map.get(pcode, random.uniform(20_000_000, 1_200_000_000))
-        rows.append({
-            "PortfolioCode": pcode,
-            "Date":          f'"{iso_date}"',
-            "TotalAssets":   _eu(nav, 2),
-        })
+        latest_nav = nav_map.get(pcode, random.uniform(20_000_000, 1_200_000_000))
+        navs = _random_walk_backward(latest_nav, steps=20)
+        for d, nav in zip(trading_days, navs):
+            subs  = round(random.uniform(0, nav * 0.002), 2)
+            redms = round(random.uniform(0, nav * 0.003), 2)
+            rows.append({
+                "PortfolioCode": pcode,
+                "Date":          d.strftime("%d.%m.%Y"),
+                "TotalAssets":   _eu(nav, 2),
+                "Subscriptions": _eu(subs, 2),
+                "Redemptions":   _eu(redms, 2),
+                "NetCashFlows":  _eu(subs - redms, 2),
+            })
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", newline="", encoding="utf-8-sig") as f:
@@ -811,7 +842,7 @@ def generate_nav(
                                 quoting=csv.QUOTE_NONE, escapechar="\\")
         writer.writeheader()
         writer.writerows(rows)
-    print(f"  NAV    -> {output_path}  ({len(rows)} rows)")
+    print(f"  NAV    -> {output_path}  ({len(rows)} rows, 20 days × {len(portfolios)} portfolios)")
     return nav_map
 
 

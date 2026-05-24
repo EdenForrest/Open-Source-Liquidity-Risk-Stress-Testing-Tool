@@ -50,8 +50,13 @@ class RedemptionResult:
     # AIFMD II LMT fields
     swing_factor: float = 0.0       # swing pricing NAV adjustment (fraction)
     adl_bps: float = 0.0            # anti-dilution levy charged to redeeming investors (bps)
+    fee_bps: float = 0.0            # redemption fee retained in fund (bps)
     lmt_activated: bool = False     # True if any LMT beyond gate/suspension is activated
     lmt_tools_used: List[str] = field(default_factory=list)
+    # AIFMD II — extended tools
+    notice_extension_days: int = 0      # extra days fund gains before cash must be paid
+    in_kind_pct_used: float = 0.0       # fraction of redemption met via asset transfer
+    dual_spread_bps: float = 0.0        # bid/ask spread applied to redemption price (bps)
 
     def to_dict(self) -> dict:
         d = self.__dict__.copy()
@@ -82,10 +87,12 @@ class RedemptionSimulator:
         portfolio: Portfolio,
         liquid_profile: pd.DataFrame,
         stress_profile: pd.DataFrame | None = None,
+        lmt_config: dict | None = None,
     ):
         self.portfolio      = portfolio
         self.liquid_profile = liquid_profile
         self.stress_profile = stress_profile if stress_profile is not None else liquid_profile
+        self._lmt           = lmt_config or {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -133,9 +140,17 @@ class RedemptionSimulator:
         # Estimate days to fully cover redemption via waterfall
         days_to_clear = self._estimate_days_to_cover(redemption_eur, profile)
 
-        # AIFMD II LMT calculations
-        gate_triggered       = redemption_pct >= self.GATE_THRESHOLD
-        suspension_triggered = redemption_pct >= self.SUSPENSION_THRESHOLD
+        # AIFMD II LMT calculations — parameters come from lmt_config overrides or settings defaults
+        active_tools         = self._lmt.get("active_tools", AIFMD2_PRESELECTED_LMTS)
+        gate_threshold       = self._lmt.get("gate_threshold", self.GATE_THRESHOLD)
+        suspension_threshold = self._lmt.get("suspension_threshold", self.SUSPENSION_THRESHOLD)
+        swing_threshold      = self._lmt.get("swing_threshold", SWING_PRICING_THRESHOLD)
+        swing_factor_max     = self._lmt.get("swing_factor_max", SWING_FACTOR_MAX)
+        adl_rate             = self._lmt.get("adl_rate", ADL_LEVY_RATE)
+        fee_rate             = self._lmt.get("fee_rate", 0.0)
+
+        gate_triggered       = "gate" in active_tools and redemption_pct >= gate_threshold
+        suspension_triggered = "suspension" in active_tools and redemption_pct >= suspension_threshold
         lmt_tools = []
         if gate_triggered:
             lmt_tools.append("gate")
@@ -143,21 +158,61 @@ class RedemptionSimulator:
             lmt_tools.append("suspension")
 
         # Swing pricing: activated when net redemptions exceed threshold
-        swing_active = redemption_pct >= SWING_PRICING_THRESHOLD and "swing_pricing" in AIFMD2_PRESELECTED_LMTS
+        swing_active = "swing_pricing" in active_tools and redemption_pct >= swing_threshold
         if swing_active:
             total_rv = profile["realisable_value"].sum()
             total_mv = profile["market_value_eur"].sum()
             avg_haircut = (1 - total_rv / total_mv) if total_mv > 0 else 0.0
-            swing_factor = min(avg_haircut * redemption_pct, SWING_FACTOR_MAX)
+            swing_factor = min(avg_haircut * redemption_pct, swing_factor_max)
             lmt_tools.append("swing_pricing")
         else:
             swing_factor = 0.0
 
-        # Anti-dilution levy: activated alongside swing pricing as the cost measure
-        adl_active = swing_active and "adl" in AIFMD2_PRESELECTED_LMTS
-        adl_bps = ADL_LEVY_RATE * 10_000 if adl_active else 0.0
+        # Anti-dilution levy: charged on redeeming investor (separate from fund retention)
+        adl_active = "adl" in active_tools and redemption_pct >= swing_threshold
+        adl_bps = adl_rate * 10_000 if adl_active else 0.0
         if adl_active:
             lmt_tools.append("adl")
+
+        # Redemption fee: retained in fund (quantitatively same as ADL, different accounting)
+        fee_active = "redemption_fee" in active_tools and fee_rate > 0
+        fee_bps = fee_rate * 10_000 if fee_active else 0.0
+        if fee_active:
+            lmt_tools.append("redemption_fee")
+
+        # Notice Period Extension: fund gains extra days before cash payment is due.
+        # Recalculate shortfall against liquidity at T+7+extension_days.
+        extension_days = int(self._lmt.get("notice_extension_days", 0))
+        notice_active = "notice_period_extension" in active_tools and extension_days > 0
+        if notice_active:
+            liq_extended = self._liquidity_at_horizon(profile, 7 + extension_days)
+            usable_extended = max(0.0, liq_extended - buffer)
+            shortfall_eur = max(0.0, redemption_eur - usable_extended)
+            days_to_clear = max(0.0, days_to_clear - extension_days)
+            lmt_tools.append("notice_period_extension")
+        notice_extension_days_out = extension_days if notice_active else 0
+
+        # Redemptions in Kind: fraction of demand met via asset transfer (no cash needed).
+        # Reduces effective cash demand proportionally.
+        in_kind_pct = float(self._lmt.get("in_kind_pct", 0.0))
+        in_kind_active = "redemption_in_kind" in active_tools and in_kind_pct > 0
+        if in_kind_active:
+            cash_demand = redemption_eur * (1.0 - in_kind_pct)
+            shortfall_eur = max(0.0, cash_demand - usable_t7)
+            days_to_clear = self._estimate_days_to_cover(cash_demand, profile)
+            lmt_tools.append("redemption_in_kind")
+        in_kind_pct_out = in_kind_pct if in_kind_active else 0.0
+
+        # Dual Pricing: redemptions priced at bid (NAV × (1 − spread/10000)).
+        # Reduces effective EUR outflow without threshold — always applied when active.
+        dual_spread_bps_cfg = float(self._lmt.get("dual_spread_bps", 0.0))
+        dual_active = "dual_pricing" in active_tools and dual_spread_bps_cfg > 0
+        if dual_active:
+            effective_demand = redemption_eur * (1.0 - dual_spread_bps_cfg / 10_000)
+            shortfall_eur = max(0.0, effective_demand - usable_t7)
+            days_to_clear = self._estimate_days_to_cover(effective_demand, profile)
+            lmt_tools.append("dual_pricing")
+        dual_spread_out = dual_spread_bps_cfg if dual_active else 0.0
 
         return RedemptionResult(
             scenario_pct              = redemption_pct,
@@ -175,8 +230,12 @@ class RedemptionSimulator:
             days_to_clear             = days_to_clear,
             swing_factor              = swing_factor,
             adl_bps                   = adl_bps,
+            fee_bps                   = fee_bps,
             lmt_activated             = len(lmt_tools) > 0,
             lmt_tools_used            = lmt_tools,
+            notice_extension_days     = notice_extension_days_out,
+            in_kind_pct_used          = in_kind_pct_out,
+            dual_spread_bps           = dual_spread_out,
         )
 
     # ------------------------------------------------------------------

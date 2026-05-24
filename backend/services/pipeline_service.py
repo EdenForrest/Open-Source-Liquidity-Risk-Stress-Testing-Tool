@@ -62,6 +62,7 @@ def run_full_pipeline(
     market_data_path: Optional[str | Path] = None,
     portfolio_code: Optional[str] = None,
     scenario_library: str = "esma",
+    lmt_config: Optional[dict] = None,
 ) -> dict:
     """Run the full analytics pipeline and return a serialisable results dict."""
 
@@ -76,7 +77,7 @@ def run_full_pipeline(
     normal_buckets = normal_profiler.position_buckets
     stress_buckets = stress_profiler.position_buckets
 
-    redemption_sim = RedemptionSimulator(portfolio, normal_buckets, stress_buckets)
+    redemption_sim = RedemptionSimulator(portfolio, normal_buckets, stress_buckets, lmt_config=lmt_config)
     redemption_normal = redemption_sim.run(stress=False)
     redemption_stress = redemption_sim.run(stress=True)
 
@@ -140,6 +141,8 @@ def run_full_pipeline(
             _stressed_agg.to_dict(orient="records")
         ),
         "position_buckets": _clean_records(normal_buckets.to_dict(orient="records")),
+        "stress_position_buckets": _clean_records(stress_buckets.to_dict(orient="records")),
+        "top_10_concentration": getattr(portfolio, "top_10_investor_concentration", 0.30),
         "stress_results": [_clean_dict(s.to_dict()) for s in stress_detail],
         "redemption_results": _clean_records(
             redemption_normal.to_dict(orient="records")
@@ -176,6 +179,7 @@ def run_full_pipeline(
             "lmt_preselected": AIFMD2_PRESELECTED_LMTS,
             "lmt_count": len(AIFMD2_PRESELECTED_LMTS),
             "lmt_compliant": len(AIFMD2_PRESELECTED_LMTS) >= AIFMD2_MIN_LMT_COUNT,
+            "lmt_config_applied": lmt_config or {},
             "warnings": "; ".join(leverage.warnings),
             "regulatory_basis": "AIFMD II (Directive (EU) 2024/927), effective 16 April 2026",
         }),
@@ -187,6 +191,7 @@ def run_all_portfolios(
     nav_path: str | Path,
     market_data_path: Optional[str | Path] = None,
     scenario_library: str = "esma",
+    lmt_config: Optional[dict] = None,
 ) -> dict:
     """Run the full pipeline for every portfolio code found in the holdings file."""
     codes = available_portfolio_codes(holdings_path)
@@ -194,7 +199,7 @@ def run_all_portfolios(
     for code in codes:
         portfolios[code] = run_full_pipeline(
             holdings_path, nav_path, market_data_path,
-            portfolio_code=code, scenario_library=scenario_library,
+            portfolio_code=code, scenario_library=scenario_library, lmt_config=lmt_config,
         )
     return {"portfolios": portfolios, "portfolio_codes": codes}
 

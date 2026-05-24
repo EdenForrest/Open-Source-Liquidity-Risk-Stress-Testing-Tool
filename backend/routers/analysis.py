@@ -1,21 +1,24 @@
 """
-GET /api/run/{run_id}/status       — poll run completion
-GET /api/run/{run_id}/portfolios   — list portfolio codes in a completed run
-GET /api/run/{run_id}/liquidity    — liquidity metrics + ladder + positions
-GET /api/run/{run_id}/stress       — stress scenario results
-GET /api/run/{run_id}/redemption   — redemption coverage matrix
-GET /api/run/{run_id}/waterfall    — day-by-day sell schedule
-GET /api/run/{run_id}/report       — full results as JSON download
-GET /api/run/{run_id}/export/all   — zip of all portfolio reports in chosen format
+GET  /api/run/{run_id}/status       — poll run completion
+GET  /api/run/{run_id}/portfolios   — list portfolio codes in a completed run
+GET  /api/run/{run_id}/liquidity    — liquidity metrics + ladder + positions
+GET  /api/run/{run_id}/stress       — stress scenario results
+GET  /api/run/{run_id}/redemption   — redemption coverage matrix
+GET  /api/run/{run_id}/waterfall    — day-by-day sell schedule
+GET  /api/run/{run_id}/report       — full results as JSON download
+GET  /api/run/{run_id}/export/all   — zip of all portfolio reports in chosen format
+POST /api/run/{run_id}/lmt-simulate — re-run RedemptionSimulator with custom LMT config
 """
 from __future__ import annotations
 
 import io
 import zipfile
-from typing import Optional
+from typing import List, Optional
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, Field
 
 from backend import store
 
@@ -226,3 +229,62 @@ def export_all(run_id: str, format: str = Query(default="excel")):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{archive_name}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# AIFMD II LMT Impact Simulator
+# ---------------------------------------------------------------------------
+
+class LMTSimRequest(BaseModel):
+    lmt_config: dict = Field(default_factory=dict)
+    scenarios: Optional[List[float]] = None
+    portfolio: Optional[str] = None
+
+
+@router.post("/run/{run_id}/lmt-simulate")
+def lmt_simulate(run_id: str, body: LMTSimRequest):
+    """
+    Re-run the RedemptionSimulator against stored position_buckets using a
+    caller-supplied lmt_config dict.  No full pipeline re-run — instant response.
+
+    lmt_config keys (all optional):
+      active_tools          list[str]  — tool names to activate
+      gate_threshold        float      — fraction of NAV (default 0.10)
+      suspension_threshold  float      — fraction of NAV (default 0.25)
+      swing_threshold       float      — fraction of NAV that triggers swing/ADL
+      swing_factor_max      float      — max swing factor (fraction)
+      adl_rate              float      — ADL as fraction of NAV (e.g. 0.005)
+      fee_rate              float      — redemption fee as fraction (e.g. 0.002)
+      notice_extension_days int        — extra days before cash due
+      in_kind_pct           float      — fraction met via asset transfer (0–1)
+      dual_spread_bps       float      — bid spread applied to redemption price
+    """
+    from liquidity_risk_tool.engines.redemption_simulator import RedemptionSimulator
+    from liquidity_risk_tool.models.position import Portfolio
+
+    r = _portfolio_results(run_id, body.portfolio)
+
+    normal_buckets = pd.DataFrame(r["position_buckets"])
+    stress_buckets_raw = r.get("stress_position_buckets") or r.get("position_buckets")
+    stress_buckets = pd.DataFrame(stress_buckets_raw)
+
+    # Reconstruct minimal Portfolio stub — simulator only needs total_nav + concentration
+    class _PortfolioStub:
+        total_nav = r["total_nav_eur"]
+        top_10_investor_concentration = r.get("top_10_concentration", 0.30)
+
+    sim = RedemptionSimulator(
+        portfolio=_PortfolioStub(),  # type: ignore[arg-type]
+        liquid_profile=normal_buckets,
+        stress_profile=stress_buckets,
+        lmt_config=body.lmt_config,
+    )
+
+    normal_df = sim.run(scenarios=body.scenarios, stress=False)
+    stress_df  = sim.run(scenarios=body.scenarios, stress=True)
+
+    return {
+        "normal":            normal_df.to_dict(orient="records"),
+        "stress":            stress_df.to_dict(orient="records"),
+        "lmt_config_applied": body.lmt_config,
+    }

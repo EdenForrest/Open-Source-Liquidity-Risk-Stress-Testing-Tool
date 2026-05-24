@@ -8,7 +8,8 @@
     "charts": "Graphiques",
     "leverage": "Effet de levier",
     "riskSummary": "Résumé du risque de liquidité",
-    "validation": "Validation"
+    "validation": "Validation",
+    "lmtSimulator": "Simulateur LMT"
   },
   "sidebar": {
     "title": "Risque de liquidité",

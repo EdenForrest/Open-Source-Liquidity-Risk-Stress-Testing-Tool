@@ -8,7 +8,8 @@
     "charts": "Diagramme",
     "leverage": "Hebelwirkung",
     "riskSummary": "Liquiditätsrisiko-Zusammenfassung",
-    "validation": "Validierung"
+    "validation": "Validierung",
+    "lmtSimulator": "LMT-Simulator"
   },
   "sidebar": {
     "title": "Liquiditätsrisiko",
