@@ -6,7 +6,7 @@ import MetricTooltip from '../components/MetricTooltip'
 import { pct, eur } from '../utils/formatters'
 import {
   ALWAYS_AVAILABLE, QUANTITATIVE_TOOLS, ANTIDILUTION_TOOLS,
-  InfoCard, ToolCard, ComplianceStrip, CoverageTable,
+  InfoCard, ToolCard, ComplianceStrip,
   InvestorCostSummary, RecommendationCard,
   buildLmtConfig,
 } from './LMTSimulator'
@@ -211,7 +211,7 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
               const baseSf = base?.shortfall_eur ?? 0
               const delta = hasBefore ? sf - baseSf : null
               const totalCostBps = (r.adl_bps || 0)
-                + ((r.fee_rate || 0) * 10000)
+                + (r.fee_bps || 0)
                 + ((r.swing_factor || 0) * 10000)
                 + (r.dual_spread_bps || 0)
 
@@ -335,7 +335,7 @@ export default function Redemption() {
   const { data, error, runId, selectedPortfolio } = useAnalysis()
   const redemption = data?.redemption
 
-  const [tab, setTab] = useState('coverage')
+  const [showLmt, setShowLmt] = useState(false)
   const [enabled, setEnabled] = useState({ gate: true, swing_pricing: true })
   const [paramValues, setParamValues] = useState(defaultParamValues)
   const [simResults, setSimResults] = useState(null)
@@ -394,116 +394,105 @@ export default function Redemption() {
   const stressRows = simResults ? simResults.stress : redemption.redemption_stress_results
   const hasConfigured = !!simResults
 
-  const TABS = [
-    { id: 'coverage', label: 'Coverage' },
-    { id: 'lmt', label: 'LMT Simulator' },
-  ]
-
   return (
     <div className="p-3 space-y-3">
-      {/* Tab bar */}
-      <div className="flex items-center gap-0 border-b" style={{ borderColor: 'var(--border)' }}>
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className="px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
-            style={tab === t.id
-              ? { color: 'var(--text-accent)', borderBottom: '2px solid var(--text-accent)', marginBottom: '-1px' }
-              : { color: 'var(--text-secondary)', borderBottom: '2px solid transparent' }
-            }
-          >
-            {t.label}
-          </button>
-        ))}
+      {/* Header bar */}
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => setShowLmt(v => !v)}
+          className="flex items-center gap-1.5 rounded border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer"
+          style={showLmt
+            ? { background: 'var(--text-accent)', color: '#fff', borderColor: 'var(--text-accent)' }
+            : { background: 'var(--bg-panel)', color: 'var(--text-secondary)', borderColor: 'var(--border)' }
+          }
+        >
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/>
+            <line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/>
+          </svg>
+          Configure LMTs
+        </button>
         {hasConfigured && (
-          <span className="ml-3 rounded px-2 py-0.5 text-xs font-semibold"
+          <span className="rounded px-2 py-0.5 text-xs font-semibold"
             style={{ background: 'var(--kpi-amber-bg, #fef3c7)', color: 'var(--kpi-amber-text, #92400e)' }}>
             LMT Active
           </span>
         )}
         {hasConfigured && (
-          <button onClick={handleClear} className="ml-2 text-xs underline cursor-pointer" style={{ color: 'var(--text-muted)' }}>
+          <button onClick={handleClear} className="text-xs underline cursor-pointer" style={{ color: 'var(--text-muted)' }}>
             Clear
           </button>
         )}
       </div>
 
-      {/* Coverage tab */}
-      {tab === 'coverage' && (
-        <div className="space-y-5">
-          {/* Normal regime */}
-          <div className="space-y-2">
-            <RegimeSummary rows={normalRows} label="Normal Regime" isStress={false} />
-            <RedemptionTable
-              rows={normalRows}
-              baseRows={hasConfigured ? baseResults?.normal : null}
-              label="Normal Regime"
-              isStress={false}
-              showDelta={hasConfigured}
-            />
+      {/* Inline LMT configurator — collapsible */}
+      {showLmt && (
+        <div className="rounded border" style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}>
+          <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+            <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>
+              AIFMD II — Liquidity Management Tools
+            </span>
+            <button onClick={() => setShowLmt(false)} className="text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>✕</button>
           </div>
+          <div className="p-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+            {/* Left col: tool cards */}
+            <div className="space-y-3">
+              <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Always Available</div>
+              {ALWAYS_AVAILABLE.map(t => <InfoCard key={t.id} tool={t} />)}
 
-          {/* Stressed regime */}
-          <div className="space-y-2">
-            <RegimeSummary rows={stressRows} label="Stressed Regime" isStress={true} />
-            <RedemptionTable
-              rows={stressRows}
-              baseRows={hasConfigured ? baseResults?.stress : null}
-              label="Stressed Regime"
-              isStress={true}
-              showDelta={hasConfigured}
-            />
-          </div>
-        </div>
-      )}
+              <div className="text-xs font-semibold uppercase tracking-wide mt-1" style={{ color: 'var(--text-muted)' }}>Quantitative Tools</div>
+              {QUANTITATIVE_TOOLS.map(t => (
+                <ToolCard key={t.id} tool={t} enabled={enabled} paramValues={paramValues}
+                  onToggle={handleToggle} onParam={handleParam} />
+              ))}
 
-      {/* LMT Simulator tab */}
-      {tab === 'lmt' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-          <div className="space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
-              Always Available
+              <div className="text-xs font-semibold uppercase tracking-wide mt-1" style={{ color: 'var(--text-muted)' }}>Anti-Dilution Tools</div>
+              {ANTIDILUTION_TOOLS.map(t => (
+                <ToolCard key={t.id} tool={t} enabled={enabled} paramValues={paramValues}
+                  onToggle={handleToggle} onParam={handleParam} />
+              ))}
+
+              <ComplianceStrip enabled={enabled} onRun={handleRun} loading={loading} />
+              {simError && <div className="text-xs mt-1" style={{ color: 'var(--kpi-red-text)' }}>{simError}</div>}
             </div>
-            {ALWAYS_AVAILABLE.map(t => <InfoCard key={t.id} tool={t} />)}
 
-            <div className="text-xs font-semibold uppercase tracking-wide mt-2" style={{ color: 'var(--text-secondary)' }}>
-              Quantitative Tools
-            </div>
-            {QUANTITATIVE_TOOLS.map(t => (
-              <ToolCard key={t.id} tool={t} enabled={enabled} paramValues={paramValues}
-                onToggle={handleToggle} onParam={handleParam} />
-            ))}
-
-            <div className="text-xs font-semibold uppercase tracking-wide mt-2" style={{ color: 'var(--text-secondary)' }}>
-              Anti-Dilution Tools
-            </div>
-            {ANTIDILUTION_TOOLS.map(t => (
-              <ToolCard key={t.id} tool={t} enabled={enabled} paramValues={paramValues}
-                onToggle={handleToggle} onParam={handleParam} />
-            ))}
-
-            <ComplianceStrip enabled={enabled} onRun={handleRun} loading={loading} />
-            {simError && <div className="text-xs text-red-500 mt-1">{simError}</div>}
-          </div>
-
-          <div className="space-y-3">
-            <CoverageTable
-              normal={simResults?.normal}
-              stress={simResults?.stress}
-              baseNormal={baseResults?.normal}
-              baseStress={baseResults?.stress}
-              hasConfigured={hasConfigured}
-            />
+            {/* Right col: summary cards when configured */}
             {hasConfigured && (
-              <>
+              <div className="space-y-3">
                 <InvestorCostSummary results={simResults.normal} />
                 <RecommendationCard normal={simResults.normal} base={baseResults?.normal} />
-              </>
+              </div>
             )}
           </div>
         </div>
       )}
+
+      {/* Coverage tables */}
+      <div className="space-y-5">
+        {/* Normal regime */}
+        <div className="space-y-2">
+          <RegimeSummary rows={normalRows} label="Normal Regime" isStress={false} />
+          <RedemptionTable
+            rows={normalRows}
+            baseRows={hasConfigured ? baseResults?.normal : null}
+            label="Normal Regime"
+            isStress={false}
+            showDelta={hasConfigured}
+          />
+        </div>
+
+        {/* Stressed regime */}
+        <div className="space-y-2">
+          <RegimeSummary rows={stressRows} label="Stressed Regime" isStress={true} />
+          <RedemptionTable
+            rows={stressRows}
+            baseRows={hasConfigured ? baseResults?.stress : null}
+            label="Stressed Regime"
+            isStress={true}
+            showDelta={hasConfigured}
+          />
+        </div>
+      </div>
     </div>
   )
 }
