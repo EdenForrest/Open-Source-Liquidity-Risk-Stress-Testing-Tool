@@ -218,12 +218,16 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                 + ((r.swing_factor || 0) * 10000)
                 + (r.dual_spread_bps || 0)
 
-              const coverageRatio = r.redemption_eur > 0
-                ? Math.min((r.liquidity_available_eur ?? 0) / r.redemption_eur, 1)
-                : 1
-              const baseCoverageRatio = base && base.redemption_eur > 0
-                ? Math.min((base.liquidity_available_eur ?? 0) / base.redemption_eur, 1)
-                : 1
+              const horizonCoverage = (row) => {
+                if (row.can_meet_t1) return 1.0
+                if (row.can_meet_t3) return 0.67
+                if (row.can_meet_t7) return 0.33
+                return row.redemption_eur > 0
+                  ? Math.min((row.liquidity_available_eur ?? 0) / row.redemption_eur, 1)
+                  : 0
+              }
+              const coverageRatio = horizonCoverage(r)
+              const baseCoverageRatio = base ? horizonCoverage(base) : coverageRatio
 
               return (
                 <tr key={i} style={{ background: rowBg, borderBottom: '1px solid var(--border)' }}>
