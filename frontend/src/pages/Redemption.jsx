@@ -185,19 +185,19 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                 </>
               ) : (
                 <>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Coverage</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">
-                    <MetricTooltip id="redemption_days_to_clear">Days to Clear</MetricTooltip>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    {!isStress ? <MetricTooltip id="redemption_coverage">Coverage</MetricTooltip> : 'Coverage'}
                   </th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">Days to Clear</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Shortfall</th>
                 </>
               )}
 
               <th className="px-3 py-2 text-center whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>
-                <MetricTooltip id="redemption_gate">Gate</MetricTooltip>
+                {!isStress ? <MetricTooltip id="redemption_gate">Gate</MetricTooltip> : 'Gate'}
               </th>
               <th className="px-3 py-2 text-center whitespace-nowrap">
-                <MetricTooltip id="redemption_suspension">Suspend</MetricTooltip>
+                {!isStress ? <MetricTooltip id="redemption_suspension">Suspend</MetricTooltip> : 'Suspend'}
               </th>
               <th className="px-3 py-2 text-right whitespace-nowrap">Cost (bps)</th>
               <th className="px-3 py-2 text-left whitespace-nowrap">Active Tools</th>
@@ -339,21 +339,8 @@ export default function Redemption() {
   const [enabled, setEnabled] = useState({ gate: true, swing_pricing: true })
   const [paramValues, setParamValues] = useState(defaultParamValues)
   const [simResults, setSimResults] = useState(null)
-  const [baseResults, setBaseResults] = useState(null)
   const [loading, setLoading] = useState(false)
   const [simError, setSimError] = useState(null)
-
-  useEffect(() => {
-    if (!runId || !redemption) return
-    let cancelled = false
-    client.post(`/api/run/${runId}/lmt-simulate`, {
-      lmt_config: { active_tools: [] },
-      portfolio: selectedPortfolio || undefined,
-    }).then(res => {
-      if (!cancelled) setBaseResults(res.data)
-    }).catch(() => {})
-    return () => { cancelled = true }
-  }, [runId, redemption, selectedPortfolio])
 
   const handleToggle = useCallback((id) => {
     setEnabled(prev => ({ ...prev, [id]: !prev[id] }))
@@ -391,8 +378,10 @@ export default function Redemption() {
   if (error) return <StatusBanner />
   if (!redemption) return <EmptyState />
 
-  const normalRows = simResults ? simResults.normal : redemption.redemption_results
-  const stressRows = simResults ? simResults.stress : redemption.redemption_stress_results
+  const pipelineNormal = redemption.redemption_results
+  const pipelineStress = redemption.redemption_stress_results
+  const normalRows = simResults ? simResults.normal : pipelineNormal
+  const stressRows = simResults ? simResults.stress : pipelineStress
   const hasConfigured = !!simResults
 
   return (
@@ -461,7 +450,7 @@ export default function Redemption() {
             {hasConfigured && (
               <div className="space-y-3">
                 <InvestorCostSummary results={simResults.normal} />
-                <RecommendationCard normal={simResults.normal} base={baseResults?.normal} />
+                <RecommendationCard normal={simResults.normal} base={pipelineNormal} />
               </div>
             )}
           </div>
@@ -491,7 +480,7 @@ export default function Redemption() {
           <RegimeSummary rows={normalRows} label="Normal Regime" isStress={false} />
           <RedemptionTable
             rows={normalRows}
-            baseRows={hasConfigured ? baseResults?.normal : null}
+            baseRows={hasConfigured ? pipelineNormal : null}
             label="Normal Regime"
             isStress={false}
             showDelta={hasConfigured}
@@ -503,7 +492,7 @@ export default function Redemption() {
           <RegimeSummary rows={stressRows} label="Stressed Regime" isStress={true} />
           <RedemptionTable
             rows={stressRows}
-            baseRows={hasConfigured ? baseResults?.stress : null}
+            baseRows={hasConfigured ? pipelineStress : null}
             label="Stressed Regime"
             isStress={true}
             showDelta={hasConfigured}

@@ -153,6 +153,11 @@ export const DEFINITIONS = {
   },
 
   // ── Redemption table columns ─────────────────────────────────────────────
+  redemption_coverage: {
+    label: 'Coverage',
+    section: '§9.0',
+    body: 'Whether the fund can meet the full redemption demand from liquid assets at each horizon (T+1 / T+3 / T+7), after retaining the minimum cash buffer. Green = covered at T+1; amber = covered by T+7; red = shortfall remains even at T+7.\n\nLiquidity available = sum of realisable values for all positions whose liquidation horizon ≤ T, minus the minimum cash buffer (1% NAV by default).',
+  },
   redemption_gate: {
     label: 'Gate',
     section: '§9.1',
