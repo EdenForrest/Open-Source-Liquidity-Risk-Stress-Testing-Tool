@@ -133,7 +133,7 @@ export function ToolCard({ tool, enabled, paramValues, onToggle, onParam }) {
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
           <div className="font-semibold text-xs" style={{ color: 'var(--text-primary)' }}>{tool.label}</div>
-          <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{tool.description}</div>
+          {isOn && <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{tool.description}</div>}
         </div>
         <button
           onClick={() => onToggle(tool.id)}

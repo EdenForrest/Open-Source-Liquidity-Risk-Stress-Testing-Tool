@@ -168,16 +168,23 @@ class RedemptionSimulator:
         else:
             swing_factor = 0.0
 
-        # Anti-dilution levy: charged on redeeming investor (separate from fund retention)
+        # Anti-dilution levy: levy collected from redeeming investor goes to remaining investors.
+        # Net fund cash outflow = redemption_eur × (1 − adl_rate), reducing shortfall.
         adl_active = "adl" in active_tools and redemption_pct >= swing_threshold
         adl_bps = adl_rate * 10_000 if adl_active else 0.0
         if adl_active:
+            adl_cash_demand = redemption_eur * (1.0 - adl_rate)
+            shortfall_eur = max(0.0, adl_cash_demand - usable_t7)
+            days_to_clear = self._estimate_days_to_cover(adl_cash_demand, profile)
             lmt_tools.append("adl")
 
-        # Redemption fee: retained in fund (quantitatively same as ADL, different accounting)
+        # Redemption fee: retained in fund, directly reduces net cash outflow.
         fee_active = "redemption_fee" in active_tools and fee_rate > 0
         fee_bps = fee_rate * 10_000 if fee_active else 0.0
         if fee_active:
+            fee_cash_demand = redemption_eur * (1.0 - fee_rate)
+            shortfall_eur = max(0.0, fee_cash_demand - usable_t7)
+            days_to_clear = self._estimate_days_to_cover(fee_cash_demand, profile)
             lmt_tools.append("redemption_fee")
 
         # Notice Period Extension: fund gains extra days before cash payment is due.
