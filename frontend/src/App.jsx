@@ -14,7 +14,6 @@ import RiskStory from './pages/RiskStory'
 import AllPortfolios from './pages/AllPortfolios'
 import Validation from './pages/Validation'
 import Leverage from './pages/Leverage'
-import LMTSimulator from './pages/LMTSimulator'
 
 // SVG icon components — 16×16, stroke-based, professional
 function IconPortfolios() {
@@ -44,9 +43,6 @@ function IconValidation() {
 function IconLeverage() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="1" y1="14" x2="15" y2="2"/><circle cx="4" cy="11" r="2"/><circle cx="12" cy="3" r="2"/></svg>
 }
-function IconLMT() {
-  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="1" width="6" height="9" rx="1"/><rect x="9" y="6" width="6" height="9" rx="1"/><line x1="4" y1="13" x2="4" y2="15"/><line x1="12" y1="1" x2="12" y2="3"/></svg>
-}
 
 const NAV_ITEMS = [
   { to: '/portfolios',  labelKey: 'nav.allPortfolios', Icon: IconPortfolios },
@@ -58,7 +54,6 @@ const NAV_ITEMS = [
   { to: '/leverage',    labelKey: 'nav.leverage',      Icon: IconLeverage   },
   { to: '/risk-story',  labelKey: 'nav.riskSummary',   Icon: IconRiskStory  },
   { to: '/validation',  labelKey: 'nav.validation',    Icon: IconValidation },
-  { to: '/lmt',         labelKey: 'nav.lmtSimulator',  Icon: IconLMT        },
 ]
 
 const LANGUAGES = [
@@ -202,7 +197,6 @@ export default function App() {
                   <Route path="/leverage"     element={<Leverage />} />
                   <Route path="/risk-story"  element={<RiskStory />} />
                   <Route path="/validation"  element={<Validation />} />
-                  <Route path="/lmt"         element={<LMTSimulator />} />
                 </Routes>
               </main>
             </div>

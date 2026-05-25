@@ -1,8 +1,20 @@
+import { useState, useEffect, useCallback } from 'react'
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
 import StatusBanner from '../components/StatusBanner'
 import MetricTooltip from '../components/MetricTooltip'
 import { pct, eur } from '../utils/formatters'
+import {
+  ALWAYS_AVAILABLE, QUANTITATIVE_TOOLS, ANTIDILUTION_TOOLS,
+  InfoCard, ToolCard, ComplianceStrip, CoverageTable,
+  InvestorCostSummary, RecommendationCard,
+  buildLmtConfig,
+} from './LMTSimulator'
+import client from '../api/client'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function Flag({ yes }) {
   return (
@@ -82,17 +94,185 @@ function RedemptionTable({ rows, label }) {
   )
 }
 
+// ---------------------------------------------------------------------------
+// Default tool param state
+// ---------------------------------------------------------------------------
+
+function defaultParamValues() {
+  const vals = {}
+  ;[...QUANTITATIVE_TOOLS, ...ANTIDILUTION_TOOLS].forEach(t => {
+    if (t.param) vals[t.param.key] = t.param.defaultVal
+  })
+  return vals
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
+
 export default function Redemption() {
-  const { data, error } = useAnalysis()
+  const { data, error, runId, selectedPortfolio } = useAnalysis()
   const redemption = data?.redemption
+
+  const [tab, setTab] = useState('coverage')
+  const [enabled, setEnabled] = useState({ gate: true, swing_pricing: true })
+  const [paramValues, setParamValues] = useState(defaultParamValues)
+  const [simResults, setSimResults] = useState(null)   // { normal, stress } from lmt-simulate
+  const [baseResults, setBaseResults] = useState(null) // same, but with empty lmt_config
+  const [loading, setLoading] = useState(false)
+  const [simError, setSimError] = useState(null)
+
+  // Auto-load baseline (no tools) when run is ready
+  useEffect(() => {
+    if (!runId || !redemption) return
+    let cancelled = false
+    client.post(`/api/run/${runId}/lmt-simulate`, {
+      lmt_config: { active_tools: [] },
+      portfolio: selectedPortfolio || undefined,
+    }).then(res => {
+      if (!cancelled) setBaseResults(res.data)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [runId, redemption, selectedPortfolio])
+
+  const handleToggle = useCallback((id) => {
+    setEnabled(prev => ({ ...prev, [id]: !prev[id] }))
+  }, [])
+
+  const handleParam = useCallback((key, val) => {
+    setParamValues(prev => ({ ...prev, [key]: val }))
+  }, [])
+
+  const handleRun = useCallback(async () => {
+    if (!runId) return
+    setLoading(true)
+    setSimError(null)
+    try {
+      const cfg = buildLmtConfig(enabled, paramValues)
+      const res = await client.post(`/api/run/${runId}/lmt-simulate`, {
+        lmt_config: cfg,
+        portfolio: selectedPortfolio || undefined,
+      })
+      setSimResults(res.data)
+    } catch (e) {
+      setSimError(e?.response?.data?.detail || e.message || 'Simulation failed')
+    } finally {
+      setLoading(false)
+    }
+  }, [runId, enabled, paramValues, selectedPortfolio])
+
+  const handleClear = useCallback(() => {
+    setSimResults(null)
+    setEnabled({ gate: true, swing_pricing: true })
+    setParamValues(defaultParamValues())
+  }, [])
+
   if (error) return <StatusBanner />
   if (!redemption) return <EmptyState />
 
+  // When LMT sim has been applied, show adjusted rows in Coverage tab
+  const normalRows = simResults ? simResults.normal : redemption.redemption_results
+  const stressRows = simResults ? simResults.stress : redemption.redemption_stress_results
+
+  const hasConfigured = !!simResults
+
+  const TABS = [
+    { id: 'coverage', label: 'Coverage' },
+    { id: 'lmt', label: 'LMT Simulator' },
+  ]
+
   return (
     <div className="p-3 space-y-3">
-      <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Redemption Coverage</h1>
-      <RedemptionTable rows={redemption.redemption_results} label="Normal Regime" />
-      <RedemptionTable rows={redemption.redemption_stress_results} label="Stressed Regime" />
+      {/* Tab bar */}
+      <div className="flex items-center gap-0 border-b" style={{ borderColor: 'var(--border)' }}>
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
+            style={tab === t.id
+              ? { color: 'var(--text-accent)', borderBottom: '2px solid var(--text-accent)', marginBottom: '-1px' }
+              : { color: 'var(--text-secondary)', borderBottom: '2px solid transparent' }
+            }
+          >
+            {t.label}
+          </button>
+        ))}
+        {hasConfigured && (
+          <span className="ml-3 rounded px-2 py-0.5 text-xs font-semibold"
+            style={{ background: 'var(--kpi-amber-bg, #fef3c7)', color: 'var(--kpi-amber-text, #92400e)' }}>
+            LMT Active
+          </span>
+        )}
+        {hasConfigured && (
+          <button
+            onClick={handleClear}
+            className="ml-2 text-xs underline cursor-pointer"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Coverage tab */}
+      {tab === 'coverage' && (
+        <div className="space-y-3">
+          <RedemptionTable rows={normalRows} label="Normal Regime" />
+          <RedemptionTable rows={stressRows} label="Stressed Regime" />
+        </div>
+      )}
+
+      {/* LMT Simulator tab */}
+      {tab === 'lmt' && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {/* Left — configurator */}
+          <div className="space-y-3">
+            <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
+              Always Available
+            </div>
+            {ALWAYS_AVAILABLE.map(t => <InfoCard key={t.id} tool={t} />)}
+
+            <div className="text-xs font-semibold uppercase tracking-wide mt-2" style={{ color: 'var(--text-secondary)' }}>
+              Quantitative Tools
+            </div>
+            {QUANTITATIVE_TOOLS.map(t => (
+              <ToolCard key={t.id} tool={t} enabled={enabled} paramValues={paramValues}
+                onToggle={handleToggle} onParam={handleParam} />
+            ))}
+
+            <div className="text-xs font-semibold uppercase tracking-wide mt-2" style={{ color: 'var(--text-secondary)' }}>
+              Anti-Dilution Tools
+            </div>
+            {ANTIDILUTION_TOOLS.map(t => (
+              <ToolCard key={t.id} tool={t} enabled={enabled} paramValues={paramValues}
+                onToggle={handleToggle} onParam={handleParam} />
+            ))}
+
+            <ComplianceStrip enabled={enabled} onRun={handleRun} loading={loading} />
+            {simError && (
+              <div className="text-xs text-red-500 mt-1">{simError}</div>
+            )}
+          </div>
+
+          {/* Right — impact dashboard */}
+          <div className="space-y-3">
+            <CoverageTable
+              normal={simResults?.normal}
+              stress={simResults?.stress}
+              baseNormal={baseResults?.normal}
+              baseStress={baseResults?.stress}
+              hasConfigured={hasConfigured}
+            />
+            {hasConfigured && (
+              <>
+                <InvestorCostSummary results={simResults.normal} />
+                <RecommendationCard normal={simResults.normal} base={baseResults?.normal} />
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
