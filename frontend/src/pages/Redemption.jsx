@@ -374,6 +374,7 @@ export default function Redemption() {
         portfolio: selectedPortfolio || undefined,
       })
       setSimResults(res.data)
+      setShowLmt(false)  // collapse panel so updated tables are immediately visible
     } catch (e) {
       setSimError(e?.response?.data?.detail || e.message || 'Simulation failed')
     } finally {
@@ -464,6 +465,22 @@ export default function Redemption() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Active LMT strip */}
+      {hasConfigured && simResults?.lmt_config_applied && (
+        <div className="rounded border px-3 py-2 flex items-center gap-2 flex-wrap"
+          style={{ borderColor: 'var(--kpi-amber-text, #92400e)', background: 'var(--kpi-amber-bg, #fef3c7)' }}>
+          <span className="text-xs font-bold" style={{ color: 'var(--kpi-amber-text, #92400e)' }}>
+            LMT simulation active — showing before/after comparison.
+          </span>
+          {(simResults.lmt_config_applied.active_tools || []).map(t => (
+            <span key={t} className="rounded px-1.5 py-0.5 text-xs font-semibold"
+              style={{ background: 'var(--kpi-amber-text, #92400e)', color: '#fff' }}>
+              {t.replace(/_/g, ' ')}
+            </span>
+          ))}
         </div>
       )}
 
