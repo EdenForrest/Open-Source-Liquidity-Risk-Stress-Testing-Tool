@@ -356,7 +356,7 @@ export default function Redemption() {
     setSimError(null)
     try {
       const cfg = buildLmtConfig(enabled, paramValues)
-      const res = await client.post(`/api/run/${runId}/lmt-simulate`, {
+      const res = await client.post(`/run/${runId}/lmt-simulate`, {
         lmt_config: cfg,
         portfolio: selectedPortfolio || undefined,
       })
