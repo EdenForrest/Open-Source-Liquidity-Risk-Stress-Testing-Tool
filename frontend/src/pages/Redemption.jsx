@@ -77,7 +77,10 @@ function RegimeSummary({ rows, label, isStress }) {
   const covered = rows.filter(r => (r.shortfall_eur ?? 0) <= 0).length
   const worst = Math.max(...rows.map(r => r.shortfall_eur ?? 0))
   const maxDays = Math.max(...rows.map(r => r.days_to_clear ?? 0))
-  const minCoverage = Math.min(...rows.map(r => r.liquidity_available_pct ?? 0))
+  const minCoverage = Math.min(...rows.map(r => {
+    const demand = r.redemption_eur ?? 0
+    return demand > 0 ? Math.min((r.liquidity_available_eur ?? 0) / demand, 1) : 1
+  }))
 
   const tiles = [
     {
@@ -215,6 +218,13 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                 + ((r.swing_factor || 0) * 10000)
                 + (r.dual_spread_bps || 0)
 
+              const coverageRatio = r.redemption_eur > 0
+                ? Math.min((r.liquidity_available_eur ?? 0) / r.redemption_eur, 1)
+                : 1
+              const baseCoverageRatio = base && base.redemption_eur > 0
+                ? Math.min((base.liquidity_available_eur ?? 0) / base.redemption_eur, 1)
+                : 1
+
               return (
                 <tr key={i} style={{ background: rowBg, borderBottom: '1px solid var(--border)' }}>
                   {/* Scenario */}
@@ -239,7 +249,7 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                     <>
                       {/* Without LMT — coverage */}
                       <td className="px-3 py-2.5 border-l" style={{ borderColor: 'var(--border)' }}>
-                        <CoverageBar pctVal={base?.liquidity_available_pct} />
+                        <CoverageBar pctVal={baseCoverageRatio} />
                       </td>
                       <td className="px-3 py-2.5 text-right font-medium" style={{ color: baseSf > 0 ? 'var(--kpi-red-text)' : 'var(--text-muted)' }}>
                         {baseSf > 0 ? eur(baseSf) : '—'}
@@ -250,7 +260,7 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
 
                       {/* With LMT — coverage */}
                       <td className="px-3 py-2.5 border-l" style={{ borderColor: 'var(--border)' }}>
-                        <CoverageBar pctVal={r.liquidity_available_pct} />
+                        <CoverageBar pctVal={coverageRatio} />
                       </td>
                       <td className="px-3 py-2.5 text-right font-semibold" style={{ color: sf > 0 ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>
                         {sf > 0 ? eur(sf) : '—'}
@@ -270,7 +280,7 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                   ) : (
                     <>
                       <td className="px-3 py-2.5">
-                        <CoverageBar pctVal={r.liquidity_available_pct} />
+                        <CoverageBar pctVal={coverageRatio} />
                       </td>
                       <td className="px-3 py-2.5 text-right" style={{ color: 'var(--text-secondary)' }}>
                         {r.days_to_clear != null ? r.days_to_clear.toFixed(1) : '—'}
