@@ -124,6 +124,7 @@ class RedemptionSimulator:
     ) -> RedemptionResult:
         nav = profile["market_value_eur"].sum() or self.portfolio.total_nav
         redemption_eur = nav * redemption_pct
+        effective_cash_demand = redemption_eur  # will be updated by LMTs
 
         # Liquidity available at each horizon
         liq_t1 = self._liquidity_at_horizon(profile, 1)
@@ -173,18 +174,18 @@ class RedemptionSimulator:
         adl_active = "adl" in active_tools and redemption_pct >= swing_threshold
         adl_bps = adl_rate * 10_000 if adl_active else 0.0
         if adl_active:
-            adl_cash_demand = redemption_eur * (1.0 - adl_rate)
-            shortfall_eur = max(0.0, adl_cash_demand - usable_t7)
-            days_to_clear = self._estimate_days_to_cover(adl_cash_demand, profile)
+            effective_cash_demand = redemption_eur * (1.0 - adl_rate)
+            shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
+            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
             lmt_tools.append("adl")
 
         # Redemption fee: retained in fund, directly reduces net cash outflow.
         fee_active = "redemption_fee" in active_tools and fee_rate > 0
         fee_bps = fee_rate * 10_000 if fee_active else 0.0
         if fee_active:
-            fee_cash_demand = redemption_eur * (1.0 - fee_rate)
-            shortfall_eur = max(0.0, fee_cash_demand - usable_t7)
-            days_to_clear = self._estimate_days_to_cover(fee_cash_demand, profile)
+            effective_cash_demand = redemption_eur * (1.0 - fee_rate)
+            shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
+            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
             lmt_tools.append("redemption_fee")
 
         # Notice Period Extension: fund gains extra days before cash payment is due.
@@ -194,7 +195,7 @@ class RedemptionSimulator:
         if notice_active:
             liq_extended = self._liquidity_at_horizon(profile, 7 + extension_days)
             usable_extended = max(0.0, liq_extended - buffer)
-            shortfall_eur = max(0.0, redemption_eur - usable_extended)
+            shortfall_eur = max(0.0, effective_cash_demand - usable_extended)
             days_to_clear = max(0.0, days_to_clear - extension_days)
             lmt_tools.append("notice_period_extension")
         notice_extension_days_out = extension_days if notice_active else 0
@@ -204,9 +205,9 @@ class RedemptionSimulator:
         in_kind_pct = float(self._lmt.get("in_kind_pct", 0.0))
         in_kind_active = "redemption_in_kind" in active_tools and in_kind_pct > 0
         if in_kind_active:
-            cash_demand = redemption_eur * (1.0 - in_kind_pct)
-            shortfall_eur = max(0.0, cash_demand - usable_t7)
-            days_to_clear = self._estimate_days_to_cover(cash_demand, profile)
+            effective_cash_demand = redemption_eur * (1.0 - in_kind_pct)
+            shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
+            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
             lmt_tools.append("redemption_in_kind")
         in_kind_pct_out = in_kind_pct if in_kind_active else 0.0
 
@@ -215,9 +216,9 @@ class RedemptionSimulator:
         dual_spread_bps_cfg = float(self._lmt.get("dual_spread_bps", 0.0))
         dual_active = "dual_pricing" in active_tools and dual_spread_bps_cfg > 0
         if dual_active:
-            effective_demand = redemption_eur * (1.0 - dual_spread_bps_cfg / 10_000)
-            shortfall_eur = max(0.0, effective_demand - usable_t7)
-            days_to_clear = self._estimate_days_to_cover(effective_demand, profile)
+            effective_cash_demand = redemption_eur * (1.0 - dual_spread_bps_cfg / 10_000)
+            shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
+            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
             lmt_tools.append("dual_pricing")
         dual_spread_out = dual_spread_bps_cfg if dual_active else 0.0
 
@@ -228,9 +229,9 @@ class RedemptionSimulator:
             liquidity_available_pct   = usable_t7 / nav,
             shortfall_eur             = shortfall_eur,
             shortfall_pct             = shortfall_eur / nav,
-            can_meet_t1               = usable_t1 >= redemption_eur,
-            can_meet_t3               = usable_t3 >= redemption_eur,
-            can_meet_t7               = usable_t7 >= redemption_eur,
+            can_meet_t1               = usable_t1 >= effective_cash_demand,
+            can_meet_t3               = usable_t3 >= effective_cash_demand,
+            can_meet_t7               = usable_t7 >= effective_cash_demand,
             gate_triggered            = gate_triggered,
             suspension_triggered      = suspension_triggered,
             concentration_driven      = concentration_driven,

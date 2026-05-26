@@ -653,4 +653,75 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             else f"Monotone: {[round(m, 2) for m in valid_multipliers]}",
         ))
 
+    # ── Annex IV ───────────────────────────────────────────────────────────
+    fund_name = portfolio_results.get("fund_name", "")
+    reporting_date = portfolio_results.get("reporting_date", "")
+    aifmd2 = portfolio_results.get("aifmd2") or {}
+    from liquidity_risk_tool.config import settings as _s
+
+    results.append(_check(
+        "AIF identification complete", "Annex IV",
+        bool(fund_name and reporting_date),
+        f"fund_name='{fund_name}', reporting_date='{reporting_date}'"
+        if fund_name and reporting_date
+        else f"FAIL — missing: "
+             f"{'fund_name ' if not fund_name else ''}"
+             f"{'reporting_date' if not reporting_date else ''}".strip(),
+    ))
+
+    aif_lei = _s.AIF_LEI or ""
+    results.append(_check(
+        "AIF LEI present", "Annex IV",
+        bool(aif_lei),
+        f"AIF LEI = {aif_lei}" if aif_lei else "FAIL — AIF_LEI not set (configure via env var AIF_LEI)",
+    ))
+
+    positions_with_country = [p for p in buckets if p.get("country")]
+    positions_missing_country = len(buckets) - len(positions_with_country)
+    results.append(_check(
+        "Country data complete", "Annex IV",
+        positions_missing_country == 0,
+        f"{positions_missing_country} position(s) missing 'country' field" if positions_missing_country > 0
+        else f"All {len(buckets)} position(s) have country data",
+    ))
+
+    gross_lev = aifmd2.get("gross_leverage")
+    results.append(_check(
+        "Leverage computed", "Annex IV",
+        bool(aifmd2) and gross_lev is not None and float(gross_lev) > 0,
+        f"gross_leverage = {gross_lev}" if gross_lev is not None
+        else "FAIL — gross_leverage not computed (aifmd2 block missing or empty)",
+    ))
+
+    worst_case = next(
+        (s for s in stress_results if s.get("is_worst_case")),
+        None,
+    )
+    has_severe = worst_case is not None or any(
+        s.get("scenario", "").lower().startswith("severe") for s in stress_results
+    )
+    results.append(_check(
+        "Severe Combined stress scenario present", "Annex IV",
+        has_severe,
+        f"Worst-case scenario: '{worst_case.get('scenario', '')}'" if worst_case
+        else ("FAIL — no is_worst_case scenario found in stress_results"
+              if stress_results else "FAIL — no stress results at all"),
+    ))
+
+    lmts = aifmd2.get("lmt_preselected") or []
+    lmt_compliant = len(lmts) >= _s.AIFMD2_MIN_LMT_COUNT
+    results.append(_check(
+        "LMT configuration declared (≥2 tools, AIFMD II Art. 16)", "Annex IV",
+        lmt_compliant,
+        f"{len(lmts)} LMT(s) preselected: {lmts}"
+        if lmts else "FAIL — no LMTs declared; AIFMD II requires ≥2 pre-selected tools",
+    ))
+
+    results.append(_check(
+        "≥5 positions for top-5 reporting", "Annex IV",
+        len(buckets) >= 5,
+        f"{len(buckets)} position(s) in portfolio"
+        + ("" if len(buckets) >= 5 else " — top-5 tables will be incomplete"),
+    ))
+
     return results

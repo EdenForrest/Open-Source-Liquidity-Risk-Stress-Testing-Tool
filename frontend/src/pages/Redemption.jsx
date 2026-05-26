@@ -18,7 +18,7 @@ import client from '../api/client'
 
 function CoverageBar({ pctVal }) {
   const clamped = Math.min(Math.max(pctVal ?? 0, 0), 1)
-  const isCovered = clamped >= 1
+  const isCovered = clamped >= 0.33
   const color = isCovered ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
   return (
     <div className="flex items-center justify-center" style={{ color, minWidth: '2rem', height: '1.5rem' }}>

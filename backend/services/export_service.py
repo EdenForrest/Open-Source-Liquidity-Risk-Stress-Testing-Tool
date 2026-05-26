@@ -2,9 +2,9 @@
 Export service — builds structured reports from pipeline results.
 
 Formats:
-  Excel (.xlsx) — 5 sheets: Summary, Liquidity Ladder, Stress Scenarios, Positions, Waterfall
+  Excel (.xlsx) — 6 sheets: Summary, Liquidity Ladder, Stress Scenarios, Positions, Waterfall, Annex IV
   PDF           — A4 paginated report with tables (reportlab)
-  XML           — machine-readable structured export (stdlib ElementTree)
+  XML           — ESMA AIFMD II Annex IV XML (replaces proprietary namespace)
 """
 from __future__ import annotations
 
@@ -529,7 +529,7 @@ def _build_waterfall(wb: openpyxl.Workbook, r: dict) -> None:
 # Public API
 # ---------------------------------------------------------------------------
 
-def build_excel(portfolio_results: dict) -> bytes:
+def build_excel(portfolio_results: dict, period: str | None = None) -> bytes:
     """Build and return an Excel workbook as bytes from a single-portfolio results dict."""
     wb = openpyxl.Workbook()
 
@@ -538,6 +538,7 @@ def build_excel(portfolio_results: dict) -> bytes:
     _build_stress_scenarios(wb, portfolio_results)
     _build_positions(wb, portfolio_results)
     _build_waterfall(wb, portfolio_results)
+    _annex_iv_sheet(wb, portfolio_results, period=period)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -804,135 +805,412 @@ def build_pdf(r: dict) -> bytes:
 
 
 # ---------------------------------------------------------------------------
-# XML export (stdlib ElementTree)
+# Annex IV Excel sheet
 # ---------------------------------------------------------------------------
 
-def build_xml(r: dict) -> bytes:
-    """Build and return a structured XML report as bytes."""
+def _annex_iv_sheet(wb: openpyxl.Workbook, r: dict, period: str | None = None) -> None:
+    """Append an 'Annex IV' sheet to wb containing ESMA AIFMD II Annex IV data."""
+    from liquidity_risk_tool.reporting.annex_iv_mapper import build_annex_iv
 
-    def _str(v):
-        if v is None:
-            return ""
-        return str(v)
+    period_code = period or "2026Q1"
+    data = build_annex_iv(r, period_code=period_code)
 
-    def _num(v, decimals=4):
+    ws = wb.create_sheet("Annex IV")
+
+    def _title(row, text):
+        c = ws.cell(row=row, column=1, value=text)
+        c.font = _TITLE_FONT
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+        return row + 1
+
+    def _section(row, text):
+        for col in range(1, 5):
+            c = ws.cell(row=row, column=col)
+            c.fill = _SECTION_FILL
+            if col == 1:
+                c.value = text
+                c.font = _WHITE_FONT
+        return row + 1
+
+    def _row(row, label, value, alt=False):
+        fill = _ALT_FILL if alt else None
+        lc = ws.cell(row=row, column=1, value=label)
+        lc.font = _BOLD_FONT
+        if fill:
+            lc.fill = fill
+        vc = ws.cell(row=row, column=2, value=value)
+        vc.font = _NORMAL_FONT
+        if fill:
+            vc.fill = fill
+        return row + 1
+
+    row = 1
+    row = _title(row, "ESMA AIFMD II — Annex IV Regulatory Reporting")
+    row += 1
+
+    # ---- Header info -------------------------------------------------------
+    row = _section(row, "Reporting Period")
+    row = _row(row, "Period Code", data["period_code"], alt=False)
+    row = _row(row, "Period Type", data["period_type"], alt=True)
+    row = _row(row, "Period Start", data["period_start"], alt=False)
+    row = _row(row, "Period End", data["period_end"], alt=True)
+    row = _row(row, "Schema Version", data["schema_version"], alt=False)
+    row += 1
+
+    # ---- AIFM identification -----------------------------------------------
+    row = _section(row, "AIFM Identification")
+    aifm = data["aifm"]
+    row = _row(row, "AIFM Name", aifm["name"] or "(not set — set AIFM_NAME env var)", alt=False)
+    row = _row(row, "AIFM LEI", aifm["lei"] or "(not set — set AIFM_LEI env var)", alt=True)
+    row = _row(row, "AIFM National Code", aifm["national_code"] or "(not set)", alt=False)
+    row = _row(row, "Reporting Member State", aifm["reporting_member_state"], alt=True)
+    row += 1
+
+    # ---- AIF identification ------------------------------------------------
+    row = _section(row, "AIF Identification")
+    aif = data["aif"]
+    row = _row(row, "AIF Name", aif["name"], alt=False)
+    row = _row(row, "AIF LEI", aif["lei"] or "(not set — set AIF_LEI env var)", alt=True)
+    row = _row(row, "AIF National Code", aif["national_code"] or "(not set)", alt=False)
+    row = _row(row, "Reporting Date", aif["reporting_date"], alt=True)
+    row = _row(row, "Total NAV (EUR)", aif["total_nav_eur"], alt=False)
+    ws.cell(row=row - 1, column=2).number_format = _EUR_FMT
+    row += 1
+
+    # ---- Asset liquidity profile -------------------------------------------
+    row = _section(row, "Asset Liquidity Profile (ESMA Annex IV §43)")
+    alp = data["asset_liquidity_profile"]
+    horizon_labels = {
+        "DAY_1":       "1 day (T+0/T+1)",
+        "DAY_2_7":     "2–7 days (T+3/T+7)",
+        "DAY_8_30":    "8–30 days",
+        "DAY_31_90":   "31–90 days",
+        "DAY_91_180":  "91–180 days",
+        "DAY_181_365": "181–365 days",
+        "DAY_MORE_365":"More than 365 days (>T+7)",
+    }
+    for i, (code, label) in enumerate(horizon_labels.items()):
+        pct = alp.get(code, 0.0)
+        row = _row(row, label, pct, alt=bool(i % 2))
+        ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row += 1
+
+    # ---- Investor liquidity profile ----------------------------------------
+    row = _section(row, "Investor Liquidity Profile (ESMA Annex IV §44)")
+    inv = data["investor_liquidity_profile"]
+    row = _row(row, "Min Notice Period (days)", inv["min_notice_period_days"], alt=False)
+    row = _row(row, "Redemption Frequency", inv["redemption_frequency"], alt=True)
+    completeness = "Complete" if inv["data_complete"] else "Incomplete — share class data not available; conservative defaults applied"
+    row = _row(row, "Data Completeness", completeness, alt=False)
+    row += 1
+
+    # ---- Geographical concentration ----------------------------------------
+    row = _section(row, "Geographical Concentration (AIFMD Annex IV / ESMA34-39-897)")
+    geo = data["geographical_concentration"]
+    row = _row(row, "EU Exposure", geo["eu_pct"], alt=False)
+    ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row = _row(row, "Non-EU Exposure", geo["non_eu_pct"], alt=True)
+    ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row = _row(row, "Geo Status", geo["geo_status"], alt=False)
+    row += 1
+
+    # ---- Principal markets -------------------------------------------------
+    row = _section(row, "Principal Markets Traded (Top 5)")
+    _hdr(ws, row, 1, "Country Code")
+    _hdr(ws, row, 2, "NAV %")
+    row += 1
+    for i, mkt in enumerate(data["principal_markets"]):
+        alt = bool(i % 2)
+        row = _row(row, mkt["country_code"], mkt["nav_pct"], alt=alt)
+        ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row += 1
+
+    # ---- Principal instruments ---------------------------------------------
+    row = _section(row, "Principal Instruments Traded (Top 5)")
+    for col, hdr_txt in enumerate(["ISIN", "Name", "Asset Class", "NAV %"], start=1):
+        _hdr(ws, row, col, hdr_txt)
+    row += 1
+    for i, inst in enumerate(data["principal_instruments"]):
+        alt = bool(i % 2)
+        fill = _ALT_FILL if alt else None
+        for col, val in enumerate([
+            inst["isin"], inst["name"], inst["asset_class"], inst["nav_pct"]
+        ], start=1):
+            c = ws.cell(row=row, column=col, value=val)
+            c.font = _NORMAL_FONT
+            if fill:
+                c.fill = fill
+        ws.cell(row=row, column=4).number_format = _PCT_FMT
+        row += 1
+    row += 1
+
+    # ---- Portfolio concentrations ------------------------------------------
+    row = _section(row, "Portfolio Concentrations by Asset Class")
+    _hdr(ws, row, 1, "Asset Class")
+    _hdr(ws, row, 2, "NAV %")
+    row += 1
+    for i, conc in enumerate(data["portfolio_concentrations"]):
+        row = _row(row, conc["asset_class"], conc["nav_pct"], alt=bool(i % 2))
+        ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row += 1
+
+    # ---- Special arrangements / LMTs ---------------------------------------
+    row = _section(row, "Special Arrangements / LMTs (AIFMD II Art. 16 & Annex V)")
+    sa = data["special_arrangements"]
+    row = _row(row, "Gate", "YES" if sa["gate"] else "No", alt=False)
+    row = _row(row, "Suspension", "YES" if sa["suspension"] else "No", alt=True)
+    row = _row(row, "Swing Pricing", "YES" if sa["swing_pricing"] else "No", alt=False)
+    row = _row(row, "Side Pocket", "YES" if sa["side_pocket"] else "No", alt=True)
+    row = _row(row, "LMT Count", sa["lmt_count"], alt=False)
+    compliant_txt = "Compliant (≥2)" if sa["lmt_compliant"] else "NON-COMPLIANT (<2 required)"
+    row = _row(row, "AIFMD II Art. 16 Compliance", compliant_txt, alt=True)
+    lmt_cell = ws.cell(row=row - 1, column=2)
+    lmt_cell.fill = _GREEN_FILL if sa["lmt_compliant"] else _RED_FILL
+    row = _row(row, "Gate Threshold", sa["gate_threshold"], alt=False)
+    ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row = _row(row, "Suspension Threshold", sa["suspension_threshold"], alt=True)
+    ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row += 1
+
+    # ---- Leverage ----------------------------------------------------------
+    row = _section(row, "Leverage (AIFMD II Art. 15 / CDR 231/2013)")
+    lev = data["leverage"]
+    row = _row(row, "Gross Leverage", lev["gross_leverage"], alt=False)
+    ws.cell(row=row - 1, column=2).number_format = _NUM_FMT
+    row = _row(row, "Commitment Leverage", lev["commitment_leverage"], alt=True)
+    ws.cell(row=row - 1, column=2).number_format = _NUM_FMT
+    row = _row(row, "Leverage Cap", lev["leverage_cap"], alt=False)
+    ws.cell(row=row - 1, column=2).number_format = _NUM_FMT
+    breach_txt = "BREACH" if lev["leverage_breach"] else "Within cap"
+    row = _row(row, "Cap Compliance", breach_txt, alt=True)
+    ws.cell(row=row - 1, column=2).fill = _RED_FILL if lev["leverage_breach"] else _GREEN_FILL
+    if lev.get("cap_utilization_pct") is not None:
+        row = _row(row, "Cap Utilization", lev["cap_utilization_pct"], alt=False)
+        ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row += 1
+
+    # ---- Stress testing disclosure -----------------------------------------
+    row = _section(row, "Stress Testing Disclosure (Annex IV §48)")
+    sd = data["stress_disclosure"]
+    row = _row(row, "Scenario", sd["scenario_name"], alt=False)
+    row = _row(row, "NAV Before (EUR)", sd["nav_before_eur"], alt=True)
+    if sd["nav_before_eur"] is not None:
+        ws.cell(row=row - 1, column=2).number_format = _EUR_FMT
+    row = _row(row, "NAV After (EUR)", sd["nav_after_eur"], alt=False)
+    if sd["nav_after_eur"] is not None:
+        ws.cell(row=row - 1, column=2).number_format = _EUR_FMT
+    row = _row(row, "NAV Impact", sd["nav_impact_pct"], alt=True)
+    if sd["nav_impact_pct"] is not None:
+        ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row = _row(row, "Liquidity Before", sd["liquid_pct_before"], alt=False)
+    if sd["liquid_pct_before"] is not None:
+        ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row = _row(row, "Liquidity After", sd["liquid_pct_after"], alt=True)
+    if sd["liquid_pct_after"] is not None:
+        ws.cell(row=row - 1, column=2).number_format = _PCT_FMT
+    row = _row(row, "Regulatory Basis", sd["regulatory_basis"], alt=False)
+    row += 1
+
+    # ---- Gaps / completeness -----------------------------------------------
+    row = _section(row, "Completeness / Gap Analysis")
+    gaps = data["gaps"]
+    gap_labels = {
+        "aifm_lei_missing":              "AIFM LEI",
+        "aifm_national_code_missing":    "AIFM National Code",
+        "aif_lei_missing":               "AIF LEI",
+        "investor_profile_incomplete":   "Investor Liquidity Profile",
+        "country_data_missing":          "Country Data",
+        "leverage_missing":              "Leverage Computed",
+        "stress_missing":                "Stress Scenarios",
+    }
+    for i, (key, label) in enumerate(gap_labels.items()):
+        missing = gaps.get(key, False)
+        status = "MISSING / INCOMPLETE" if missing else "OK"
+        row = _row(row, label, status, alt=bool(i % 2))
+        ws.cell(row=row - 1, column=2).fill = _RED_FILL if missing else _GREEN_FILL
+
+    # ---- Column widths -----------------------------------------------------
+    ws.column_dimensions["A"].width = 42
+    ws.column_dimensions["B"].width = 30
+    ws.column_dimensions["C"].width = 22
+    ws.column_dimensions["D"].width = 14
+
+
+# ---------------------------------------------------------------------------
+# Annex IV standalone Excel export (regulatory filing only — single sheet)
+# ---------------------------------------------------------------------------
+
+def build_excel_annex_iv(r: dict, period: str | None = None) -> bytes:
+    """Return a single-sheet Excel workbook containing only the ESMA Annex IV
+    regulatory data.  Distinct from build_excel() which is the full 6-sheet
+    comprehensive internal risk management report."""
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)  # remove default empty sheet
+    _annex_iv_sheet(wb, r, period=period)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# XML export — ESMA AIFMD II Annex IV
+# ---------------------------------------------------------------------------
+
+def build_xml(r: dict, period: str | None = None) -> bytes:
+    """Build and return an ESMA AIFMD II Annex IV XML report as bytes."""
+    from liquidity_risk_tool.reporting.annex_iv_mapper import build_annex_iv
+
+    period_code = period or "2026Q1"
+    data = build_annex_iv(r, period_code=period_code)
+
+    XMLNS = "urn:eu.europa.esma:aifmd:annex-iv:v1.2"
+
+    def _el(parent, tag, text=None, **attrs):
+        e = ET.SubElement(parent, tag, {k: str(v) for k, v in attrs.items() if v is not None})
+        if text is not None:
+            e.text = str(text) if text != "" else ""
+        return e
+
+    def _pct(v):
         if v is None:
             return ""
         try:
-            return f"{float(v):.{decimals}f}"
+            return f"{float(v) * 100:.4f}"
+        except (TypeError, ValueError):
+            return ""
+
+    def _num(v, d=4):
+        if v is None:
+            return ""
+        try:
+            return f"{float(v):.{d}f}"
         except (TypeError, ValueError):
             return str(v)
 
-    root = ET.Element("LiquidityReport", {
-        "fund":          r.get("fund_name", ""),
-        "reportingDate": r.get("reporting_date", ""),
+    period_type_map = {
+        "Q1": "QUARTERLY", "Q2": "QUARTERLY", "Q3": "QUARTERLY", "Q4": "QUARTERLY",
+        "H1": "SEMI_ANNUAL", "H2": "SEMI_ANNUAL",
+        "Annual": "ANNUAL",
+    }
+    esma_period_type = period_type_map.get(data["period_type"], "QUARTERLY")
+
+    root = ET.Element("AIFMD", {
+        "xmlns": XMLNS,
+        "version": data["schema_version"],
         "generatedDate": str(date.today()),
-        "totalNavEur":   _num(r.get("total_nav_eur"), 2),
-        "xmlns":         "urn:liquidity-risk-tool:v1",
     })
 
-    # --- Summary ---
-    m = r.get("liquidity_metrics", {})
-    summary = ET.SubElement(root, "Summary")
-    for key, val in m.items():
-        if isinstance(val, dict):
-            continue
-        child = ET.SubElement(summary, "Metric", {"name": key})
-        child.text = _str(val)
+    # ---- Header ------------------------------------------------------------
+    hdr = ET.SubElement(root, "Header")
+    _el(hdr, "CreationDateAndTime", str(date.today()))
+    _el(hdr, "ConferringAuthorityCode", data["reporting_member_state"])
+    _el(hdr, "FilingType", "INIT")
+    _el(hdr, "AIFMNationalCode", data["aifm"]["national_code"] or "")
+    _el(hdr, "AIFMLEICode", data["aifm"]["lei"] or "")
+    _el(hdr, "ReportingPeriodStartDate", data["period_start"])
+    _el(hdr, "ReportingPeriodEndDate", data["period_end"])
+    _el(hdr, "ReportingPeriodType", esma_period_type)
+    _el(hdr, "SchemaVersion", data["schema_version"])
 
-    # --- Top countries ---
-    top = m.get("top_countries")
-    if top:
-        geo_el = ET.SubElement(root, "GeographicalConcentration")
-        try:
-            from liquidity_risk_tool.config.settings import EU_COUNTRIES
-        except Exception:
-            EU_COUNTRIES = frozenset()
-        for cc, pct in sorted(top.items(), key=lambda x: -x[1]):
-            ET.SubElement(geo_el, "Country", {
-                "code":  cc,
-                "navPct": _num(pct),
-                "eu":    "true" if cc in EU_COUNTRIES else "false",
-            })
+    # ---- AIFRecordInfo -----------------------------------------------------
+    aif_rec = ET.SubElement(root, "AIFRecordInfo")
 
-    # --- Liquidity Ladder ---
-    ladder_el = ET.SubElement(root, "LiquidityLadder")
-    for row in r.get("liquidity_ladder", []):
-        ET.SubElement(ladder_el, "Bucket", {
-            "id":             _str(row.get("bucket")),
-            "marketValueEur": _num(row.get("market_value_eur"), 2),
-            "realisableEur":  _num(row.get("realisable_value_eur"), 2),
-            "navPct":         _num(row.get("nav_pct")),
-            "cumulativePct":  _num(row.get("cumulative_nav_pct")),
-            "type":           "normal",
-        })
-    for row in r.get("stress_ladder", []):
-        ET.SubElement(ladder_el, "Bucket", {
-            "id":             _str(row.get("bucket")),
-            "marketValueEur": _num(row.get("market_value_eur"), 2),
-            "realisableEur":  _num(row.get("realisable_value_eur"), 2),
-            "navPct":         _num(row.get("nav_pct")),
-            "cumulativePct":  _num(row.get("cumulative_nav_pct")),
-            "type":           "stress",
-        })
+    # AIF identification
+    aif_id = ET.SubElement(aif_rec, "AIFIdentification")
+    _el(aif_id, "AIFNationalCode", data["aif"]["national_code"] or "")
+    _el(aif_id, "AIFLEICode", data["aif"]["lei"] or "")
+    _el(aif_id, "AIFName", data["aif"]["name"])
+    _el(aif_id, "ReportingDate", data["aif"]["reporting_date"])
+    _el(aif_id, "TotalNAVEUR", _num(data["aif"]["total_nav_eur"], 2))
 
-    # --- Stress Scenarios ---
-    scenarios_el = ET.SubElement(root, "StressScenarios")
-    meta_map = {m2["name"]: m2 for m2 in r.get("scenario_metadata", [])}
-    for sc in r.get("stress_results", []):
-        name  = sc.get("scenario_name", "")
-        meta2 = meta_map.get(name, {})
-        attrs = {
-            "name":           name,
-            "navImpactPct":   _num(sc.get("nav_impact_pct"), 2),
-            "stressedNavEur": _num(sc.get("stressed_nav_eur"), 2),
-            "coverage":       _num(sc.get("t0_t1_coverage") or sc.get("coverage_ratio")),
-            "shortfallEur":   _num(sc.get("shortfall_eur"), 2),
-            "isWorstCase":    "true" if meta2.get("is_worst_case") else "false",
-        }
-        ET.SubElement(scenarios_el, "Scenario", attrs)
+    # Principal markets
+    pm_el = ET.SubElement(aif_rec, "PrincipalMarketsTraded")
+    for mkt in data["principal_markets"]:
+        m = ET.SubElement(pm_el, "Market")
+        _el(m, "CountryCode", mkt["country_code"])
+        _el(m, "NavPct", _pct(mkt["nav_pct"]))
 
-    # --- Positions ---
-    positions_el = ET.SubElement(root, "Positions")
-    for pos in r.get("position_buckets", []):
-        ET.SubElement(positions_el, "Position", {
-            "isin":            _str(pos.get("isin")),
-            "name":            _str(pos.get("name")),
-            "assetClass":      _str(pos.get("asset_class")),
-            "country":         _str(pos.get("country")),
-            "bucket":          _str(pos.get("bucket")),
-            "marketValueEur":  _num(pos.get("market_value_eur"), 2),
-            "realisableEur":   _num(pos.get("realisable_value"), 2),
-            "haircut":         _num(pos.get("haircut")),
-            "navPct":          _num(pos.get("weight")),
-            "daysToLiquidate": _num(pos.get("days_to_liquidate"), 1),
-        })
+    # Principal instruments
+    pi_el = ET.SubElement(aif_rec, "PrincipalInstrumentsTraded")
+    for inst in data["principal_instruments"]:
+        i = ET.SubElement(pi_el, "Instrument")
+        _el(i, "ISIN", inst["isin"])
+        _el(i, "Name", inst["name"])
+        _el(i, "AssetClass", inst["asset_class"])
+        _el(i, "NavPct", _pct(inst["nav_pct"]))
 
-    # --- Waterfall ---
-    wf_meta = r.get("waterfall_meta", {})
-    wf_el   = ET.SubElement(root, "Waterfall", {
-        "targetEur":      _num(wf_meta.get("target_eur"), 2),
-        "totalProceeds":  _num(wf_meta.get("total_proceeds_eur"), 2),
-        "targetMet":      "true" if wf_meta.get("target_met") else "false",
-        "daysToTarget":   _str(wf_meta.get("days_to_target")),
-        "shortfallEur":   _num(wf_meta.get("residual_shortfall_eur"), 2),
-    })
-    for day in r.get("waterfall_summary", []):
-        ET.SubElement(wf_el, "Day", {
-            "day":          _str(day.get("day")),
-            "proceedsEur":  _num(day.get("proceeds_eur"), 2),
-            "cumulativeEur":_num(day.get("cumulative_eur"), 2),
-            "targetMet":    "true" if day.get("target_met") else "false",
-        })
+    # Portfolio concentrations
+    conc_el = ET.SubElement(aif_rec, "PortfolioConcentrations")
+    for c in data["portfolio_concentrations"]:
+        ce = ET.SubElement(conc_el, "Concentration")
+        _el(ce, "AssetClass", c["asset_class"])
+        _el(ce, "NavPct", _pct(c["nav_pct"]))
 
-    # --- AIFMD II ---
-    aifmd = r.get("aifmd2", {})
-    if aifmd:
-        aifmd_el = ET.SubElement(root, "AIFMDII")
-        for key, val in aifmd.items():
-            if not isinstance(val, (dict, list)):
-                child = ET.SubElement(aifmd_el, "Field", {"name": key})
-                child.text = _str(val)
+    # Asset liquidity profile (ESMA 7-bucket)
+    alp_el = ET.SubElement(aif_rec, "AssetLiquidityProfile")
+    alp = data["asset_liquidity_profile"]
+    _el(alp_el, "Day1NavPct",        _pct(alp.get("DAY_1", 0.0)))
+    _el(alp_el, "Day2To7NavPct",     _pct(alp.get("DAY_2_7", 0.0)))
+    _el(alp_el, "Day8To30NavPct",    _pct(alp.get("DAY_8_30", 0.0)))
+    _el(alp_el, "Day31To90NavPct",   _pct(alp.get("DAY_31_90", 0.0)))
+    _el(alp_el, "Day91To180NavPct",  _pct(alp.get("DAY_91_180", 0.0)))
+    _el(alp_el, "Day181To365NavPct", _pct(alp.get("DAY_181_365", 0.0)))
+    _el(alp_el, "DayMore365NavPct",  _pct(alp.get("DAY_MORE_365", 0.0)))
+
+    # Investor liquidity profile
+    inv = data["investor_liquidity_profile"]
+    inv_el = ET.SubElement(aif_rec, "InvestorLiquidityProfile")
+    _el(inv_el, "MinNoticePeriodDays", str(inv["min_notice_period_days"]))
+    _el(inv_el, "RedemptionFrequency", inv["redemption_frequency"])
+    _el(inv_el, "DataComplete", "true" if inv["data_complete"] else "false")
+
+    # Geographical concentration
+    geo = data["geographical_concentration"]
+    geo_el = ET.SubElement(aif_rec, "GeographicalConcentration")
+    _el(geo_el, "EUNavPct",    _pct(geo["eu_pct"]))
+    _el(geo_el, "NonEUNavPct", _pct(geo["non_eu_pct"]))
+    _el(geo_el, "GeoStatus",   geo["geo_status"])
+    for c in geo["top_countries"]:
+        ce = ET.SubElement(geo_el, "Country")
+        _el(ce, "Code", c["country_code"])
+        _el(ce, "NavPct", _pct(c["nav_pct"]))
+
+    # Special arrangements / LMTs
+    sa = data["special_arrangements"]
+    sa_el = ET.SubElement(aif_rec, "SpecialArrangements")
+    _el(sa_el, "Gate",            "true" if sa["gate"] else "false")
+    _el(sa_el, "Suspension",      "true" if sa["suspension"] else "false")
+    _el(sa_el, "SwingPricing",    "true" if sa["swing_pricing"] else "false")
+    _el(sa_el, "SidePocket",      "true" if sa["side_pocket"] else "false")
+    _el(sa_el, "LMTCount",        str(sa["lmt_count"]))
+    _el(sa_el, "LMTCompliant",    "true" if sa["lmt_compliant"] else "false")
+    _el(sa_el, "GateThreshold",   _num(sa["gate_threshold"]))
+    _el(sa_el, "SuspensionThreshold", _num(sa["suspension_threshold"]))
+    lmts_el = ET.SubElement(sa_el, "LMTList")
+    for lmt in sa["lmt_list"]:
+        _el(lmts_el, "LMT", lmt)
+
+    # Leverage (Art. 15 AIFMD II)
+    lev = data["leverage"]
+    lev_el = ET.SubElement(aif_rec, "LeverageInfo")
+    _el(lev_el, "GrossLeverage",      _num(lev["gross_leverage"]))
+    _el(lev_el, "CommitmentLeverage", _num(lev["commitment_leverage"]))
+    _el(lev_el, "LeverageCap",        _num(lev["leverage_cap"]))
+    _el(lev_el, "CapBreach",          "true" if lev["leverage_breach"] else "false")
+    if lev.get("cap_utilization_pct") is not None:
+        _el(lev_el, "CapUtilizationPct", _pct(lev["cap_utilization_pct"]))
+
+    # Stress testing disclosure — ESMA Annex IV §48 requires only whether stress
+    # tests are performed and the regulatory basis, not scenario parameters.
+    sd = data["stress_disclosure"]
+    st_el = ET.SubElement(aif_rec, "StressTestingDisclosure")
+    _el(st_el, "StressTestsPerformed", "false" if not sd.get("scenario_name") else "true")
+    _el(st_el, "RegulatoryBasis",      sd["regulatory_basis"])
+
+    # Gaps / completeness
+    gaps_el = ET.SubElement(aif_rec, "CompletenessFlags")
+    for key, missing in data["gaps"].items():
+        _el(gaps_el, key, "MISSING" if missing else "OK")
 
     tree = ET.ElementTree(root)
     ET.indent(tree, space="  ")

@@ -152,13 +152,13 @@ def get_report(run_id: str):
 
 
 @router.get("/run/{run_id}/export/excel")
-def export_excel(run_id: str, portfolio: Optional[str] = Query(default=None)):
+def export_excel(run_id: str, portfolio: Optional[str] = Query(default=None), period: Optional[str] = Query(default=None)):
     """Return a structured Excel (.xlsx) workbook for a single portfolio."""
     from backend.services.export_service import build_excel
 
     r = _portfolio_results(run_id, portfolio)
     code = portfolio or "portfolio"
-    xlsx_bytes = build_excel(r)
+    xlsx_bytes = build_excel(r, period=period)
     filename = f"liquidity_report_{code}_{run_id[:8]}.xlsx"
     return Response(
         content=xlsx_bytes,
@@ -183,20 +183,46 @@ def export_pdf(run_id: str, portfolio: Optional[str] = Query(default=None)):
     )
 
 
+@router.get("/run/{run_id}/export/annex-iv-excel")
+def export_annex_iv_excel(run_id: str, portfolio: Optional[str] = Query(default=None), period: Optional[str] = Query(default=None)):
+    """Return a single-sheet Annex IV Excel workbook (regulatory filing only)."""
+    from backend.services.export_service import build_excel_annex_iv
+
+    r = _portfolio_results(run_id, portfolio)
+    code = portfolio or "portfolio"
+    period_label = (period or "2026Q1").replace("/", "-")
+    xlsx_bytes = build_excel_annex_iv(r, period=period)
+    filename = f"annex_iv_{code}_{period_label}.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.get("/run/{run_id}/export/xml")
-def export_xml(run_id: str, portfolio: Optional[str] = Query(default=None)):
-    """Return a structured XML liquidity risk report for a single portfolio."""
+def export_xml(run_id: str, portfolio: Optional[str] = Query(default=None), period: Optional[str] = Query(default=None)):
+    """Return an ESMA AIFMD Annex IV XML report for a single portfolio."""
     from backend.services.export_service import build_xml
 
     r = _portfolio_results(run_id, portfolio)
     code = portfolio or "portfolio"
-    xml_bytes = build_xml(r)
-    filename = f"liquidity_report_{code}_{run_id[:8]}.xml"
+    xml_bytes = build_xml(r, period=period)
+    filename = f"annex_iv_{code}_{run_id[:8]}.xml"
     return Response(
         content=xml_bytes,
         media_type="application/xml",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/run/{run_id}/annex-iv")
+def get_annex_iv(run_id: str, portfolio: Optional[str] = Query(default=None), period: Optional[str] = Query(default=None)):
+    """Return the mapped ESMA AIFMD Annex IV data dict for UI preview."""
+    from liquidity_risk_tool.reporting.annex_iv_mapper import build_annex_iv
+
+    r = _portfolio_results(run_id, portfolio)
+    return build_annex_iv(r, period_code=period or "2026Q1")
 
 
 @router.get("/run/{run_id}/export/all")

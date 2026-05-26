@@ -2,6 +2,7 @@
 Central configuration for the Liquidity Risk & Stress Testing Tool.
 All thresholds, bucket definitions, and scenario parameters live here.
 """
+import os
 from dataclasses import dataclass, field
 from typing import Dict, List
 
@@ -221,6 +222,25 @@ ADL_LEVY_RATE: float = 0.005   # 50 bps default levy on redeeming investors
 # Gate / suspension thresholds (also used by RedemptionSimulator as class defaults)
 GATE_THRESHOLD: float       = 0.10   # UCITS/AIFMD common practice
 SUSPENSION_THRESHOLD: float = 0.25
+
+
+# ---------------------------------------------------------------------------
+# AIFM-level identification (required for ESMA Annex IV Header)
+# Values default to placeholders so the pipeline runs out of the box; production
+# deployments should override via environment variables. Missing/placeholder
+# values are flagged by the Annex IV validation checks rather than blocking
+# the export — regulators still receive a structurally valid file.
+# ---------------------------------------------------------------------------
+AIFM_LEI: str = os.environ.get("AIFM_LEI", "")
+AIFM_NATIONAL_CODE: str = os.environ.get("AIFM_NATIONAL_CODE", "")
+AIFM_REPORTING_MEMBER_STATE: str = os.environ.get("AIFM_REPORTING_MEMBER_STATE", "LU")
+AIFM_NAME: str = os.environ.get("AIFM_NAME", "")
+AIF_LEI: str = os.environ.get("AIF_LEI", "")
+AIF_NATIONAL_CODE: str = os.environ.get("AIF_NATIONAL_CODE", "")
+ANNEX_IV_SCHEMA_VERSION: str = "1.2"
+ANNEX_IV_REGULATORY_BASIS: str = (
+    "AIFMD II (Directive (EU) 2024/927), Annex IV reporting, effective 16 April 2026"
+)
 
 
 REVOLUTION_SCENARIOS: List[StressScenario] = [

@@ -14,6 +14,7 @@ import RiskStory from './pages/RiskStory'
 import AllPortfolios from './pages/AllPortfolios'
 import Validation from './pages/Validation'
 import Leverage from './pages/Leverage'
+import AnnexIV from './pages/AnnexIV'
 
 // SVG icon components — 16×16, stroke-based, professional
 function IconPortfolios() {
@@ -43,6 +44,9 @@ function IconValidation() {
 function IconLeverage() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="1" y1="14" x2="15" y2="2"/><circle cx="4" cy="11" r="2"/><circle cx="12" cy="3" r="2"/></svg>
 }
+function IconAnnexIV() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="1" width="10" height="13" rx="1"/><line x1="5" y1="5" x2="9" y2="5"/><line x1="5" y1="8" x2="9" y2="8"/><line x1="5" y1="11" x2="7" y2="11"/><path d="M10 10l4 4"/><circle cx="11.5" cy="10.5" r="2.5"/></svg>
+}
 
 const NAV_ITEMS = [
   { to: '/portfolios',  labelKey: 'nav.allPortfolios', Icon: IconPortfolios },
@@ -52,6 +56,7 @@ const NAV_ITEMS = [
   { to: '/waterfall',   labelKey: 'nav.waterfall',     Icon: IconWaterfall  },
   { to: '/charts',      labelKey: 'nav.charts',        Icon: IconCharts     },
   { to: '/leverage',    labelKey: 'nav.leverage',      Icon: IconLeverage   },
+  { to: '/annex-iv',   labelKey: 'nav.annexIv',       Icon: IconAnnexIV    },
   { to: '/risk-story',  labelKey: 'nav.riskSummary',   Icon: IconRiskStory  },
   { to: '/validation',  labelKey: 'nav.validation',    Icon: IconValidation },
 ]
@@ -195,6 +200,7 @@ export default function App() {
                   <Route path="/waterfall"   element={<Waterfall />} />
                   <Route path="/charts"      element={<Charts />} />
                   <Route path="/leverage"     element={<Leverage />} />
+                  <Route path="/annex-iv"    element={<AnnexIV />} />
                   <Route path="/risk-story"  element={<RiskStory />} />
                   <Route path="/validation"  element={<Validation />} />
                 </Routes>
