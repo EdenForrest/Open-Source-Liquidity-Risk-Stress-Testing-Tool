@@ -406,6 +406,19 @@ Nine tools are implemented in `_evaluate_scenario()`:
 
 **AIFMD II compliance:** Managers must pre-select ≥2 tools. Swing pricing + dual pricing is a prohibited combination (both adjust NAV on redemptions). The LMT Simulator enforces these rules via a compliance checker.
 
+#### Horizon Display in Redemption Table
+
+The redemption analysis table now displays which settlement horizon is achievable for each scenario. The **Without LMT** column shows the horizon under normal liquidity conditions, while the **With LMT** column shows how tools like Notice Period Extension or Redemptions in Kind improve achievable horizon. Horizons are labeled as T+1, T+3, T+7, or shown as absent (✕) if no coverage exists at any horizon. This enables direct visual comparison of tool impact on settlement speed.
+
+#### Validation Framework for LMT Configurations
+
+Two automated validation checks verify correct LMT mechanics:
+
+1. **Multiplicative composition**: When ≥2 demand-reducing tools (ADL, fees, in-kind, dual pricing) are active, they must compose multiplicatively. Validation confirms that shortfall after all tools applied is < 0.1% NAV.
+2. **Non-zero cost**: When a tool is activated, it must carry measurable cost (non-zero bps or percentage). Prevents misconfiguration where tools are marked active but inactive.
+
+Both checks run automatically and appear in the Validation sidebar under "LMT Composition." They help users validate that their tool configuration is both compliant and mechanically correct.
+
 ---
 
 ### 7. Waterfall Engine — `waterfall_engine.py`

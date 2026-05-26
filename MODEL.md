@@ -335,6 +335,16 @@ Where $\mathrm{effectiveADV}_i = \sigma \cdot ADV_i$ and $\sigma$ is the ADV str
 
 **Code:** `RedemptionSimulator._estimate_days_to_cover()` reads `pos["effective_adv"]` (stored by `LiquidityProfiler._apply_adv_cap()`). The stressed profile is built with `LiquidityProfiler(portfolio, stress=True, adv_stress_scalar=REDEMPTION_STRESS_ADV_SCALAR)`.
 
+### 9.7 Horizon Label Display
+
+The redemption table displays which settlement horizon is achievable for each scenario. The `CoverageBar` component in the Redemption tab evaluates the three coverage tests (`can_meet_t1`, `can_meet_t3`, `can_meet_t7`) and displays the best-case horizon met:
+
+$$\mathrm{horizon} = \begin{cases} \mathrm{T+1} & \text{if } \mathrm{can\_meet\_t1} = \mathrm{true} \\ \mathrm{T+3} & \text{else if } \mathrm{can\_meet\_t3} = \mathrm{true} \\ \mathrm{T+7} & \text{else if } \mathrm{can\_meet\_t7} = \mathrm{true} \\ \mathrm{null} & \text{otherwise} \end{cases}$$
+
+When displayed, the horizon label appears as a gray badge next to the coverage symbol (✓ or ✕). This enables side-by-side comparison of coverage horizons between the "Without LMT" and "With LMT" columns, making clear how tools like Notice Period Extension or Redemptions in Kind shift the achievable horizon from T+7 to T+3 or T+1.
+
+**Code:** `frontend/src/pages/Redemption.jsx` — `CoverageBar()` function (line 19) and `getHorizonLabel()` helper (lines 32–37). The horizon parameter flows through both comparison columns (lines 261, 272).
+
 ---
 
 ## 10. Liquidation Waterfall
@@ -948,7 +958,33 @@ The LMT Simulator enforces two rules:
 
 When Run Simulation completes, `simResults` are stored in global `AnalysisContext` and the Redemption page automatically switches to comparison view.
 
-### 20.7 Known Limitations
+### 20.7 Validation Checks for LMT Composition
+
+Two automated validation checks enforce correct LMT mechanics in the backend:
+
+#### Check 1: LMT Demand Reduction Composes Multiplicatively
+
+When multiple demand-reducing tools are active (ADL, redemption fee, in-kind, dual pricing), their effects must compose multiplicatively on `effective_cash_demand`. The check verifies this by computing:
+
+$$R_{\text{eff}} = R \prod_{i \in \text{active\_demand\_reducers}} (1 - r_i)$$
+
+where $r_i$ is the reduction factor for tool $i$ (e.g., `adl_bps / 10000`, `fee_bps / 10000`, `in_kind_pct`, `dual_spread_bps / 10000`).
+
+When ≥2 demand reducers are active, the validation check runs for each scenario and asserts that the resulting shortfall (after all tools applied) is less than 0.1% of NAV. A failure indicates incorrect composition (e.g., tools overwriting rather than multiplying) or an unrealistic configuration that still leaves high shortfall despite multiple tools.
+
+**Code:** `backend/services/validation_service.py`, check name `"LMT demand reduction composes multiplicatively"` (lines 230–269).
+
+#### Check 2: LMT Activation Carries Non-Zero Cost
+
+When `lmt_activated` is `true`, at least one of the four pricing/fee tools must carry measurable cost: `adl_bps > 0`, `fee_bps > 0`, `swing_factor * 10000 > 0`, or `dual_spread_bps > 0`. This prevents misconfiguration where a tool is marked active but carries zero charge.
+
+**Code:** `backend/services/validation_service.py`, check name `"LMT activation carries non-zero cost"` (lines 271–283).
+
+Both checks appear in the Validation sidebar under the "LMT Composition" category and are automatically re-run whenever simulation results are displayed.
+
+---
+
+### 20.8 Known Limitations
 
 | Limitation | Effect |
 |-----------|--------|
