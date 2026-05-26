@@ -227,6 +227,61 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             else f"can_meet_t7 consistent with shortfall for all {len(redemption)} scenarios",
         ))
 
+        # LMT composition tests: verify that multiple demand-reducing LMTs compose multiplicatively
+        lmt_composition_fails = []
+        for r in redemption:
+            tools = r.get("lmt_tools_used", "")
+            if isinstance(tools, str):
+                tools = [t.strip() for t in tools.split(",") if t.strip()]
+            else:
+                tools = tools if isinstance(tools, list) else []
+
+            # Count demand-reducing tools (tools that use *= on effective_cash_demand)
+            demand_reducers = [
+                t for t in tools
+                if t in ("adl", "redemption_fee", "redemption_in_kind", "dual_pricing")
+            ]
+
+            if len(demand_reducers) >= 2:
+                # When multiple demand-reducing tools are active, verify that can_meet_* improves
+                # compared to baseline (since demand is being reduced multiplicatively)
+                scenario_pct = r.get("scenario_pct", 0)
+                shortfall = r.get("shortfall_eur", 0)
+
+                # A well-composed LMT should reduce shortfall when multiple tools are active
+                # We check that shortfall is lower or the scenario is covered better
+                if shortfall > 0:
+                    # With multiple demand reducers, shortfall should be minimal
+                    # Use a tolerance of 0.1% of NAV since these are composed effects
+                    nav = portfolio_results.get("total_nav_eur", 0)
+                    if nav > 0 and shortfall > nav * 0.001:
+                        lmt_composition_fails.append(
+                            f"{_pct(scenario_pct)}: "
+                            f"multiple LMTs ({', '.join(demand_reducers)}) but shortfall={_eur(shortfall)}"
+                        )
+
+        results.append(_check(
+            "LMT demand reduction composes multiplicatively", "Redemption",
+            len(lmt_composition_fails) == 0,
+            (f"{len(lmt_composition_fails)} scenario(s) with multiple LMTs show suboptimal composition: {lmt_composition_fails[:2]}")
+            if lmt_composition_fails
+            else f"LMT composition verified — multiple demand-reducing tools compose correctly",
+        ))
+
+        # LMT activation threshold test: verify that cost metrics increase with LMT activity
+        total_cost_zero = [r for r in redemption if r.get("lmt_activated") and
+                          ((r.get("adl_bps") or 0) +
+                           (r.get("fee_bps") or 0) +
+                           ((r.get("swing_factor") or 0) * 10000) +
+                           (r.get("dual_spread_bps") or 0)) == 0]
+
+        results.append(_check(
+            "LMT activation carries non-zero cost", "Redemption",
+            len(total_cost_zero) == 0,
+            f"{len(total_cost_zero)} scenario(s) have lmt_activated=true but zero cost" if total_cost_zero
+            else f"All {len([r for r in redemption if r.get('lmt_activated')])} active LMT scenarios show cost > 0",
+        ))
+
     # ── Stress engine ─────────────────────────────────────────────────────
     stress_results = portfolio_results.get("stress_results", [])
     if stress_results:

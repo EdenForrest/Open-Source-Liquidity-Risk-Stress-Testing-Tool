@@ -16,15 +16,24 @@ import client from '../api/client'
 // Coverage bar
 // ---------------------------------------------------------------------------
 
-function CoverageBar({ pctVal }) {
+function CoverageBar({ pctVal, horizon }) {
   const clamped = Math.min(Math.max(pctVal ?? 0, 0), 1)
   const isCovered = clamped >= 0.33
   const color = isCovered ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
   return (
-    <div className="flex items-center justify-center" style={{ color, minWidth: '2rem', height: '1.5rem' }}>
+    <div className="flex items-center justify-center gap-2" style={{ color, minWidth: '2rem', height: '1.5rem' }}>
       {isCovered ? '✓' : '✕'}
+      {horizon && <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{horizon}</span>}
     </div>
   )
+}
+
+// Helper to determine which horizon is met
+function getHorizonLabel(row) {
+  if (row.can_meet_t1) return 'T+1'
+  if (row.can_meet_t3) return 'T+3'
+  if (row.can_meet_t7) return 'T+7'
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +258,7 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                     <>
                       {/* Without LMT — coverage */}
                       <td className="px-3 py-2.5 border-l" style={{ borderColor: 'var(--border)' }}>
-                        <CoverageBar pctVal={baseCoverageRatio} />
+                        <CoverageBar pctVal={baseCoverageRatio} horizon={getHorizonLabel(base)} />
                       </td>
                       <td className="px-3 py-2.5 text-right font-medium" style={{ color: baseSf > 0 ? 'var(--kpi-red-text)' : 'var(--text-muted)' }}>
                         {baseSf > 0 ? eur(baseSf) : '—'}
@@ -260,7 +269,7 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
 
                       {/* With LMT — coverage */}
                       <td className="px-3 py-2.5 border-l" style={{ borderColor: 'var(--border)' }}>
-                        <CoverageBar pctVal={coverageRatio} />
+                        <CoverageBar pctVal={coverageRatio} horizon={getHorizonLabel(r)} />
                       </td>
                       <td className="px-3 py-2.5 text-right font-semibold" style={{ color: sf > 0 ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>
                         {sf > 0 ? eur(sf) : '—'}
