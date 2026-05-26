@@ -165,6 +165,7 @@ class RedemptionSimulator:
             total_mv = profile["market_value_eur"].sum()
             avg_haircut = (1 - total_rv / total_mv) if total_mv > 0 else 0.0
             swing_factor = min(avg_haircut * redemption_pct, swing_factor_max)
+            effective_cash_demand *= (1.0 - swing_factor)
             lmt_tools.append("swing_pricing")
         else:
             swing_factor = 0.0
@@ -212,11 +213,11 @@ class RedemptionSimulator:
         dual_spread_bps_cfg = float(self._lmt.get("dual_spread_bps", 0.0))
         dual_active = "dual_pricing" in active_tools and dual_spread_bps_cfg > 0
         if dual_active:
-            effective_cash_demand *= (1.0 - dual_spread_bps_cfg / 10_000)
+            effective_cash_demand *= (1.0 - dual_spread_bps_cfg)
             shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
             days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
             lmt_tools.append("dual_pricing")
-        dual_spread_out = dual_spread_bps_cfg if dual_active else 0.0
+        dual_spread_out = dual_spread_bps_cfg * 10_000 if dual_active else 0.0
 
         return RedemptionResult(
             scenario_pct              = redemption_pct,
