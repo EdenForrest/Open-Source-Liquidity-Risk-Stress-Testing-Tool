@@ -18,15 +18,11 @@ import client from '../api/client'
 
 function CoverageBar({ pctVal }) {
   const clamped = Math.min(Math.max(pctVal ?? 0, 0), 1)
-  const w = `${(clamped * 100).toFixed(1)}%`
-  const color = clamped >= 1 ? 'var(--kpi-green-text)' : clamped >= 0.7 ? 'var(--kpi-amber-text)' : 'var(--kpi-red-text)'
-  const bg = clamped >= 1 ? 'var(--kpi-green-bg, #d1fae5)' : clamped >= 0.7 ? 'var(--kpi-amber-bg, #fef3c7)' : 'var(--kpi-red-bg, #fee2e2)'
+  const isCovered = clamped >= 1
+  const color = isCovered ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
   return (
-    <div className="flex items-center gap-2 min-w-28">
-      <div className="flex-1 rounded-full overflow-hidden h-1.5" style={{ background: 'var(--bg-surface)' }}>
-        <div className="h-full rounded-full transition-all" style={{ width: w, background: color }} />
-      </div>
-      <span className="text-xs font-semibold tabular-nums" style={{ color, minWidth: '3rem', textAlign: 'right' }}>{pct(pctVal)}</span>
+    <div className="flex items-center justify-center" style={{ color, minWidth: '2rem', height: '1.5rem' }}>
+      {isCovered ? '✓' : '✕'}
     </div>
   )
 }
