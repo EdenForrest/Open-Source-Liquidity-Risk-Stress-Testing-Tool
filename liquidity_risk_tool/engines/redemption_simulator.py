@@ -174,18 +174,14 @@ class RedemptionSimulator:
         adl_active = "adl" in active_tools and redemption_pct >= swing_threshold
         adl_bps = adl_rate * 10_000 if adl_active else 0.0
         if adl_active:
-            effective_cash_demand = redemption_eur * (1.0 - adl_rate)
-            shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
-            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
+            effective_cash_demand *= (1.0 - adl_rate)
             lmt_tools.append("adl")
 
         # Redemption fee: retained in fund, directly reduces net cash outflow.
         fee_active = "redemption_fee" in active_tools and fee_rate > 0
         fee_bps = fee_rate * 10_000 if fee_active else 0.0
         if fee_active:
-            effective_cash_demand = redemption_eur * (1.0 - fee_rate)
-            shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
-            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
+            effective_cash_demand *= (1.0 - fee_rate)
             lmt_tools.append("redemption_fee")
 
         # Notice Period Extension: fund gains extra days before cash payment is due.
@@ -205,7 +201,7 @@ class RedemptionSimulator:
         in_kind_pct = float(self._lmt.get("in_kind_pct", 0.0))
         in_kind_active = "redemption_in_kind" in active_tools and in_kind_pct > 0
         if in_kind_active:
-            effective_cash_demand = redemption_eur * (1.0 - in_kind_pct)
+            effective_cash_demand *= (1.0 - in_kind_pct)
             shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
             days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
             lmt_tools.append("redemption_in_kind")
@@ -216,7 +212,7 @@ class RedemptionSimulator:
         dual_spread_bps_cfg = float(self._lmt.get("dual_spread_bps", 0.0))
         dual_active = "dual_pricing" in active_tools and dual_spread_bps_cfg > 0
         if dual_active:
-            effective_cash_demand = redemption_eur * (1.0 - dual_spread_bps_cfg / 10_000)
+            effective_cash_demand *= (1.0 - dual_spread_bps_cfg / 10_000)
             shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
             days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
             lmt_tools.append("dual_pricing")

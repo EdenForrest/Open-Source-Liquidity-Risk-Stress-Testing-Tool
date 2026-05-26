@@ -773,6 +773,192 @@ Hover shows a floating tooltip with country name, NAV%, and a status badge (BREA
 
 ---
 
+## 20. AIFMD II Liquidity Management Tools (LMT) Simulator
+
+**Code:** `RedemptionSimulator._evaluate_scenario()` — `redemption_simulator.py`; `POST /api/run/{run_id}/lmt-simulate` — `backend/routers/analysis.py`; `LMTSimulator.jsx` — `frontend/src/pages/LMTSimulator.jsx`
+
+**Regulatory basis:** AIFMD II Article 16 & Annex V (Directive (EU) 2024/927)
+
+### 20.1 LMT Taxonomy
+
+AIFMD II requires AIFs to pre-select and maintain ≥2 liquidity management tools from a prescribed list of nine. The tool classifier them into three groups:
+
+**Always Available (threshold-based, non-configurable):**
+1. Temporary Suspension — triggered at ≥25% NAV redemption
+2. Side Pockets — segregates illiquid holdings (currently informational)
+
+**Quantitative Tools (reduce effective cash demand):**
+3. Gate — defer redemptions at ≥10% NAV
+4. Notice Period Extension — extend payment timeline by N days (3/7/14/30)
+5. Redemptions in Kind — satisfy M% of redemption with assets instead of cash
+
+**Anti-Dilution Tools (reduce effective redemption pressure via pricing or fees):**
+6. Redemption Fee — charge X bps to redeeming investors
+7. Swing Pricing — adjust NAV by ± factor on days with net redemptions > threshold
+8. Dual Pricing — always apply redemption spread (unlike swing pricing which has a threshold)
+9. Anti-Dilution Levy (ADL) — charge Y bps to redeeming investors
+
+### 20.2 Mechanics
+
+Each tool modifies the effective cash demand or liquidity available within the `_evaluate_scenario()` method:
+
+#### Gate
+```python
+if redemption_eur >= gate_threshold_pct * nav:
+    gate_triggered = True
+    # Redemption is deferred; coverage at T+1/T+3/T+7 reflects delayed availability
+```
+
+#### Notice Period Extension
+```python
+effective_days_to_clear = max(0, days_to_clear - notice_extension_days)
+# Fund gains extra time to liquidate; effective shortfall shrinks
+```
+
+#### Redemptions in Kind
+```python
+cash_demand = redemption_eur * (1 - in_kind_pct)
+# M% of redemption is satisfied via asset transfer; cash shortfall shrinks proportionally
+```
+
+#### Redemption Fee
+```python
+effective_redemption = redemption_eur * (1 - fee_bps / 10000)
+# Fee reduces the net cash payout; shortfall shrinks
+```
+
+#### Swing Pricing
+```python
+if net_redemptions > swing_threshold * nav:
+    nav_multiplier = 1.0 + swing_factor_bps / 10000  # for redemptions
+    effective_redemption = redemption_eur * nav_multiplier
+# On large redemption days, NAV is adjusted; effective cash demand rises for redeeming investors, shrinking relative shortfall
+```
+
+#### Dual Pricing
+```python
+nav_multiplier = 1.0 - dual_spread_bps / 10000
+effective_redemption = redemption_eur * nav_multiplier
+# Always applied (no threshold); redemption NAV is discounted; shortfall shrinks
+```
+
+#### Anti-Dilution Levy
+```python
+effective_redemption = redemption_eur * (1 - adl_bps / 10000)
+# ADL charge reduces net payout; shortfall shrinks
+```
+
+### 20.3 Coverage Ratio with LMTs
+
+The baseline coverage ratio (without LMTs) is:
+$$\mathrm{coverage\_baseline}(h) = \frac{\mathrm{liquidity\_available}(h)}{\mathrm{redemption\_eur}}$$
+
+With LMTs applied, effective redemption demand $R_{\text{eff}}$ becomes:
+$$R_{\text{eff}} = R \cdot (1 - \mathrm{swing\_factor}) \cdot (1 - \mathrm{adl\_bps}/10000) \cdot (1 - \mathrm{fee\_bps}/10000) \cdot (1 - \mathrm{dual\_spread\_bps}/10000)$$
+
+And for in-kind tools:
+$$R_{\text{eff}} = R \cdot (1 - \mathrm{in\_kind\_pct})$$
+
+The adjusted coverage ratio is:
+$$\mathrm{coverage\_lmt}(h) = \frac{\mathrm{liquidity\_available}(h)}{R_{\text{eff}}}$$
+
+A ratio ≥ 1.0 indicates the fund can fully meet the (adjusted) redemption within horizon $h$.
+
+### 20.4 AIFMD II Compliance Validation
+
+The LMT Simulator enforces two rules:
+
+1. **Minimum tool count:** ≥2 selectable tools must be active (always-available tools do not count toward this minimum).
+   ```python
+   selected_count = len([t for t in active_tools if t in SELECTABLE_TOOLS])
+   assert selected_count >= 2, "AIFMD II requires ≥2 LMTs"
+   ```
+
+2. **Prohibited combination:** Swing Pricing + Dual Pricing cannot both be active (both adjust NAV on redemptions; using both creates regulatory ambiguity).
+   ```python
+   if "swing_pricing" in active_tools and "dual_pricing" in active_tools:
+       raise ComplianceError("Swing pricing and dual pricing are mutually exclusive under AIFMD II")
+   ```
+
+### 20.5 API Endpoint — POST /api/run/{run_id}/lmt-simulate
+
+**Request body:**
+```json
+{
+  "lmt_config": {
+    "active_tools": ["gate", "swing_pricing", "adl"],
+    "gate_pct": 0.10,
+    "swing_threshold": 0.02,
+    "swing_factor_bps": 100,
+    "adl_bps": 100,
+    "fee_bps": 50,
+    "dual_spread_bps": 0,
+    "notice_extension_days": 0,
+    "in_kind_pct": 0.0
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "normal": [
+    {
+      "redemption_rate": 0.05,
+      "can_meet_t1": true,
+      "can_meet_t3": true,
+      "can_meet_t7": true,
+      "shortfall_eur": 0.0,
+      "days_to_clear": 1,
+      "lmt_activated": true,
+      "lmt_tools_used": ["gate", "swing_pricing", "adl"],
+      "swing_factor": 1.01,
+      "adl_bps": 100,
+      "fee_bps": 50,
+      "dual_spread_bps": 0,
+      "notice_extension_days": 0,
+      "in_kind_pct_used": 0.0
+    },
+    ...
+  ],
+  "stress": [...],
+  "lmt_config_applied": { ... }
+}
+```
+
+**Characteristics:**
+- Executes in milliseconds (no full pipeline re-run)
+- Reuses `position_buckets` and `stress_buckets` cached from the original run
+- Returns results for both normal regime and Severe Combined stress scenario
+- Each scenario tests 4 redemption sizes: 5%, 10%, 20%, 30% of NAV
+
+### 20.6 Frontend Simulator UI
+
+**LMTSimulator.jsx** provides an interactive two-panel layout:
+
+**Left Panel — Tool Configurator:**
+- Grouped toggles and sliders for each LMT
+- AIFMD II compliance strip (tool count, prohibition warning, Run Simulation button)
+- Parameter validation (e.g., gate_pct ∈ [5%, 25%])
+
+**Right Panel — Impact Dashboard:**
+- **Coverage Table:** Per-scenario side-by-side comparison (baseline vs configured shortfall, delta %, colour-coded)
+- **Investor Cost Summary:** Total bps charged across all active pricing/fee tools
+- **Recommendation Card:** Auto-generated guidance (e.g., "Adding Notice Extension would close remaining 2.5% shortfall")
+
+When Run Simulation completes, `simResults` are stored in global `AnalysisContext` and the Redemption page automatically switches to comparison view.
+
+### 20.7 Known Limitations
+
+| Limitation | Effect |
+|-----------|--------|
+| Side Pockets not yet operational | Currently informational only; asset segregation not modelled |
+| ADV stress scalar fixed at 0.5 | Cannot customize per-tool stress assumptions |
+| No cascading tool effects | Tools are applied independently; no interaction modelling |
+| Single currency (EUR) | FX rates held constant; no multi-currency LMT scenarios |
+
+---
+
 ## References
 
 - European Parliament & Council (2024). *Directive (EU) 2024/927 (AIFMD II)* — amending AIFMD and UCITS Directive
