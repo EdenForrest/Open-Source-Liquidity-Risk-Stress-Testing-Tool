@@ -144,11 +144,11 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
             {hasBefore && (
               <tr style={{ background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
                 <th colSpan={3} className="px-3 py-1.5 text-left" style={{ color: 'var(--text-muted)' }} />
-                <th colSpan={3} className="px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide border-l"
+                <th colSpan={4} className="px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide border-l"
                   style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'var(--bg-surface)' }}>
                   Without LMT
                 </th>
-                <th colSpan={3} className="px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide border-l"
+                <th colSpan={4} className="px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide border-l"
                   style={{ borderColor: 'var(--border)', color: 'var(--text-accent)', background: 'var(--bg-surface)' }}>
                   With LMT
                 </th>
@@ -162,16 +162,17 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
             <tr className="text-xs font-semibold uppercase tracking-wide" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>
               <th className="px-3 py-2 text-left whitespace-nowrap">Scenario</th>
               <th className="px-3 py-2 text-right whitespace-nowrap">Demand (€)</th>
-              <th className="px-3 py-2 text-center whitespace-nowrap">Horizons</th>
 
               {hasBefore ? (
                 <>
                   {/* Without LMT */}
-                  <th className="px-3 py-2 text-left whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>Coverage</th>
+                  <th className="px-3 py-2 text-center whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>Horizons</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Coverage</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Shortfall</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Days</th>
                   {/* With LMT */}
-                  <th className="px-3 py-2 text-left whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>Coverage</th>
+                  <th className="px-3 py-2 text-center whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>Horizons</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">Coverage</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Shortfall</th>
                   <th className="px-3 py-2 text-right whitespace-nowrap">Days</th>
                   {/* Delta */}
@@ -224,31 +225,38 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                     {eur(r.redemption_eur)}
                   </td>
 
-                  {/* Horizons */}
-                  <td className="px-3 py-2.5 text-center">
-                    <HorizonBadges t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
-                  </td>
-
                   {hasBefore ? (
                     <>
+                      {/* Without LMT — horizons */}
+                      <td className="px-3 py-2.5 text-center border-l" style={{ borderColor: 'var(--border)' }}>
+                        <HorizonBadges t1={base.can_meet_t1} t3={base.can_meet_t3} t7={base.can_meet_t7} />
+                      </td>
                       {/* Without LMT — coverage */}
-                      <td className="px-3 py-2.5 border-l" style={{ borderColor: 'var(--border)' }}>
+                      <td className="px-3 py-2.5 text-center">
                         <CoverageBar t1={base.can_meet_t1} t3={base.can_meet_t3} t7={base.can_meet_t7} />
                       </td>
+                      {/* Without LMT — shortfall */}
                       <td className="px-3 py-2.5 text-right font-medium" style={{ color: baseSf > 0 ? 'var(--kpi-red-text)' : 'var(--text-muted)' }}>
                         {baseSf > 0 ? eur(baseSf) : '—'}
                       </td>
+                      {/* Without LMT — days */}
                       <td className="px-3 py-2.5 text-right" style={{ color: 'var(--text-secondary)' }}>
                         {base?.days_to_clear != null ? base.days_to_clear.toFixed(1) : '—'}
                       </td>
 
+                      {/* With LMT — horizons */}
+                      <td className="px-3 py-2.5 text-center border-l" style={{ borderColor: 'var(--border)' }}>
+                        <HorizonBadges t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
+                      </td>
                       {/* With LMT — coverage */}
-                      <td className="px-3 py-2.5 border-l" style={{ borderColor: 'var(--border)' }}>
+                      <td className="px-3 py-2.5 text-center">
                         <CoverageBar t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
                       </td>
+                      {/* With LMT — shortfall */}
                       <td className="px-3 py-2.5 text-right font-semibold" style={{ color: sf > 0 ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>
                         {sf > 0 ? eur(sf) : '—'}
                       </td>
+                      {/* With LMT — days */}
                       <td className="px-3 py-2.5 text-right font-medium" style={{ color: 'var(--text-primary)' }}>
                         {r.days_to_clear != null ? r.days_to_clear.toFixed(1) : '—'}
                       </td>
@@ -263,14 +271,21 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                     </>
                   ) : (
                     <>
-                      <td className="px-3 py-2.5">
+                      {/* Horizons */}
+                      <td className="px-3 py-2.5 text-center border-l" style={{ borderColor: 'var(--border)' }}>
+                        <HorizonBadges t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
+                      </td>
+                      {/* Coverage */}
+                      <td className="px-3 py-2.5 text-center">
                         <CoverageBar t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
                       </td>
-                      <td className="px-3 py-2.5 text-right" style={{ color: 'var(--text-secondary)' }}>
-                        {r.days_to_clear != null ? r.days_to_clear.toFixed(1) : '—'}
-                      </td>
+                      {/* Shortfall */}
                       <td className="px-3 py-2.5 text-right font-semibold" style={{ color: sf > 0 ? 'var(--kpi-red-text)' : 'var(--text-muted)' }}>
                         {sf > 0 ? eur(sf) : '—'}
+                      </td>
+                      {/* Days */}
+                      <td className="px-3 py-2.5 text-right" style={{ color: 'var(--text-secondary)' }}>
+                        {r.days_to_clear != null ? r.days_to_clear.toFixed(1) : '—'}
                       </td>
                     </>
                   )}
