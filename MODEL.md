@@ -833,29 +833,38 @@ cash_demand = redemption_eur * (1 - in_kind_pct)
 
 #### Redemption Fee
 ```python
-effective_redemption = redemption_eur * (1 - fee_bps / 10000)
-# Fee reduces the net cash payout; shortfall shrinks
+# fee_rate is a FRACTION (e.g. 0.005 = 50 bps), active only when "redemption_fee" selected and rate > 0
+if fee_active:
+    effective_cash_demand *= (1 - fee_rate)
+# Fee retained in the fund directly reduces the net cash outflow; shortfall shrinks
 ```
 
 #### Swing Pricing
 ```python
-if net_redemptions > swing_threshold * nav:
-    nav_multiplier = 1.0 + swing_factor_bps / 10000  # for redemptions
-    effective_redemption = redemption_eur * nav_multiplier
-# On large redemption days, NAV is adjusted; effective cash demand rises for redeeming investors, shrinking relative shortfall
+# Activates only at/above the threshold; the swing factor is derived from the
+# realised haircut and redemption size, capped at swing_factor_max (a fraction).
+if "swing_pricing" in active_tools and redemption_pct >= swing_threshold:
+    avg_haircut  = 1 - realisable_value / market_value
+    swing_factor = min(avg_haircut * redemption_pct, swing_factor_max)
+    effective_cash_demand *= (1 - swing_factor)
+# Redeeming investors bear the dilution cost; the fund's effective cash demand shrinks
 ```
 
 #### Dual Pricing
 ```python
-nav_multiplier = 1.0 - dual_spread_bps / 10000
-effective_redemption = redemption_eur * nav_multiplier
-# Always applied (no threshold); redemption NAV is discounted; shortfall shrinks
+# dual_spread_frac is a FRACTION (e.g. 0.003 = 30 bps). dual_spread_bps is accepted
+# as a legacy alias that ALSO carries a fraction on the wire.
+if "dual_pricing" in active_tools and dual_spread_frac > 0:
+    effective_cash_demand *= (1 - dual_spread_frac)
+# Redemptions priced at bid (NAV × (1 − spread)); always applied when active (no threshold); shortfall shrinks
 ```
 
 #### Anti-Dilution Levy
 ```python
-effective_redemption = redemption_eur * (1 - adl_bps / 10000)
-# ADL charge reduces net payout; shortfall shrinks
+# adl_rate is a FRACTION; ADL activates at/above swing_threshold (same gate as swing).
+if "adl" in active_tools and redemption_pct >= swing_threshold:
+    effective_cash_demand *= (1 - adl_rate)
+# Levy collected from the redeeming investor reduces the net fund cash outflow; shortfall shrinks
 ```
 
 ### 20.3 Coverage Ratio with LMTs
@@ -863,11 +872,10 @@ effective_redemption = redemption_eur * (1 - adl_bps / 10000)
 The baseline coverage ratio (without LMTs) is:
 $$\mathrm{coverage\_baseline}(h) = \frac{\mathrm{liquidity\_available}(h)}{\mathrm{redemption\_eur}}$$
 
-With LMTs applied, effective redemption demand $R_{\text{eff}}$ becomes:
-$$R_{\text{eff}} = R \cdot (1 - \mathrm{swing\_factor}) \cdot (1 - \mathrm{adl\_bps}/10000) \cdot (1 - \mathrm{fee\_bps}/10000) \cdot (1 - \mathrm{dual\_spread\_bps}/10000)$$
+With LMTs applied, effective cash demand $R_{\text{eff}}$ is the baseline redemption $R$ scaled by the product of each active tool's fractional reduction (all factors are fractions in $[0,1]$, applied multiplicatively):
+$$R_{\text{eff}} = R \cdot (1 - \mathrm{swing\_factor}) \cdot (1 - \mathrm{adl\_rate}) \cdot (1 - \mathrm{fee\_rate}) \cdot (1 - \mathrm{dual\_spread\_frac}) \cdot (1 - \mathrm{in\_kind\_pct})$$
 
-And for in-kind tools:
-$$R_{\text{eff}} = R \cdot (1 - \mathrm{in\_kind\_pct})$$
+Each factor collapses to $1$ when its tool is inactive (or below its activation threshold), so only active tools reduce demand. No $/10000$ divisors are applied — every parameter is already a fraction. Notice-period extension is handled separately: rather than scaling $R_{\text{eff}}$ it lifts the usable-liquidity horizon from T+7 to T+(7+extension_days).
 
 The adjusted coverage ratio is:
 $$\mathrm{coverage\_lmt}(h) = \frac{\mathrm{liquidity\_available}(h)}{R_{\text{eff}}}$$
@@ -876,38 +884,52 @@ A ratio ≥ 1.0 indicates the fund can fully meet the (adjusted) redemption with
 
 ### 20.4 AIFMD II Compliance Validation
 
-The LMT Simulator enforces two rules:
+The LMT Simulator enforces two rules **server-side**. The `lmt_config` request body is bound to a typed Pydantic model (`LmtConfig` in `backend/routers/analysis.py`) whose `@model_validator(mode="after")` raises on violation; FastAPI converts the failure into an **HTTP 422 Unprocessable Entity** response (no custom exception type). The frontend `ComplianceStrip` mirrors these as soft warnings, but the backend is now the hard gate.
 
-1. **Minimum tool count:** ≥2 selectable tools must be active (always-available tools do not count toward this minimum).
+**Tool taxonomy** (defined in `liquidity_risk_tool/config/settings.py`). Suspension and side pockets are *always available* under AIFMD II Art. 16(2b) — they need not be pre-selected and **do not count** toward the minimum. Only the pre-selectable tools count:
+
+```python
+ALWAYS_AVAILABLE_LMTS = ["suspension", "side_pockets"]
+SELECTABLE_TOOLS = [
+    "gate", "notice_period_extension", "redemption_in_kind",
+    "redemption_fee", "swing_pricing", "dual_pricing", "adl",
+]
+AIFMD2_MIN_LMT_COUNT = 2
+```
+
+1. **Minimum tool count:** at least `AIFMD2_MIN_LMT_COUNT` (=2) *selectable* tools must be active.
    ```python
-   selected_count = len([t for t in active_tools if t in SELECTABLE_TOOLS])
-   assert selected_count >= 2, "AIFMD II requires ≥2 LMTs"
+   selectable = {t for t in active_tools if t in SELECTABLE_TOOLS}
+   if len(selectable) < AIFMD2_MIN_LMT_COUNT:
+       raise ValueError("AIFMD II requires ≥2 selectable LMTs")  # → HTTP 422
    ```
 
 2. **Prohibited combination:** Swing Pricing + Dual Pricing cannot both be active (both adjust NAV on redemptions; using both creates regulatory ambiguity).
    ```python
    if "swing_pricing" in active_tools and "dual_pricing" in active_tools:
-       raise ComplianceError("Swing pricing and dual pricing are mutually exclusive under AIFMD II")
+       raise ValueError("Swing pricing and dual pricing are mutually exclusive")  # → HTTP 422
    ```
 
 ### 20.5 API Endpoint — POST /api/run/{run_id}/lmt-simulate
 
-**Request body:**
+**Request body.** All cost parameters are **fractions** in `[0, 1]`; day parameters are integers `>= 0`. The body is validated against the typed `LmtConfig` model (§20.4) — an out-of-range value or a §20.4 rule violation returns **HTTP 422**.
 ```json
 {
   "lmt_config": {
     "active_tools": ["gate", "swing_pricing", "adl"],
-    "gate_pct": 0.10,
+    "gate_threshold": 0.10,
+    "suspension_threshold": 0.25,
     "swing_threshold": 0.02,
-    "swing_factor_bps": 100,
-    "adl_bps": 100,
-    "fee_bps": 50,
-    "dual_spread_bps": 0,
+    "swing_factor_max": 0.02,
+    "adl_rate": 0.01,
+    "fee_rate": 0.005,
+    "dual_spread_frac": 0.0,
     "notice_extension_days": 0,
     "in_kind_pct": 0.0
   }
 }
 ```
+> `dual_spread_frac` is the canonical bid-spread key; `dual_spread_bps` is accepted as a **backward-compatible alias** that also carries a fraction on the wire. Stale keys `swing_factor_bps`, `adl_bps`, `fee_bps`, and `gate_pct` are no longer used.
 
 **Response:**
 ```json
@@ -922,7 +944,7 @@ The LMT Simulator enforces two rules:
       "days_to_clear": 1,
       "lmt_activated": true,
       "lmt_tools_used": ["gate", "swing_pricing", "adl"],
-      "swing_factor": 1.01,
+      "swing_factor": 0.012,
       "adl_bps": 100,
       "fee_bps": 50,
       "dual_spread_bps": 0,
@@ -935,6 +957,7 @@ The LMT Simulator enforces two rules:
   "lmt_config_applied": { ... }
 }
 ```
+> **Input vs output units.** Request cost params (`swing_factor_max`, `adl_rate`, `fee_rate`, `dual_spread_frac`) are **fractions**. The corresponding response fields report differently for readability: `swing_factor` is the realised swing **fraction**, while `adl_bps`, `fee_bps`, and `dual_spread_bps` are genuine **basis points** (= fraction × 10,000). This asymmetry is intentional — `dual_spread_bps` on output is a true-bps reporting field, distinct from the fraction-carrying input key of the same legacy name.
 
 **Characteristics:**
 - Executes in milliseconds (no full pipeline re-run)
@@ -992,6 +1015,44 @@ Both checks appear in the Validation sidebar under the "LMT Composition" categor
 | ADV stress scalar fixed at 0.5 | Cannot customize per-tool stress assumptions |
 | No cascading tool effects | Tools are applied independently; no interaction modelling |
 | Single currency (EUR) | FX rates held constant; no multi-currency LMT scenarios |
+
+---
+
+## 21. AIFMD II Annex IV — Upload-Gated Regulatory Export
+
+The Annex IV Part 2 ESMA filing (XML namespace `urn:eu.europa.esma:aifmd:annex-iv:v1.2`, plus the Excel mirror) is a **regulatory submission**, so it must never be produced from fabricated defaults. Export is therefore **gated on a dedicated Annex IV metadata upload** and is **not auto-activated** by a completed run.
+
+### 21.1 Metadata upload
+
+`POST /api/upload` accepts an optional `annex_iv_meta_json` form field carrying AIFM/AIF identification and share-class data:
+
+```json
+{
+  "aifm_lei": "...", "aifm_national_code": "...", "aifm_name": "...",
+  "reporting_member_state": "LU",
+  "aif_lei": "...", "aif_national_code": "...",
+  "share_classes": [
+    { "notice_period_days": 30, "redemption_frequency": "monthly", "total_nav": 1.0e8 }
+  ]
+}
+```
+
+It is parsed defensively (mirroring `lmt_config_json`) and persisted on the run's `RunRecord.annex_iv_meta`. It is **reporting metadata, not an analytics input** — it does not flow through the pipeline. When omitted, the run still completes; only regulatory export is withheld.
+
+### 21.2 The `annex_iv_ready` gate
+
+A single predicate `annex_iv_ready(meta)` is the source of truth. It returns `True` only when **all** required identifiers are present and non-empty — `aifm_lei`, `aif_lei`, `reporting_member_state` — **and** at least one `share_class` is supplied. Uploaded metadata is wired into the mapper's `aifm_metadata`/`share_classes` so no fabricated AIFM/AIF LEIs or default 90-day/monthly investor profiles are used when real data exists.
+
+### 21.3 Preview vs export contract
+
+| Route | When not ready | When ready |
+|-------|----------------|-----------|
+| `GET /run/{id}/annex-iv` (preview) | **200** — preview renders with gap flags; payload carries `"annex_iv_ready": false` | **200** with `"annex_iv_ready": true` |
+| `GET /run/{id}/export/xml` | **409** — `"Annex IV metadata not uploaded …"` | **200** — XML filing |
+| `GET /run/{id}/export/annex-iv-excel` | **409** | **200** — Excel mirror |
+| `GET /run/{id}/export/all?format=xml` | **409** (xml branch only; excel/pdf unaffected) | **200** — zip of XML filings |
+
+The frontend (`AnnexIV.jsx`) always renders the gap-flagged preview but **disables the XML/Excel download buttons** and shows an inline notice when `annex_iv_ready === false`, directing the user to upload AIFM/AIF identification and share-class data.
 
 ---
 

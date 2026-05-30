@@ -102,7 +102,13 @@ export default function AnnexIV() {
 
   async function download(fmt) {
     const resp = await fetch(buildDownloadUrl(fmt))
-    if (!resp.ok) { alert(`Download failed: ${resp.status}`); return }
+    if (!resp.ok) {
+      if (resp.status === 409) {
+        alert('Annex IV metadata not uploaded — provide AIFM/AIF identification and share-class data on the Upload page to enable regulatory export.')
+        return
+      }
+      alert(`Download failed: ${resp.status}`); return
+    }
     const blob = await resp.blob()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -118,6 +124,10 @@ export default function AnnexIV() {
   }
 
   const panelStyle = { background: 'var(--bg-panel)', border: '1px solid var(--border)' }
+
+  // Regulatory export (XML/Excel) is gated on uploaded AIFM/AIF/share-class
+  // metadata. Preview always renders; export is blocked until ready.
+  const exportBlocked = data?.annex_iv_ready === false
 
   return (
     <div className="p-3 space-y-3">
@@ -151,20 +161,31 @@ export default function AnnexIV() {
 
           <button
             onClick={() => download('xml')}
+            disabled={exportBlocked}
             className="px-3 py-1.5 rounded text-xs font-semibold text-white mt-4"
-            style={{ background: 'var(--text-accent)', cursor: 'pointer' }}
+            style={{ background: 'var(--text-accent)', cursor: exportBlocked ? 'not-allowed' : 'pointer', opacity: exportBlocked ? 0.5 : 1 }}
           >
             {t('annexIv.downloadXml')}
           </button>
           <button
             onClick={() => download('excel')}
+            disabled={exportBlocked}
             className="px-3 py-1.5 rounded text-xs font-semibold mt-4"
-            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer' }}
+            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: exportBlocked ? 'not-allowed' : 'pointer', opacity: exportBlocked ? 0.5 : 1 }}
           >
             {t('annexIv.downloadExcel')}
           </button>
         </div>
       </div>
+
+      {exportBlocked && (
+        <div className="rounded border px-3 py-2 text-xs"
+          style={{ background: 'var(--kpi-amber-bg)', color: 'var(--kpi-amber-text)', borderColor: 'var(--border)' }}>
+          Regulatory export is disabled. Upload AIFM/AIF identification and share-class
+          data on the Upload page to enable XML/Excel Annex IV export. Preview below is
+          informational and gap-flagged.
+        </div>
+      )}
 
       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('annexIv.periodNote')}</p>
 

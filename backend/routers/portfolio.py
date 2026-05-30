@@ -85,12 +85,25 @@ async def upload_portfolio(
     market_data_file: UploadFile | None = File(default=None),
     scenario_library: str = Form(default="esma"),
     lmt_config_json: str = Form(default="{}"),
+    annex_iv_meta_json: str = Form(default=""),
 ):
-    """Upload MVHOL + NAV CSV files and trigger the full pipeline run."""
+    """Upload MVHOL + NAV CSV files and trigger the full pipeline run.
+
+    Optional ``annex_iv_meta_json`` carries AIFM/AIF/share-class identification
+    used to enable Annex IV regulatory export (JSON: aifm_lei, aifm_national_code,
+    aifm_name, reporting_member_state, aif_lei, aif_national_code, share_classes).
+    When omitted, Annex IV preview still works but XML/Excel export is blocked.
+    """
     try:
         lmt_config = _json.loads(lmt_config_json) if lmt_config_json else {}
     except _json.JSONDecodeError:
         lmt_config = {}
+    try:
+        annex_iv_meta = _json.loads(annex_iv_meta_json) if annex_iv_meta_json else None
+        if not isinstance(annex_iv_meta, dict):
+            annex_iv_meta = None
+    except _json.JSONDecodeError:
+        annex_iv_meta = None
     try:
         tmp_dir = Path(tempfile.mkdtemp())
 
@@ -110,6 +123,8 @@ async def upload_portfolio(
 
         run_id = str(uuid.uuid4())
         store.create(run_id)
+        if annex_iv_meta is not None:
+            store.update(run_id, annex_iv_meta=annex_iv_meta)
 
         asyncio.create_task(
             _run_pipeline_bg(run_id, holdings_path, nav_path, market_data_path, scenario_library=scenario_library, lmt_config=lmt_config)

@@ -66,6 +66,13 @@ class TestValidatePosition:
         errors = validate_position(_make_pos(fx_rate=-1.0))
         assert any("fx_rate" in e.lower() for e in errors)
 
+    def test_negative_settlement_days(self):
+        errors = validate_position(_make_pos(settlement_days=-1))
+        assert any("settlement_days" in e.lower() for e in errors)
+
+    def test_valid_settlement_days(self):
+        assert validate_position(_make_pos(settlement_days=2)) == []
+
     def test_valid_bond_position(self):
         pos = _make_pos(asset_class="ig_corporate_bond", duration=4.5,
                         credit_spread_bps=120, convexity=0.5)
@@ -94,5 +101,17 @@ class TestValidatePortfolio:
     def test_empty_positions_passes(self):
         port = build_sample_portfolio()
         port.positions = []
+        errors = validate_portfolio(port, strict=False)
+        assert errors == []
+
+    def test_invalid_redemption_frequency(self):
+        port = build_sample_portfolio()
+        port.share_classes[0].redemption_frequency = "hourly"
+        errors = validate_portfolio(port, strict=False)
+        assert any("redemption_frequency" in e for e in errors)
+
+    def test_valid_redemption_frequency(self):
+        port = build_sample_portfolio()
+        port.share_classes[0].redemption_frequency = "weekly"
         errors = validate_portfolio(port, strict=False)
         assert errors == []

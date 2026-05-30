@@ -808,12 +808,13 @@ def build_pdf(r: dict) -> bytes:
 # Annex IV Excel sheet
 # ---------------------------------------------------------------------------
 
-def _annex_iv_sheet(wb: openpyxl.Workbook, r: dict, period: str | None = None) -> None:
+def _annex_iv_sheet(wb: openpyxl.Workbook, r: dict, period: str | None = None,
+                    aifm_metadata: dict | None = None) -> None:
     """Append an 'Annex IV' sheet to wb containing ESMA AIFMD II Annex IV data."""
     from liquidity_risk_tool.reporting.annex_iv_mapper import build_annex_iv
 
     period_code = period or "2026Q1"
-    data = build_annex_iv(r, period_code=period_code)
+    data = build_annex_iv(r, period_code=period_code, aifm_metadata=aifm_metadata)
 
     ws = wb.create_sheet("Annex IV")
 
@@ -1040,13 +1041,14 @@ def _annex_iv_sheet(wb: openpyxl.Workbook, r: dict, period: str | None = None) -
 # Annex IV standalone Excel export (regulatory filing only — single sheet)
 # ---------------------------------------------------------------------------
 
-def build_excel_annex_iv(r: dict, period: str | None = None) -> bytes:
+def build_excel_annex_iv(r: dict, period: str | None = None,
+                         aifm_metadata: dict | None = None) -> bytes:
     """Return a single-sheet Excel workbook containing only the ESMA Annex IV
     regulatory data.  Distinct from build_excel() which is the full 6-sheet
     comprehensive internal risk management report."""
     wb = openpyxl.Workbook()
     wb.remove(wb.active)  # remove default empty sheet
-    _annex_iv_sheet(wb, r, period=period)
+    _annex_iv_sheet(wb, r, period=period, aifm_metadata=aifm_metadata)
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -1056,12 +1058,13 @@ def build_excel_annex_iv(r: dict, period: str | None = None) -> bytes:
 # XML export — ESMA AIFMD II Annex IV
 # ---------------------------------------------------------------------------
 
-def build_xml(r: dict, period: str | None = None) -> bytes:
+def build_xml(r: dict, period: str | None = None,
+              aifm_metadata: dict | None = None) -> bytes:
     """Build and return an ESMA AIFMD II Annex IV XML report as bytes."""
     from liquidity_risk_tool.reporting.annex_iv_mapper import build_annex_iv
 
     period_code = period or "2026Q1"
-    data = build_annex_iv(r, period_code=period_code)
+    data = build_annex_iv(r, period_code=period_code, aifm_metadata=aifm_metadata)
 
     XMLNS = "urn:eu.europa.esma:aifmd:annex-iv:v1.2"
 

@@ -182,6 +182,24 @@ REDEMPTION_STRESS_ADV_SCALAR: float = 0.60
 AIFMD2_PRESELECTED_LMTS: List[str] = ["gate", "suspension", "swing_pricing"]
 AIFMD2_MIN_LMT_COUNT: int = 2
 
+# AIFMD II LMT taxonomy. Suspension and side pockets are "always available" to every
+# manager (Art. 16(2b) — they need not be pre-selected and do not count toward the
+# AIFMD2_MIN_LMT_COUNT requirement). The remaining tools are the ones a fund must
+# actively pre-select; the ≥2 rule is counted against SELECTABLE_TOOLS only.
+ALWAYS_AVAILABLE_LMTS: List[str] = ["suspension", "side_pockets"]
+SELECTABLE_TOOLS: List[str] = [
+    "gate",
+    "notice_period_extension",
+    "redemption_in_kind",
+    "redemption_fee",
+    "swing_pricing",
+    "dual_pricing",
+    "adl",
+]
+
+# Allowed share-class redemption frequencies (validated in validators.py).
+REDEMPTION_FREQUENCIES: List[str] = ["daily", "weekly", "fortnightly", "monthly", "quarterly"]
+
 # Leverage caps — Art. 15 and Art. 26a
 AIFMD2_LEVERAGE_CAP_OPEN_ENDED: float  = 1.75   # 175% gross exposure / NAV (open-ended loan AIFs)
 AIFMD2_LEVERAGE_CAP_CLOSED_ENDED: float = 3.00  # 300% (closed-ended loan AIFs)

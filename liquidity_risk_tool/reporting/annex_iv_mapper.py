@@ -79,8 +79,20 @@ def _top_n_instruments(position_buckets: list[dict], n: int = 5) -> list[dict]:
 
 
 def _top_n_countries(liquidity_metrics: dict, n: int = 5) -> list[dict]:
-    """Extract top-N countries from liquidity_metrics.top_countries."""
+    """Extract top-N countries from liquidity_metrics.top_countries.
+
+    The profiler emits ``top_countries`` as a ``{country_code: nav_pct}`` dict
+    (``Series.to_dict()``), so handle that primary shape as well as list/tuple
+    fallbacks from other producers.
+    """
     top = liquidity_metrics.get("top_countries") or []
+    # Normalise the dict shape to (country, pct) pairs sorted by weight desc.
+    if isinstance(top, dict):
+        entries = sorted(top.items(), key=lambda kv: float(kv[1] or 0.0), reverse=True)
+        return [
+            {"country_code": str(code), "nav_pct": float(pct or 0.0)}
+            for code, pct in entries[:n]
+        ]
     result = []
     for entry in top[:n]:
         if isinstance(entry, dict):
@@ -106,14 +118,33 @@ def _aggregate_concentrations(position_buckets: list[dict]) -> list[dict]:
     ]
 
 
-def _investor_profile_from_share_classes(portfolio_results: dict) -> dict:
+def annex_iv_ready(meta: dict | None) -> bool:
+    """
+    Single source of truth for the Annex IV export gate.
+
+    True only when the required regulatory identifiers are present and non-empty
+    (aifm_lei, aif_lei, reporting_member_state) and at least one share class is
+    supplied. When False, Annex IV preview is still allowed (with gap flags) but
+    XML/Excel regulatory export must be blocked so no defaults-filled ESMA
+    filing leaves the tool.
+    """
+    if not isinstance(meta, dict):
+        return False
+    required = ("aifm_lei", "aif_lei", "reporting_member_state")
+    if not all(str(meta.get(k) or "").strip() for k in required):
+        return False
+    share_classes = meta.get("share_classes") or []
+    return bool(share_classes)
+
+
+def _investor_profile_from_share_classes(portfolio_results: dict, share_classes_override: list | None = None) -> dict:
     """
     Build investor liquidity profile.
-    share_classes are not serialised in the current pipeline output, so we
-    return conservative defaults and flag the gap.
+    Uses uploaded Annex IV share_classes when supplied; otherwise falls back to
+    any serialised in the pipeline output, else conservative defaults (gap-flagged).
     """
-    # If share_classes ever surfaces in the output use them; otherwise defaults
-    share_classes = portfolio_results.get("share_classes") or []
+    # Prefer explicit uploaded share classes, then pipeline output, then defaults
+    share_classes = share_classes_override or portfolio_results.get("share_classes") or []
     if share_classes:
         min_notice = min(
             (sc.get("notice_period_days", 90) for sc in share_classes), default=90
@@ -209,8 +240,10 @@ def build_annex_iv(
     # --- Asset liquidity profile
     asset_liquidity = _map_buckets(position_buckets)
 
-    # --- Investor liquidity profile
-    investor_profile = _investor_profile_from_share_classes(portfolio_results)
+    # --- Investor liquidity profile (uploaded share classes preferred)
+    investor_profile = _investor_profile_from_share_classes(
+        portfolio_results, share_classes_override=meta.get("share_classes")
+    )
 
     # --- LMT / special arrangements
     lmts = aifmd2.get("lmt_preselected") or []
@@ -320,4 +353,7 @@ def build_annex_iv(
             "leverage_missing": not aifmd2.get("gross_leverage"),
             "stress_missing": not stress_results,
         },
+
+        # ---- Export gate flag (True → regulatory XML/Excel export allowed) --
+        "annex_iv_ready": annex_iv_ready(meta),
     }

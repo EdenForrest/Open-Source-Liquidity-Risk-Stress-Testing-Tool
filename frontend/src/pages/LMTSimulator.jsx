@@ -57,7 +57,7 @@ export const ANTIDILUTION_TOOLS = [
     id: 'dual_pricing',
     label: 'Dual Pricing',
     description: 'Publishes separate bid/offer prices; subscriptions/redemptions transact at the corresponding price.',
-    param: { key: 'dual_spread_bps', label: 'Bid/ask spread (bps)', type: 'bps', min: 0, max: 150, step: 5, defaultVal: 30 },
+    param: { key: 'dual_spread_frac', label: 'Bid/ask spread (bps)', type: 'bps', min: 0, max: 150, step: 5, defaultVal: 30 },
   },
   {
     id: 'adl',
