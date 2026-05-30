@@ -77,7 +77,18 @@ def run_full_pipeline(
     normal_buckets = normal_profiler.position_buckets
     stress_buckets = stress_profiler.position_buckets
 
-    redemption_sim = RedemptionSimulator(portfolio, normal_buckets, stress_buckets, lmt_config=lmt_config)
+    # The pipeline's redemption tables serve as the "Without LMT" baseline that the
+    # Redemption tab compares against the on-demand /lmt-simulate ("With LMT") results.
+    # That baseline MUST be genuinely tool-free: if we passed lmt_config=None here the
+    # simulator would fall back to AIFMD2_PRESELECTED_LMTS (gate + suspension + swing
+    # pricing), so swing pricing would silently reduce the baseline's effective cash
+    # demand. A user who then applies a config WITHOUT swing pricing would see a higher
+    # effective demand than the contaminated baseline, making the T+1/T+3/T+7 horizons
+    # flip from met→failed — i.e. LMTs would appear to WORSEN liquidity. Forcing an empty
+    # active-tools set (only when no explicit config is supplied) keeps the baseline clean
+    # while still honouring a caller-provided lmt_config when one is passed.
+    baseline_lmt_config = lmt_config if lmt_config else {"active_tools": []}
+    redemption_sim = RedemptionSimulator(portfolio, normal_buckets, stress_buckets, lmt_config=baseline_lmt_config)
     redemption_normal = redemption_sim.run(stress=False)
     redemption_stress = redemption_sim.run(stress=True)
 

@@ -23,6 +23,8 @@ from ..config.settings import (
     MAX_LIQUIDATION_DAYS, MIN_CASH_BUFFER_PCT,
     SWING_PRICING_THRESHOLD, SWING_FACTOR_MAX, ADL_LEVY_RATE,
     AIFMD2_PRESELECTED_LMTS,
+    GATE_THRESHOLD as SETTINGS_GATE_THRESHOLD,
+    SUSPENSION_THRESHOLD as SETTINGS_SUSPENSION_THRESHOLD,
 )
 from .liquidity_utils import liquidity_at_horizon
 from ..models.position import Portfolio
@@ -79,8 +81,10 @@ class RedemptionSimulator:
     suspension_threshold : fraction above which full suspension is assumed
     """
 
-    GATE_THRESHOLD       = 0.10   # UCITS common practice
-    SUSPENSION_THRESHOLD = 0.25
+    # Single source of truth: settings.py. Referenced here so the simulator's
+    # class-level defaults can never drift from the regulatory constants.
+    GATE_THRESHOLD       = SETTINGS_GATE_THRESHOLD       # UCITS common practice (0.10)
+    SUSPENSION_THRESHOLD = SETTINGS_SUSPENSION_THRESHOLD  # 0.25
 
     def __init__(
         self,
@@ -186,13 +190,14 @@ class RedemptionSimulator:
             lmt_tools.append("redemption_fee")
 
         # Notice Period Extension: fund gains extra days before cash payment is due.
-        # Recalculate shortfall against liquidity at T+7+extension_days.
+        # Lifts the usable-liquidity horizon from T+7 to T+(7+extension_days), so more
+        # assets are realisable in time. The consolidated shortfall/coverage calc below
+        # measures against this extended horizon when the tool is active.
         extension_days = int(self._lmt.get("notice_extension_days", 0))
         notice_active = "notice_period_extension" in active_tools and extension_days > 0
         if notice_active:
             liq_extended = self._liquidity_at_horizon(profile, 7 + extension_days)
-            usable_extended = max(0.0, liq_extended - buffer)
-            shortfall_eur = max(0.0, effective_cash_demand - usable_extended)
+            usable_t7 = max(0.0, liq_extended - buffer)   # payment horizon now extended
             days_to_clear = max(0.0, days_to_clear - extension_days)
             lmt_tools.append("notice_period_extension")
         notice_extension_days_out = extension_days if notice_active else 0
@@ -203,21 +208,34 @@ class RedemptionSimulator:
         in_kind_active = "redemption_in_kind" in active_tools and in_kind_pct > 0
         if in_kind_active:
             effective_cash_demand *= (1.0 - in_kind_pct)
-            shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
-            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
             lmt_tools.append("redemption_in_kind")
         in_kind_pct_out = in_kind_pct if in_kind_active else 0.0
 
-        # Dual Pricing: redemptions priced at bid (NAV × (1 − spread/10000)).
-        # Reduces effective EUR outflow without threshold — always applied when active.
-        dual_spread_bps_cfg = float(self._lmt.get("dual_spread_bps", 0.0))
-        dual_active = "dual_pricing" in active_tools and dual_spread_bps_cfg > 0
+        # Dual Pricing: redemptions priced at bid (NAV × (1 − spread)).
+        # The config value is a FRACTION (e.g. 0.003 = 30 bps); canonical key is
+        # `dual_spread_frac`, with `dual_spread_bps` accepted as a legacy alias that
+        # also carried a fraction. Reduces effective EUR outflow without threshold —
+        # always applied when active.
+        dual_spread_frac_cfg = float(
+            self._lmt.get("dual_spread_frac", self._lmt.get("dual_spread_bps", 0.0))
+        )
+        dual_active = "dual_pricing" in active_tools and dual_spread_frac_cfg > 0
         if dual_active:
-            effective_cash_demand *= (1.0 - dual_spread_bps_cfg)
-            shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
-            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
+            effective_cash_demand *= (1.0 - dual_spread_frac_cfg)
             lmt_tools.append("dual_pricing")
-        dual_spread_out = dual_spread_bps_cfg * 10_000 if dual_active else 0.0
+        # Output field is genuine basis points (fraction × 10,000) for reporting.
+        dual_spread_out = dual_spread_frac_cfg * 10_000 if dual_active else 0.0
+
+        # Consolidated coverage + shortfall — computed ONCE against the final
+        # effective_cash_demand (after every LMT adjustment) and the final usable
+        # T+7 liquidity (extended by the notice period when active). Computing these
+        # together guarantees the invariant can_meet_t7 ⇔ shortfall_eur == 0, instead
+        # of letting individual LMT branches reduce demand without updating the shortfall
+        # (which previously left swing/ADL/fee runs reporting "T+7 met" alongside a
+        # positive shortfall, and made horizons look worse than they were).
+        shortfall_eur = max(0.0, effective_cash_demand - usable_t7)
+        if in_kind_active or dual_active:
+            days_to_clear = self._estimate_days_to_cover(effective_cash_demand, profile)
 
         return RedemptionResult(
             scenario_pct              = redemption_pct,
