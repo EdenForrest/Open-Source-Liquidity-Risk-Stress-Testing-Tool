@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
 import StatusBanner from '../components/StatusBanner'
@@ -64,6 +65,7 @@ function TriggerBadge({ triggered, label }) {
 // ---------------------------------------------------------------------------
 
 function RegimeSummary({ rows, label, isStress }) {
+  const { t } = useTranslation()
   if (!rows?.length) return null
   const covered = rows.filter(r => (r.shortfall_eur ?? 0) <= 0).length
   const worst = Math.max(...rows.map(r => r.shortfall_eur ?? 0))
@@ -75,45 +77,45 @@ function RegimeSummary({ rows, label, isStress }) {
 
   const tiles = [
     {
-      label: 'Scenarios Covered',
+      label: t('redemption.kpi.scenariosCovered'),
       value: `${covered} / ${rows.length}`,
-      sub: covered === rows.length ? 'All clear' : `${rows.length - covered} at risk`,
+      sub: covered === rows.length
+        ? t('redemption.kpi.allClear')
+        : t('redemption.kpi.atRisk', { count: rows.length - covered }),
       ok: covered === rows.length,
     },
     {
-      label: 'Min Coverage',
+      label: t('redemption.kpi.minCoverage'),
       value: pct(minCoverage),
-      sub: 'Worst scenario',
+      sub: t('redemption.kpi.worstScenario'),
       ok: minCoverage >= 1,
     },
     {
-      label: 'Max Shortfall',
+      label: t('redemption.kpi.maxShortfall'),
       value: worst > 0 ? eur(worst) : '—',
-      sub: worst > 0 ? 'cash deficit' : 'none',
+      sub: worst > 0 ? t('redemption.kpi.cashDeficit') : t('redemption.kpi.none'),
       ok: worst <= 0,
     },
     {
-      label: 'Days to Clear',
+      label: t('redemption.kpi.daysToClear'),
       value: maxDays > 0 ? maxDays.toFixed(1) : '—',
-      sub: 'worst case',
+      sub: t('redemption.kpi.worstCase'),
       ok: maxDays <= 7,
     },
   ]
 
   return (
     <div className="rounded border overflow-hidden" style={{ borderColor: 'var(--border)' }}>
-      {/* Regime header */}
       <div className="px-4 py-2 flex items-center gap-2" style={{ background: isStress ? 'var(--kpi-red-bg, #fee2e2)' : 'var(--bg-surface)', borderBottom: '1px solid var(--border)' }}>
         <span className="text-xs font-bold uppercase tracking-widest" style={{ color: isStress ? 'var(--kpi-red-text)' : 'var(--text-secondary)' }}>
           {label}
         </span>
         {isStress && (
           <span className="text-xs rounded px-2 py-0.5 font-semibold" style={{ background: 'var(--kpi-red-text)', color: '#fff' }}>
-            Stressed
+            {t('redemption.stressed')}
           </span>
         )}
       </div>
-      {/* KPI strip */}
       <div className="grid grid-cols-4 divide-x" style={{ background: 'var(--bg-panel)', borderBottom: '1px solid var(--border)', divideColor: 'var(--border)' }}>
         {tiles.map(({ label: tl, value, sub, ok }) => (
           <div key={tl} className="px-4 py-3 text-center">
@@ -132,6 +134,7 @@ function RegimeSummary({ rows, label, isStress }) {
 // ---------------------------------------------------------------------------
 
 function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
+  const { t } = useTranslation()
   if (!rows?.length) return null
 
   const hasBefore = showDelta && baseRows?.length === rows.length
@@ -146,11 +149,11 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                 <th colSpan={3} className="px-3 py-1.5 text-left" style={{ color: 'var(--text-muted)' }} />
                 <th colSpan={4} className="px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide border-l"
                   style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'var(--bg-surface)' }}>
-                  Without LMT
+                  {t('redemption.withoutLmt')}
                 </th>
                 <th colSpan={4} className="px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide border-l"
                   style={{ borderColor: 'var(--border)', color: 'var(--text-accent)', background: 'var(--bg-surface)' }}>
-                  With LMT
+                  {t('redemption.withLmt')}
                 </th>
                 <th colSpan={1} className="px-3 py-1.5 text-center text-xs font-semibold uppercase tracking-wide border-l"
                   style={{ borderColor: 'var(--border)', color: 'var(--text-muted)', background: 'var(--bg-surface)' }}>
@@ -160,42 +163,39 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
               </tr>
             )}
             <tr className="text-xs font-semibold uppercase tracking-wide" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>
-              <th className="px-3 py-2 text-left whitespace-nowrap">Scenario</th>
-              <th className="px-3 py-2 text-right whitespace-nowrap">Demand (€)</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">{t('redemption.columns.scenario')}</th>
+              <th className="px-3 py-2 text-right whitespace-nowrap">{t('redemption.columns.demand')}</th>
 
               {hasBefore ? (
                 <>
-                  {/* Without LMT */}
-                  <th className="px-3 py-2 text-center whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>Horizons</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Coverage</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Shortfall</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Days</th>
-                  {/* With LMT */}
-                  <th className="px-3 py-2 text-center whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>Horizons</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">Coverage</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Shortfall</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Days</th>
-                  {/* Delta */}
-                  <th className="px-3 py-2 text-right whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>Δ Shortfall</th>
+                  <th className="px-3 py-2 text-center whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>{t('redemption.columns.horizons')}</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">{t('redemption.columns.coverage')}</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">{t('redemption.columns.shortfall')}</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">{t('redemption.columns.days')}</th>
+                  <th className="px-3 py-2 text-center whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>{t('redemption.columns.horizons')}</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">{t('redemption.columns.coverage')}</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">{t('redemption.columns.shortfall')}</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">{t('redemption.columns.days')}</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>{t('redemption.columns.deltaShortfall')}</th>
                 </>
               ) : (
                 <>
                   <th className="px-3 py-2 text-left whitespace-nowrap">
-                    {!isStress ? <MetricTooltip id="redemption_coverage">Coverage</MetricTooltip> : 'Coverage'}
+                    {!isStress ? <MetricTooltip id="redemption_coverage">{t('redemption.columns.coverage')}</MetricTooltip> : t('redemption.columns.coverage')}
                   </th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Days to Clear</th>
-                  <th className="px-3 py-2 text-right whitespace-nowrap">Shortfall</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">{t('redemption.columns.daysToClear')}</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">{t('redemption.columns.shortfall')}</th>
                 </>
               )}
 
               <th className="px-3 py-2 text-center whitespace-nowrap border-l" style={{ borderColor: 'var(--border)' }}>
-                {!isStress ? <MetricTooltip id="redemption_gate">Gate</MetricTooltip> : 'Gate'}
+                {!isStress ? <MetricTooltip id="redemption_gate">{t('redemption.columns.gate')}</MetricTooltip> : t('redemption.columns.gate')}
               </th>
               <th className="px-3 py-2 text-center whitespace-nowrap">
-                {!isStress ? <MetricTooltip id="redemption_suspension">Suspend</MetricTooltip> : 'Suspend'}
+                {!isStress ? <MetricTooltip id="redemption_suspension">{t('redemption.columns.suspend')}</MetricTooltip> : t('redemption.columns.suspend')}
               </th>
-              <th className="px-3 py-2 text-right whitespace-nowrap">Cost (bps)</th>
-              <th className="px-3 py-2 text-left whitespace-nowrap">Active Tools</th>
+              <th className="px-3 py-2 text-right whitespace-nowrap">{t('redemption.columns.costBps')}</th>
+              <th className="px-3 py-2 text-left whitespace-nowrap">{t('redemption.columns.activeTools')}</th>
             </tr>
           </thead>
           <tbody>
@@ -212,7 +212,6 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
 
               return (
                 <tr key={i} style={{ background: rowBg, borderBottom: '1px solid var(--border)' }}>
-                  {/* Scenario */}
                   <td className="px-3 py-2.5">
                     <span className="inline-flex items-center rounded px-2 py-0.5 text-xs font-bold"
                       style={{ background: 'var(--bg-surface)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}>
@@ -220,48 +219,38 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                     </span>
                   </td>
 
-                  {/* Demand */}
                   <td className="px-3 py-2.5 text-right font-medium" style={{ color: 'var(--text-primary)' }}>
                     {eur(r.redemption_eur)}
                   </td>
 
                   {hasBefore ? (
                     <>
-                      {/* Without LMT — horizons */}
                       <td className="px-3 py-2.5 text-center border-l" style={{ borderColor: 'var(--border)' }}>
                         <HorizonBadges t1={base.can_meet_t1} t3={base.can_meet_t3} t7={base.can_meet_t7} />
                       </td>
-                      {/* Without LMT — coverage */}
                       <td className="px-3 py-2.5 text-center">
                         <CoverageBar t1={base.can_meet_t1} t3={base.can_meet_t3} t7={base.can_meet_t7} />
                       </td>
-                      {/* Without LMT — shortfall */}
                       <td className="px-3 py-2.5 text-right font-medium" style={{ color: baseSf > 0 ? 'var(--kpi-red-text)' : 'var(--text-muted)' }}>
                         {baseSf > 0 ? eur(baseSf) : '—'}
                       </td>
-                      {/* Without LMT — days */}
                       <td className="px-3 py-2.5 text-right" style={{ color: 'var(--text-secondary)' }}>
                         {base?.days_to_clear != null ? base.days_to_clear.toFixed(1) : '—'}
                       </td>
 
-                      {/* With LMT — horizons */}
                       <td className="px-3 py-2.5 text-center border-l" style={{ borderColor: 'var(--border)' }}>
                         <HorizonBadges t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
                       </td>
-                      {/* With LMT — coverage */}
                       <td className="px-3 py-2.5 text-center">
                         <CoverageBar t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
                       </td>
-                      {/* With LMT — shortfall */}
                       <td className="px-3 py-2.5 text-right font-semibold" style={{ color: sf > 0 ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>
                         {sf > 0 ? eur(sf) : '—'}
                       </td>
-                      {/* With LMT — days */}
                       <td className="px-3 py-2.5 text-right font-medium" style={{ color: 'var(--text-primary)' }}>
                         {r.days_to_clear != null ? r.days_to_clear.toFixed(1) : '—'}
                       </td>
 
-                      {/* Delta */}
                       <td className="px-3 py-2.5 text-right font-bold border-l" style={{
                         borderColor: 'var(--border)',
                         color: delta < 0 ? 'var(--kpi-green-text)' : delta > 0 ? 'var(--kpi-red-text)' : 'var(--text-muted)',
@@ -271,45 +260,38 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
                     </>
                   ) : (
                     <>
-                      {/* Horizons */}
                       <td className="px-3 py-2.5 text-center border-l" style={{ borderColor: 'var(--border)' }}>
                         <HorizonBadges t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
                       </td>
-                      {/* Coverage */}
                       <td className="px-3 py-2.5 text-center">
                         <CoverageBar t1={r.can_meet_t1} t3={r.can_meet_t3} t7={r.can_meet_t7} />
                       </td>
-                      {/* Shortfall */}
                       <td className="px-3 py-2.5 text-right font-semibold" style={{ color: sf > 0 ? 'var(--kpi-red-text)' : 'var(--text-muted)' }}>
                         {sf > 0 ? eur(sf) : '—'}
                       </td>
-                      {/* Days */}
                       <td className="px-3 py-2.5 text-right" style={{ color: 'var(--text-secondary)' }}>
                         {r.days_to_clear != null ? r.days_to_clear.toFixed(1) : '—'}
                       </td>
                     </>
                   )}
 
-                  {/* Gate + Suspend */}
                   <td className="px-3 py-2.5 text-center border-l" style={{ borderColor: 'var(--border)' }}>
-                    <TriggerBadge triggered={r.gate_triggered} label="Gate" />
+                    <TriggerBadge triggered={r.gate_triggered} label={t('redemption.triggered')} />
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    <TriggerBadge triggered={r.suspension_triggered} label="Suspend" />
+                    <TriggerBadge triggered={r.suspension_triggered} label={t('redemption.triggered')} />
                   </td>
 
-                  {/* Cost */}
                   <td className="px-3 py-2.5 text-right font-medium" style={{ color: totalCostBps > 0 ? 'var(--kpi-amber-text)' : 'var(--text-muted)' }}>
                     {totalCostBps > 0 ? totalCostBps.toFixed(0) : '—'}
                   </td>
 
-                  {/* Active tools */}
                   <td className="px-3 py-2.5" style={{ color: 'var(--text-muted)', minWidth: '140px' }}>
                     {r.lmt_tools_used
-                      ? r.lmt_tools_used.split(',').map(t => t.trim()).filter(Boolean).map(t => (
-                          <span key={t} className="inline-block rounded mr-1 px-1.5 py-0.5 text-xs"
+                      ? r.lmt_tools_used.split(',').map(s => s.trim()).filter(Boolean).map(s => (
+                          <span key={s} className="inline-block rounded mr-1 px-1.5 py-0.5 text-xs"
                             style={{ background: 'var(--kpi-amber-bg, #fef3c7)', color: 'var(--kpi-amber-text, #92400e)' }}>
-                            {t}
+                            {s}
                           </span>
                         ))
                       : '—'}
@@ -330,8 +312,8 @@ function RedemptionTable({ rows, baseRows, label, isStress, showDelta }) {
 
 function defaultParamValues() {
   const vals = {}
-  ;[...QUANTITATIVE_TOOLS, ...ANTIDILUTION_TOOLS].forEach(t => {
-    if (t.param) vals[t.param.key] = t.param.defaultVal
+  ;[...QUANTITATIVE_TOOLS, ...ANTIDILUTION_TOOLS].forEach(tool => {
+    if (tool.param) vals[tool.param.key] = tool.param.defaultVal
   })
   return vals
 }
@@ -341,6 +323,7 @@ function defaultParamValues() {
 // ---------------------------------------------------------------------------
 
 export default function Redemption() {
+  const { t } = useTranslation()
   const { data, error, runId, selectedPortfolio } = useAnalysis()
   const redemption = data?.redemption
 
@@ -370,7 +353,7 @@ export default function Redemption() {
         portfolio: selectedPortfolio || undefined,
       })
       setSimResults(res.data)
-      setShowLmt(false)  // collapse panel so updated tables are immediately visible
+      setShowLmt(false)
     } catch (e) {
       setSimError(e?.response?.data?.detail || e.message || 'Simulation failed')
     } finally {
@@ -409,17 +392,17 @@ export default function Redemption() {
             <circle cx="8" cy="8" r="3"/><line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/>
             <line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/>
           </svg>
-          Configure LMTs
+          {t('redemption.configureLmts')}
         </button>
         {hasConfigured && (
           <span className="rounded px-2 py-0.5 text-xs font-semibold"
             style={{ background: 'var(--kpi-amber-bg, #fef3c7)', color: 'var(--kpi-amber-text, #92400e)' }}>
-            LMT Active
+            {t('redemption.lmtActive')}
           </span>
         )}
         {hasConfigured && (
           <button onClick={handleClear} className="text-xs underline cursor-pointer" style={{ color: 'var(--text-muted)' }}>
-            Clear
+            {t('redemption.clear')}
           </button>
         )}
       </div>
@@ -429,25 +412,24 @@ export default function Redemption() {
         <div className="rounded border" style={{ borderColor: 'var(--border)', background: 'var(--bg-surface)' }}>
           <div className="px-4 py-2 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
             <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-secondary)' }}>
-              AIFMD II — Liquidity Management Tools
+              {t('lmt.panelTitle')}
             </span>
             <button onClick={() => setShowLmt(false)} className="text-xs cursor-pointer" style={{ color: 'var(--text-muted)' }}>✕</button>
           </div>
           <div className="p-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
-            {/* Left col: tool cards */}
             <div className="space-y-3">
-              <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Always Available</div>
-              {ALWAYS_AVAILABLE.map(t => <InfoCard key={t.id} tool={t} />)}
+              <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>{t('lmt.alwaysAvailable')}</div>
+              {ALWAYS_AVAILABLE.map(tool => <InfoCard key={tool.id} tool={tool} />)}
 
-              <div className="text-xs font-semibold uppercase tracking-wide mt-1" style={{ color: 'var(--text-muted)' }}>Quantitative Tools</div>
-              {QUANTITATIVE_TOOLS.map(t => (
-                <ToolCard key={t.id} tool={t} enabled={enabled} paramValues={paramValues}
+              <div className="text-xs font-semibold uppercase tracking-wide mt-1" style={{ color: 'var(--text-muted)' }}>{t('lmt.quantitativeTools')}</div>
+              {QUANTITATIVE_TOOLS.map(tool => (
+                <ToolCard key={tool.id} tool={tool} enabled={enabled} paramValues={paramValues}
                   onToggle={handleToggle} onParam={handleParam} />
               ))}
 
-              <div className="text-xs font-semibold uppercase tracking-wide mt-1" style={{ color: 'var(--text-muted)' }}>Anti-Dilution Tools</div>
-              {ANTIDILUTION_TOOLS.map(t => (
-                <ToolCard key={t.id} tool={t} enabled={enabled} paramValues={paramValues}
+              <div className="text-xs font-semibold uppercase tracking-wide mt-1" style={{ color: 'var(--text-muted)' }}>{t('lmt.antiDilutionTools')}</div>
+              {ANTIDILUTION_TOOLS.map(tool => (
+                <ToolCard key={tool.id} tool={tool} enabled={enabled} paramValues={paramValues}
                   onToggle={handleToggle} onParam={handleParam} />
               ))}
 
@@ -455,7 +437,6 @@ export default function Redemption() {
               {simError && <div className="text-xs mt-1" style={{ color: 'var(--kpi-red-text)' }}>{simError}</div>}
             </div>
 
-            {/* Right col: summary cards when configured */}
             {hasConfigured && (
               <div className="space-y-3">
                 <InvestorCostSummary results={simResults.normal} />
@@ -471,12 +452,12 @@ export default function Redemption() {
         <div className="rounded border px-3 py-2 flex items-center gap-2 flex-wrap"
           style={{ borderColor: 'var(--kpi-amber-text, #92400e)', background: 'var(--kpi-amber-bg, #fef3c7)' }}>
           <span className="text-xs font-bold" style={{ color: 'var(--kpi-amber-text, #92400e)' }}>
-            LMT simulation active — showing before/after comparison.
+            {t('redemption.lmtSimActive')}
           </span>
-          {(simResults.lmt_config_applied.active_tools || []).map(t => (
-            <span key={t} className="rounded px-1.5 py-0.5 text-xs font-semibold"
+          {(simResults.lmt_config_applied.active_tools || []).map(tool => (
+            <span key={tool} className="rounded px-1.5 py-0.5 text-xs font-semibold"
               style={{ background: 'var(--kpi-amber-text, #92400e)', color: '#fff' }}>
-              {t.replace(/_/g, ' ')}
+              {tool.replace(/_/g, ' ')}
             </span>
           ))}
         </div>
@@ -484,25 +465,23 @@ export default function Redemption() {
 
       {/* Coverage tables */}
       <div className="space-y-5">
-        {/* Normal regime */}
         <div className="space-y-2">
-          <RegimeSummary rows={normalRows} label="Normal Regime" isStress={false} />
+          <RegimeSummary rows={normalRows} label={t('redemption.normalRegime')} isStress={false} />
           <RedemptionTable
             rows={normalRows}
             baseRows={hasConfigured ? pipelineNormal : null}
-            label="Normal Regime"
+            label={t('redemption.normalRegime')}
             isStress={false}
             showDelta={hasConfigured}
           />
         </div>
 
-        {/* Stressed regime */}
         <div className="space-y-2">
-          <RegimeSummary rows={stressRows} label="Stressed Regime" isStress={true} />
+          <RegimeSummary rows={stressRows} label={t('redemption.stressedRegime')} isStress={true} />
           <RedemptionTable
             rows={stressRows}
             baseRows={hasConfigured ? pipelineStress : null}
-            label="Stressed Regime"
+            label={t('redemption.stressedRegime')}
             isStress={true}
             showDelta={hasConfigured}
           />

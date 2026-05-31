@@ -154,7 +154,9 @@
       "advScalar": "ADV Scalar",
       "redemptionRate": "Redemption Rate",
       "description": "Description",
-      "regulatoryBasis": "Regulatory Basis"
+      "regulatoryBasis": "Regulatory Basis",
+      "name": "Name",
+      "worstCase": "Worst-Case"
     },
     "yes": "Yes",
     "no": "No"
@@ -163,7 +165,36 @@
     "title": "Redemption Coverage",
     "normalRegime": "Normal Regime",
     "stressedRegime": "Stressed Regime",
+    "configureLmts": "Configure LMTs",
+    "lmtActive": "LMT Active",
+    "clear": "Clear",
+    "lmtSimActive": "LMT simulation active — showing before/after comparison.",
+    "withoutLmt": "Without LMT",
+    "withLmt": "With LMT",
+    "kpi": {
+      "scenariosCovered": "Scenarios Covered",
+      "allClear": "All clear",
+      "atRisk": "{{count}} at risk",
+      "minCoverage": "Min Coverage",
+      "worstScenario": "Worst scenario",
+      "maxShortfall": "Max Shortfall",
+      "cashDeficit": "cash deficit",
+      "none": "none",
+      "daysToClear": "Days to Clear",
+      "worstCase": "worst case"
+    },
     "columns": {
+      "scenario": "Scenario",
+      "demand": "Demand (€)",
+      "horizons": "Horizons",
+      "coverage": "Coverage",
+      "shortfall": "Shortfall",
+      "days": "Days",
+      "deltaShortfall": "Δ Shortfall",
+      "gate": "Gate",
+      "suspend": "Suspend",
+      "costBps": "Cost (bps)",
+      "activeTools": "Active Tools",
       "redemptionPct": "Redemption %",
       "redemptionEur": "Redemption (€)",
       "liquidAvail": "Liquid Available (€)",
@@ -172,11 +203,13 @@
       "gateTriggered": "Gate Triggered",
       "suspensionTriggered": "Suspension Triggered",
       "swingPricing": "Swing Pricing",
-      "swingFactor": "Swing Factor"
+      "swingFactor": "Swing Factor",
+      "daysToClear": "Days to Clear"
     },
     "yes": "Yes",
     "no": "No",
-    "triggered": "Triggered"
+    "triggered": "Triggered",
+    "stressed": "Stressed"
   },
   "waterfall": {
     "title": "Waterfall — Forced Sell-Down",
@@ -195,8 +228,12 @@
     "columns": {
       "isin": "ISIN",
       "name": "Name",
+      "assetClass": "Asset Class",
       "bucket": "Bucket",
       "day": "Day",
+      "grossValue": "Gross Value (€)",
+      "marketImpact": "Market Impact (€)",
+      "netProceeds": "Net Proceeds (€)",
       "sellAmount": "Sell Amount (€)",
       "proceeds": "Proceeds (€)",
       "partial": "Partial",
@@ -291,15 +328,158 @@
     "lmtNonCompliant": "non-compliant",
     "footer": "Leverage computed per AIFMD II (Directive (EU) 2024/927), Article 15 and Commission Delegated Regulation (EU) 231/2013, Article 7 (Gross Method) and Article 8 (Commitment Method)."
   },
+  "lmt": {
+    "panelTitle": "AIFMD II — Liquidity Management Tools",
+    "alwaysAvailable": "Always Available",
+    "quantitativeTools": "Quantitative Tools",
+    "antiDilutionTools": "Anti-Dilution Tools",
+    "alwaysAvailableNote": "Always available — no selection required",
+    "compliance": "AIFMD II Compliance:",
+    "toolsSelected_one": "{{count}} selectable tool selected",
+    "toolsSelected_other": "{{count}} selectable tools selected",
+    "minRequired": "(min 2 required)",
+    "swingDualProhibited": "⚠ Swing Pricing + Dual Pricing alone is prohibited under AIFMD II",
+    "running": "Running…",
+    "applyToTables": "Apply to Redemption Tables",
+    "coverageImpact": "Coverage Impact by Scenario",
+    "investorCost": "Investor Cost Summary (per scenario)",
+    "recommendation": "Recommendation",
+    "allCovered": "✓ Selected tools provide full liquidity coverage across all scenarios. AIFMD II minimum tool count met.",
+    "shortfallPersists_one": "⚠ Shortfall persists in {{count}} scenario:",
+    "shortfallPersists_other": "⚠ Shortfall persists in {{count}} scenarios:",
+    "improved_one": "{{count}} scenario improved vs. baseline.",
+    "improved_other": "{{count}} scenarios improved vs. baseline.",
+    "considerAdding": "Consider adding {{tools}} to close the remaining gap.",
+    "allToolsActive": "All available tools are already active — consider increasing thresholds or parameters.",
+    "noImprovement": "Current configuration does not improve on baseline. Consider enabling {{tools}} to reduce cash demand.",
+    "allToolsShortfall": "All available tools are active but shortfall remains. Consider increasing gate thresholds or in-kind percentage.",
+    "columns": {
+      "scenario": "Scenario",
+      "shortfallBase": "Shortfall (Base)",
+      "shortfallConfig": "Shortfall (Config)",
+      "delta": "Δ",
+      "daysBase": "Days (Base)",
+      "daysConfig": "Days (Config)",
+      "stressShortfall": "Stress Shortfall",
+      "toolsActive": "Tools Active"
+    },
+    "tools": {
+      "suspension": {
+        "label": "Temporary Suspension",
+        "description": "Fully halts redemptions during severe market dislocations. Always available; requires regulatory notification."
+      },
+      "side_pockets": {
+        "label": "Side Pockets",
+        "description": "Segregates illiquid assets from the liquid portfolio, protecting continuing investors from dilution."
+      },
+      "gate": {
+        "label": "Redemption Gate",
+        "description": "Limits redemptions to a maximum percentage of NAV per dealing day.",
+        "paramLabel": "Gate threshold (% NAV)"
+      },
+      "notice_period_extension": {
+        "label": "Notice Period Extension",
+        "description": "Extends the notice period before redemption payment is due, giving the fund more time to liquidate.",
+        "paramLabel": "Extension (days)"
+      },
+      "redemption_in_kind": {
+        "label": "Redemptions in Kind",
+        "description": "Satisfies a portion of redemptions via asset transfer instead of cash. Professional investors only.",
+        "paramLabel": "In-kind fraction (% of redemption)"
+      },
+      "redemption_fee": {
+        "label": "Redemption Fee",
+        "description": "A fee charged to redeeming investors, retained in the fund to offset liquidation costs.",
+        "paramLabel": "Fee rate (bps)"
+      },
+      "swing_pricing": {
+        "label": "Swing Pricing",
+        "description": "Adjusts NAV to reflect transaction costs when net flows exceed a threshold.",
+        "paramLabel": "Swing threshold (% NAV)"
+      },
+      "dual_pricing": {
+        "label": "Dual Pricing",
+        "description": "Publishes separate bid/offer prices; subscriptions/redemptions transact at the corresponding price.",
+        "paramLabel": "Bid/ask spread (bps)"
+      },
+      "adl": {
+        "label": "Anti-Dilution Levy (ADL)",
+        "description": "An explicit charge to redeeming investors equal to the estimated cost of liquidating assets.",
+        "paramLabel": "ADL rate (bps)"
+      }
+    }
+  },
   "riskStory": {
     "title": "Liquidity Risk Summary",
     "copyText": "Copy text",
     "downloadJson": "Download JSON",
     "copyError": "Could not copy to clipboard — try selecting the text manually.",
     "downloadError": "Download failed — check browser permissions.",
-    "statusBreach": "⚠️ BREACH: {{message}}",
-    "statusWarning": "⚠️ WARNING: {{message}}",
-    "statusOk": "✅ The fund's liquidity profile is within normal parameters."
+    "statusBreach": "⚠️  BREACH: The fund's liquid assets fall below the regulatory breach threshold.",
+    "statusWarning": "⚠️  WARNING: The fund's liquidity profile is approaching the warning threshold.",
+    "statusOk": "✅  The fund's liquidity profile is within normal parameters.",
+    "header": "LIQUIDITY RISK NARRATIVE — {{fundName}}",
+    "reportingDate": "Reporting Date: {{date}}",
+    "totalNav": "Total NAV: {{nav}}",
+    "section1": "1. LIQUIDITY PROFILE",
+    "section2": "2. STRESS TESTING",
+    "section3": "3. REDEMPTION COVERAGE",
+    "section4": "4. WATERFALL — WORST-CASE LIQUIDATION",
+    "section5": "5. AIFMD II LEVERAGE",
+    "lcrT1": "T+1 Liquidity Coverage Ratio : {{value}}",
+    "lcrT3": "T+3 Liquidity Coverage Ratio : {{value}}",
+    "lcrT7": "T+7 Liquidity Coverage Ratio : {{value}}",
+    "illiquid": "Illiquid assets (>T+7)       : {{value}}",
+    "days50": "Days to liquidate 50% NAV    : {{value}}",
+    "days75": "Days to liquidate 75% NAV    : {{value}}",
+    "days90": "Days to liquidate 90% NAV    : {{value}}",
+    "top10": "Top-10 investor concentration: {{value}}",
+    "liqVsConc": "Liquidity / concentration    : {{value}}x",
+    "stressScenarios": "{{count}} ESMA-style scenarios were run.",
+    "worstCase": "Worst-case scenario: \"{{name}}\"",
+    "navImpact": "  NAV impact : {{pct}} ({{eur}})",
+    "equityLoss": "  Equity loss: {{value}}",
+    "creditLoss": "  Credit loss: {{value}}",
+    "liqAfterShock": "  Liquidity after shock: {{after}} (from {{before}})",
+    "daysToLiq": "  Days to liquidate: {{value}}",
+    "canMeetRedemption": "  Can meet redemption: {{value}}",
+    "canMeetYes": "Yes",
+    "canMeetNo": "No",
+    "noStress": "No stress results available.",
+    "redemptionLine": "  {{pct}} redemption: Liquidity {{liq}}, Shortfall {{shortfall}}, T+1: {{t1}}, Gate: {{gate}}",
+    "shortfallNone": "None",
+    "t1Met": "Met",
+    "t1NotMet": "Not met",
+    "gateTriggered": "Triggered",
+    "gateNo": "No",
+    "noRedemption": "No redemption results.",
+    "wfTarget": "Target                : {{value}}",
+    "wfProceeds": "Total proceeds        : {{value}}",
+    "wfTargetMet": "Target met            : {{value}}",
+    "wfTargetMetYes": "Yes",
+    "wfTargetMetNo": "No",
+    "wfDays": "Days to target        : {{value}}",
+    "wfShortfall": "Residual shortfall    : {{value}}",
+    "wfNavImpact": "NAV impact (sell-down): {{value}}",
+    "aifmdBasis": "Regulatory basis     : {{value}}",
+    "aifmdGross": "Gross Leverage       : {{value}} (cap {{cap}})",
+    "aifmdCommit": "Commitment Leverage  : {{value}}",
+    "aifmdBreach": "Leverage Breach      : {{value}}",
+    "aifmdBreachYes": "YES ⚠",
+    "aifmdBreachNo": "No",
+    "aifmdLoan": "Loan Origination AIF : {{value}}",
+    "aifmdLoanYes": "YES — {{pct}}% NAV in originated loans",
+    "aifmdLoanNo": "No",
+    "aifmdRetention": "Risk Retention OK    : {{value}}",
+    "aifmdRetentionOk": "Yes",
+    "aifmdRetentionBreach": "BREACH ⚠",
+    "aifmdBorrower": "Borrower Breaches    : {{value}}",
+    "aifmdLmts": "LMTs Pre-selected    : {{tools}} ({{count}} tools — {{status}})",
+    "aifmdLmtCompliant": "compliant",
+    "aifmdLmtNonCompliant": "non-compliant",
+    "aifmdWarnings": "Warnings             : {{value}}",
+    "aifmdNoData": "AIFMD II leverage data not available.",
+    "footer": "Generated by Liquidity Risk Tool v1.1"
   },
   "validation": {
     "title": "Validation Report",
@@ -307,7 +487,16 @@
     "passed_one": "{{count}} passed",
     "passed_other": "{{count}} passed",
     "failed_one": "{{count}} failed",
-    "failed_other": "{{count}} failed"
+    "failed_other": "{{count}} failed",
+    "allPassed": "All {{total}} checks passed",
+    "allPassedShort": "All checks passed",
+    "someFailedShort": "{{count}} check failed",
+    "someFailedShort_plural": "{{count}} checks failed",
+    "criticalHeader": "Critical failures — {{count}} check",
+    "criticalHeader_plural": "Critical failures — {{count}} checks",
+    "warningsHeader": "Warnings — {{count}} check to review",
+    "warningsHeader_plural": "Warnings — {{count}} checks to review",
+    "passingHeader": "Passing checks"
   },
   "infoModal": {
     "title": "File Format Reference",
@@ -315,7 +504,8 @@
       "holdings": "Holdings CSV",
       "nav": "NAV CSV",
       "marketData": "Market Data CSV (optional)",
-      "assetDefaults": "Asset Class Defaults"
+      "assetDefaults": "Asset Class Defaults",
+      "annexIvMeta": "Annex IV Metadata"
     },
     "meta": {
       "required": "Required",
@@ -340,7 +530,13 @@
     },
     "footer": "Column names are matched case-insensitively. Any recognised synonym is accepted.",
     "marketNote": "All columns except isin are optional. Missing values fall back to asset-class defaults.",
-    "noMarketDataNote": "When no Market Data CSV is provided, these defaults are used. Supply a Market Data CSV to override per-position."
+    "noMarketDataNote": "When no Market Data CSV is provided, these defaults are used. Supply a Market Data CSV to override per-position.",
+    "annexIvMeta": {
+      "note": "Provide this JSON as the annex_iv_meta_json form field when uploading. Required fields (aifm_lei, aif_lei, reporting_member_state) and at least one share class must be present to unlock Annex IV XML/Excel regulatory export.",
+      "topLevelFields": "Top-level fields",
+      "shareClassFields": "share_classes array — each object",
+      "exampleLabel": "Example payload"
+    }
   },
   "annexIv": {
     "title": "Annex IV — AIFMD II Regulatory Report",

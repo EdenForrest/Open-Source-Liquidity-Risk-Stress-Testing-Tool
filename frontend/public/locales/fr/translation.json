@@ -154,7 +154,9 @@
       "advScalar": "Scalaire ADV",
       "redemptionRate": "Taux de rachat",
       "description": "Description",
-      "regulatoryBasis": "Base réglementaire"
+      "regulatoryBasis": "Base réglementaire",
+      "name": "Nom",
+      "worstCase": "Pire cas"
     },
     "yes": "Oui",
     "no": "Non"
@@ -163,7 +165,36 @@
     "title": "Couverture des rachats",
     "normalRegime": "Régime normal",
     "stressedRegime": "Régime stressé",
+    "configureLmts": "Configurer les OGL",
+    "lmtActive": "OGL actif",
+    "clear": "Réinitialiser",
+    "lmtSimActive": "Simulation OGL active — comparaison avant/après.",
+    "withoutLmt": "Sans OGL",
+    "withLmt": "Avec OGL",
+    "kpi": {
+      "scenariosCovered": "Scénarios couverts",
+      "allClear": "Tout couvert",
+      "atRisk": "{{count}} à risque",
+      "minCoverage": "Couverture min.",
+      "worstScenario": "Pire scénario",
+      "maxShortfall": "Déficit max.",
+      "cashDeficit": "déficit de trésorerie",
+      "none": "aucun",
+      "daysToClear": "Jours de dénouement",
+      "worstCase": "pire cas"
+    },
     "columns": {
+      "scenario": "Scénario",
+      "demand": "Demande (€)",
+      "horizons": "Horizons",
+      "coverage": "Couverture",
+      "shortfall": "Déficit",
+      "days": "Jours",
+      "deltaShortfall": "Δ Déficit",
+      "gate": "Plafond",
+      "suspend": "Suspension",
+      "costBps": "Coût (bps)",
+      "activeTools": "Outils actifs",
       "redemptionPct": "% rachats",
       "redemptionEur": "Rachats (€)",
       "liquidAvail": "Liquidités disponibles (€)",
@@ -172,11 +203,13 @@
       "gateTriggered": "Plafond activé",
       "suspensionTriggered": "Suspension activée",
       "swingPricing": "Swing pricing",
-      "swingFactor": "Facteur swing"
+      "swingFactor": "Facteur swing",
+      "daysToClear": "Jours de dénouement"
     },
     "yes": "Oui",
     "no": "Non",
-    "triggered": "Activé"
+    "triggered": "Activé",
+    "stressed": "Stressé"
   },
   "waterfall": {
     "title": "Cascade de vente forcée",
@@ -195,8 +228,12 @@
     "columns": {
       "isin": "ISIN",
       "name": "Nom",
+      "assetClass": "Classe d'actif",
       "bucket": "Tranche",
       "day": "Jour",
+      "grossValue": "Valeur brute (€)",
+      "marketImpact": "Impact marché (€)",
+      "netProceeds": "Produit net (€)",
       "sellAmount": "Montant vendu (€)",
       "proceeds": "Produit (€)",
       "partial": "Partiel",
@@ -291,15 +328,158 @@
     "lmtNonCompliant": "non conforme",
     "footer": "Levier calculé conformément à l'AIFMD II (Directive (UE) 2024/927), article 15 et au règlement délégué de la Commission (UE) 231/2013, article 7 (méthode brute) et article 8 (méthode de l'engagement)."
   },
+  "lmt": {
+    "panelTitle": "AIFMD II — Outils de gestion de la liquidité",
+    "alwaysAvailable": "Toujours disponibles",
+    "quantitativeTools": "Outils quantitatifs",
+    "antiDilutionTools": "Outils anti-dilution",
+    "alwaysAvailableNote": "Toujours disponibles — aucune sélection requise",
+    "compliance": "Conformité AIFMD II :",
+    "toolsSelected_one": "{{count}} outil sélectionnable sélectionné",
+    "toolsSelected_other": "{{count}} outils sélectionnables sélectionnés",
+    "minRequired": "(min. 2 requis)",
+    "swingDualProhibited": "⚠ Le swing pricing + dual pricing seul est interdit par l'AIFMD II",
+    "running": "En cours…",
+    "applyToTables": "Appliquer aux tableaux de rachats",
+    "coverageImpact": "Impact sur la couverture par scénario",
+    "investorCost": "Résumé du coût investisseur (par scénario)",
+    "recommendation": "Recommandation",
+    "allCovered": "✓ Les outils sélectionnés assurent une couverture totale de la liquidité pour tous les scénarios. Nombre minimum d'outils AIFMD II atteint.",
+    "shortfallPersists_one": "⚠ Le déficit persiste dans {{count}} scénario :",
+    "shortfallPersists_other": "⚠ Le déficit persiste dans {{count}} scénarios :",
+    "improved_one": "{{count}} scénario amélioré par rapport à la référence.",
+    "improved_other": "{{count}} scénarios améliorés par rapport à la référence.",
+    "considerAdding": "Envisagez d'ajouter {{tools}} pour combler l'écart restant.",
+    "allToolsActive": "Tous les outils disponibles sont déjà actifs — envisagez d'augmenter les seuils ou les paramètres.",
+    "noImprovement": "La configuration actuelle n'améliore pas la référence. Envisagez d'activer {{tools}} pour réduire la demande de trésorerie.",
+    "allToolsShortfall": "Tous les outils disponibles sont actifs mais le déficit persiste. Envisagez d'augmenter les seuils de plafond ou le pourcentage en nature.",
+    "columns": {
+      "scenario": "Scénario",
+      "shortfallBase": "Déficit (Référence)",
+      "shortfallConfig": "Déficit (Config.)",
+      "delta": "Δ",
+      "daysBase": "Jours (Référence)",
+      "daysConfig": "Jours (Config.)",
+      "stressShortfall": "Déficit stressé",
+      "toolsActive": "Outils actifs"
+    },
+    "tools": {
+      "suspension": {
+        "label": "Suspension temporaire",
+        "description": "Suspend totalement les rachats lors de dislocations de marché sévères. Toujours disponible ; nécessite une notification réglementaire."
+      },
+      "side_pockets": {
+        "label": "Compartiments de cantonnement",
+        "description": "Isole les actifs illiquides du portefeuille liquide, protégeant les investisseurs restants de la dilution."
+      },
+      "gate": {
+        "label": "Plafond de rachat",
+        "description": "Limite les rachats à un pourcentage maximum de la VNI par jour de valorisation.",
+        "paramLabel": "Seuil du plafond (% VNI)"
+      },
+      "notice_period_extension": {
+        "label": "Extension du préavis",
+        "description": "Prolonge le délai de préavis avant le paiement du rachat, donnant au fonds plus de temps pour liquider.",
+        "paramLabel": "Extension (jours)"
+      },
+      "redemption_in_kind": {
+        "label": "Rachats en nature",
+        "description": "Satisfait une partie des rachats via un transfert d'actifs plutôt qu'en espèces. Investisseurs professionnels uniquement.",
+        "paramLabel": "Fraction en nature (% du rachat)"
+      },
+      "redemption_fee": {
+        "label": "Commission de rachat",
+        "description": "Frais facturés aux investisseurs rachetant, conservés dans le fonds pour compenser les coûts de liquidation.",
+        "paramLabel": "Taux de commission (bps)"
+      },
+      "swing_pricing": {
+        "label": "Swing pricing",
+        "description": "Ajuste la VNI pour refléter les coûts de transaction lorsque les flux nets dépassent un seuil.",
+        "paramLabel": "Seuil de swing (% VNI)"
+      },
+      "dual_pricing": {
+        "label": "Dual pricing",
+        "description": "Publie des prix d'achat/vente séparés ; les souscriptions/rachats s'effectuent au prix correspondant.",
+        "paramLabel": "Spread bid/ask (bps)"
+      },
+      "adl": {
+        "label": "Prélèvement anti-dilution (PAD)",
+        "description": "Charge explicite aux investisseurs rachetant égale au coût estimé de liquidation des actifs.",
+        "paramLabel": "Taux PAD (bps)"
+      }
+    }
+  },
   "riskStory": {
     "title": "Résumé du risque de liquidité",
     "copyText": "Copier le texte",
     "downloadJson": "Télécharger JSON",
     "copyError": "Impossible de copier dans le presse-papiers — essayez de sélectionner le texte manuellement.",
     "downloadError": "Échec du téléchargement — vérifiez les autorisations du navigateur.",
-    "statusBreach": "⚠️ DÉPASSEMENT : {{message}}",
-    "statusWarning": "⚠️ AVERTISSEMENT : {{message}}",
-    "statusOk": "✅ Le profil de liquidité du fonds est dans les paramètres normaux."
+    "statusBreach": "⚠️  DÉPASSEMENT : Le niveau d'actifs liquides du fonds est inférieur au seuil réglementaire de dépassement.",
+    "statusWarning": "⚠️  AVERTISSEMENT : Le profil de liquidité du fonds approche du seuil d'avertissement.",
+    "statusOk": "✅  Le profil de liquidité du fonds est dans les paramètres normaux.",
+    "header": "NARRATIF DU RISQUE DE LIQUIDITÉ — {{fundName}}",
+    "reportingDate": "Date de déclaration : {{date}}",
+    "totalNav": "VNI totale : {{nav}}",
+    "section1": "1. PROFIL DE LIQUIDITÉ",
+    "section2": "2. TESTS DE RÉSISTANCE",
+    "section3": "3. COUVERTURE DES RACHATS",
+    "section4": "4. CASCADE — LIQUIDATION DU PIRE CAS",
+    "section5": "5. LEVIER AIFMD II",
+    "lcrT1": "Ratio de couverture de liquidité T+1 : {{value}}",
+    "lcrT3": "Ratio de couverture de liquidité T+3 : {{value}}",
+    "lcrT7": "Ratio de couverture de liquidité T+7 : {{value}}",
+    "illiquid": "Actifs illiquides (>T+7)              : {{value}}",
+    "days50": "Jours pour liquider 50 % VNI         : {{value}}",
+    "days75": "Jours pour liquider 75 % VNI         : {{value}}",
+    "days90": "Jours pour liquider 90 % VNI         : {{value}}",
+    "top10": "Concentration top-10 investisseurs    : {{value}}",
+    "liqVsConc": "Liquidité / concentration              : {{value}}x",
+    "stressScenarios": "{{count}} scénarios de type ESMA ont été exécutés.",
+    "worstCase": "Pire scénario : « {{name}} »",
+    "navImpact": "  Impact VNI       : {{pct}} ({{eur}})",
+    "equityLoss": "  Perte actions    : {{value}}",
+    "creditLoss": "  Perte crédit     : {{value}}",
+    "liqAfterShock": "  Liquidité après choc : {{after}} (de {{before}})",
+    "daysToLiq": "  Jours de liquidation : {{value}}",
+    "canMeetRedemption": "  Rachat couvert   : {{value}}",
+    "canMeetYes": "Oui",
+    "canMeetNo": "Non",
+    "noStress": "Aucun résultat de stress disponible.",
+    "redemptionLine": "  Rachat {{pct}} : Liquidité {{liq}}, Déficit {{shortfall}}, T+1 : {{t1}}, Plafond : {{gate}}",
+    "shortfallNone": "Aucun",
+    "t1Met": "Couvert",
+    "t1NotMet": "Non couvert",
+    "gateTriggered": "Activé",
+    "gateNo": "Non",
+    "noRedemption": "Aucun résultat de rachat.",
+    "wfTarget": "Objectif                : {{value}}",
+    "wfProceeds": "Produit total           : {{value}}",
+    "wfTargetMet": "Objectif atteint        : {{value}}",
+    "wfTargetMetYes": "Oui",
+    "wfTargetMetNo": "Non",
+    "wfDays": "Jours pour l'objectif   : {{value}}",
+    "wfShortfall": "Déficit résiduel        : {{value}}",
+    "wfNavImpact": "Impact VNI (liquidation): {{value}}",
+    "aifmdBasis": "Base réglementaire      : {{value}}",
+    "aifmdGross": "Levier brut             : {{value}} (plafond {{cap}})",
+    "aifmdCommit": "Levier d'engagement     : {{value}}",
+    "aifmdBreach": "Dépassement du levier   : {{value}}",
+    "aifmdBreachYes": "OUI ⚠",
+    "aifmdBreachNo": "Non",
+    "aifmdLoan": "FIA originateur de prêts : {{value}}",
+    "aifmdLoanYes": "OUI — {{pct}} % VNI en prêts originés",
+    "aifmdLoanNo": "Non",
+    "aifmdRetention": "Rétention du risque OK  : {{value}}",
+    "aifmdRetentionOk": "Oui",
+    "aifmdRetentionBreach": "DÉPASSEMENT ⚠",
+    "aifmdBorrower": "Dépassements emprunteur : {{value}}",
+    "aifmdLmts": "OGL présélectionnés     : {{tools}} ({{count}} outils — {{status}})",
+    "aifmdLmtCompliant": "conforme",
+    "aifmdLmtNonCompliant": "non conforme",
+    "aifmdWarnings": "Avertissements          : {{value}}",
+    "aifmdNoData": "Données de levier AIFMD II non disponibles.",
+    "footer": "Généré par l'Outil de risque de liquidité v1.1"
   },
   "validation": {
     "title": "Rapport de validation",
@@ -307,7 +487,16 @@
     "passed_one": "{{count}} réussi",
     "passed_other": "{{count}} réussis",
     "failed_one": "{{count}} échoué",
-    "failed_other": "{{count}} échoués"
+    "failed_other": "{{count}} échoués",
+    "allPassed": "Les {{total}} contrôles ont réussi",
+    "allPassedShort": "Tous les contrôles ont réussi",
+    "someFailedShort": "{{count}} contrôle échoué",
+    "someFailedShort_plural": "{{count}} contrôles échoués",
+    "criticalHeader": "Échecs critiques — {{count}} contrôle",
+    "criticalHeader_plural": "Échecs critiques — {{count}} contrôles",
+    "warningsHeader": "Avertissements — {{count}} contrôle à examiner",
+    "warningsHeader_plural": "Avertissements — {{count}} contrôles à examiner",
+    "passingHeader": "Contrôles réussis"
   },
   "infoModal": {
     "title": "Référence des formats de fichiers",
@@ -315,7 +504,8 @@
       "holdings": "CSV des positions",
       "nav": "CSV de la VNI",
       "marketData": "CSV données de marché (optionnel)",
-      "assetDefaults": "Valeurs par défaut des classes d'actifs"
+      "assetDefaults": "Valeurs par défaut des classes d'actifs",
+      "annexIvMeta": "Métadonnées Annexe IV"
     },
     "meta": {
       "required": "Obligatoire",
@@ -340,7 +530,13 @@
     },
     "footer": "Les noms de colonnes sont reconnus sans tenir compte de la casse. Tout synonyme reconnu est accepté.",
     "marketNote": "Toutes les colonnes sauf isin sont facultatives. Les valeurs manquantes reviennent aux valeurs par défaut de la classe d'actifs.",
-    "noMarketDataNote": "En l'absence de fichier CSV de données de marché, ces valeurs par défaut sont utilisées. Fournissez un CSV de données de marché pour personnaliser par position."
+    "noMarketDataNote": "En l'absence de fichier CSV de données de marché, ces valeurs par défaut sont utilisées. Fournissez un CSV de données de marché pour personnaliser par position.",
+    "annexIvMeta": {
+      "note": "Fournissez ce JSON dans le champ de formulaire annex_iv_meta_json lors du téléversement. Les trois champs obligatoires (aifm_lei, aif_lei, reporting_member_state) et au moins une classe de parts doivent être présents pour débloquer l'export XML/Excel réglementaire Annexe IV.",
+      "topLevelFields": "Champs de premier niveau",
+      "shareClassFields": "Tableau share_classes — un objet par classe",
+      "exampleLabel": "Exemple de payload"
+    }
   },
   "annexIv": {
     "title": "Annexe IV — Rapport réglementaire AIFMD II",

@@ -1,6 +1,7 @@
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, CartesianGrid,
 } from 'recharts'
+import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import { useTheme } from '../ThemeContext'
 import KPICard from '../components/KPICard'
@@ -17,6 +18,7 @@ const rowEven = { background: 'var(--bg-panel)' }
 const rowOdd  = { background: 'var(--bg-surface)' }
 
 export default function StressTests() {
+  const { t } = useTranslation()
   const { data, error } = useAnalysis()
   const { theme } = useTheme()
   const ct = chartTheme(theme)
@@ -32,26 +34,52 @@ export default function StressTests() {
   const worstDays = results.reduce((a, b) => (b.time_to_liquidate_days > a.time_to_liquidate_days ? b : a), results[0])
   const metCount = results.filter((r) => r.can_meet_redemption).length
 
+  const navDeltaKey = t('charts.legend.navDelta')
   const chartData = results.map((r) => ({
     name: r.scenario_name?.replace(' Combined', '').replace('Stress ', '') ?? r.scenario_name,
-    'NAV Δ%': +((r.nav_impact_pct || 0) * 100).toFixed(2),
+    [navDeltaKey]: +((r.nav_impact_pct || 0) * 100).toFixed(2),
   }))
+
+  const resultsCols = [
+    [t('stress.columns.scenario'), null],
+    [t('stress.columns.navBefore'), null],
+    [t('stress.columns.navAfter'), null],
+    [t('stress.columns.navImpact'), 'nav_delta_pct'],
+    [t('stress.columns.equityLoss'), 'equity_loss'],
+    [t('stress.columns.creditLoss'), 'credit_loss'],
+    [t('stress.columns.liquidBefore'), 'liq_before'],
+    [t('stress.columns.liquidAfter'), 'liq_after'],
+    [t('stress.columns.ttl'), 'days_to_liq'],
+    [t('stress.columns.canMeet'), 'meets_redemption'],
+  ]
+
+  const paramsCols = [
+    t('stress.columns.name'),
+    t('stress.columns.equityShock'),
+    t('stress.columns.spreadShock'),
+    t('stress.columns.rateShock'),
+    t('stress.columns.advScalar'),
+    t('stress.columns.haircutMult'),
+    t('stress.columns.redemptionRate'),
+    t('stress.columns.regulatoryBasis'),
+    t('stress.columns.worstCase'),
+  ]
 
   return (
     <div className="p-3 space-y-3">
-      <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Stress Tests</h1>
+      <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('stress.title')}</h1>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        <KPICard label={<MetricTooltip id="worst_nav_impact">Worst NAV Impact</MetricTooltip>} value={pct(worstNav?.nav_impact_pct)} sub={worstNav?.scenario_name} color="red" />
-        <KPICard label={<MetricTooltip id="worst_liq_after">Worst Liquidity After</MetricTooltip>} value={pct(worstLiq?.liquid_pct_after)} sub={worstLiq?.scenario_name} color="amber" />
-        <KPICard label={<MetricTooltip id="max_days_to_liq">Max Days to Liquidate</MetricTooltip>} value={worstDays?.time_to_liquidate_days?.toFixed(1) ?? '—'} sub={worstDays?.scenario_name} color="amber" />
-        <KPICard label={<MetricTooltip id="redemptions_met">Redemptions Met</MetricTooltip>} value={`${metCount} / ${results.length}`}
+        <KPICard label={<MetricTooltip id="worst_nav_impact">{t('stress.kpi.worstNavImpact')}</MetricTooltip>} value={pct(worstNav?.nav_impact_pct)} sub={worstNav?.scenario_name} color="red" />
+        <KPICard label={<MetricTooltip id="worst_liq_after">{t('stress.kpi.worstLiqAfter')}</MetricTooltip>} value={pct(worstLiq?.liquid_pct_after)} sub={worstLiq?.scenario_name} color="amber" />
+        <KPICard label={<MetricTooltip id="max_days_to_liq">{t('stress.kpi.maxDaysToLiq')}</MetricTooltip>} value={worstDays?.time_to_liquidate_days?.toFixed(1) ?? '—'} sub={worstDays?.scenario_name} color="amber" />
+        <KPICard label={<MetricTooltip id="redemptions_met">{t('stress.kpi.redemptionsMet')}</MetricTooltip>} value={`${metCount} / ${results.length}`}
           color={metCount === results.length ? 'green' : metCount === 0 ? 'red' : 'amber'} />
       </div>
 
       <div className="rounded shadow-sm border p-3" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide bb-head mb-2" style={headingStyle}>
-          NAV Impact by Scenario
+          {t('stress.navImpactChart')}
         </h2>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
@@ -63,9 +91,9 @@ export default function StressTests() {
               labelStyle={{ color: ct.tooltipText }}
               itemStyle={{ color: ct.tooltipText }} />
             <ReferenceLine y={0} stroke={ct.axisColor} />
-            <Bar dataKey="NAV Δ%" radius={[4, 4, 0, 0]}>
+            <Bar dataKey={navDeltaKey} radius={[4, 4, 0, 0]}>
               {chartData.map((d, i) => (
-                <Cell key={i} fill={stressImpactColor(d['NAV Δ%'])} />
+                <Cell key={i} fill={stressImpactColor(d[navDeltaKey])} />
               ))}
             </Bar>
           </BarChart>
@@ -74,18 +102,12 @@ export default function StressTests() {
 
       <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={headingStyle}>
-          Scenario Results
+          {t('stress.resultsTable')}
         </h2>
         <table className="w-full text-sm">
           <thead style={surfaceStyle}>
             <tr>
-              {[
-                ['Scenario', null], ['NAV Before', null], ['NAV After', null],
-                ['NAV Δ%', 'nav_delta_pct'], ['Equity Loss', 'equity_loss'],
-                ['Credit Loss', 'credit_loss'], ['Liq Before', 'liq_before'],
-                ['Liq After', 'liq_after'], ['Days to Liq.', 'days_to_liq'],
-                ['Meets Redemption', 'meets_redemption'],
-              ].map(([h, id]) => (
+              {resultsCols.map(([h, id]) => (
                 <th key={h} className="px-3 py-2 text-left whitespace-nowrap text-xs uppercase"
                   style={{ color: 'var(--text-secondary)' }}>
                   {id ? <MetricTooltip id={id}>{h}</MetricTooltip> : h}
@@ -113,7 +135,7 @@ export default function StressTests() {
                     style={r.can_meet_redemption
                       ? { background: 'var(--kpi-green-bg)', color: 'var(--kpi-green-text)' }
                       : { background: 'var(--kpi-red-bg)', color: 'var(--kpi-red-text)' }}>
-                    {r.can_meet_redemption ? 'Yes' : 'No'}
+                    {r.can_meet_redemption ? t('stress.yes') : t('stress.no')}
                   </span>
                 </td>
               </tr>
@@ -124,12 +146,12 @@ export default function StressTests() {
 
       <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={headingStyle}>
-          Scenario Parameters
+          {t('stress.paramsTable')}
         </h2>
         <table className="w-full text-sm">
           <thead style={surfaceStyle}>
             <tr>
-              {['Name', 'Equity Shock', 'Credit Δbps', 'Rate Δbps', 'ADV Scalar', 'Haircut Mult.', 'Redemption %', 'Regulatory Basis', 'Worst-Case'].map((h) => (
+              {paramsCols.map((h) => (
                 <th key={h} className="px-3 py-2 text-left whitespace-nowrap text-xs uppercase"
                   style={{ color: 'var(--text-secondary)' }}>{h}</th>
               ))}

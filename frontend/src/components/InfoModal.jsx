@@ -55,6 +55,23 @@ const FILES = [
   },
 ]
 
+const ANNEX_IV_FIELDS = [
+  { name: 'aifm_lei',                required: true,  example: '222100XXXXXXXXXX',  notes: 'AIFM Legal Entity Identifier (20-char ISO 17442)' },
+  { name: 'aifm_name',               required: false, example: 'Lux ManCo S.A.',    notes: 'AIFM legal name' },
+  { name: 'aifm_national_code',      required: false, example: 'B123456',           notes: 'National registration code of the AIFM' },
+  { name: 'reporting_member_state',  required: true,  example: 'LU',                notes: 'ISO 3166-1 alpha-2 country code of the reporting AIFM' },
+  { name: 'aif_lei',                 required: true,  example: '549300XXXXXXXXXX',  notes: 'AIF Legal Entity Identifier (20-char ISO 17442)' },
+  { name: 'aif_national_code',       required: false, example: 'LU12345678',        notes: 'National registration code of the AIF' },
+  { name: 'share_classes',           required: true,  example: '[{...}]',           notes: 'Array — at least one share class required (see below)' },
+]
+
+const SHARE_CLASS_FIELDS = [
+  { name: 'isin',                   required: false, example: 'LU0000000001',    notes: 'Share class ISIN' },
+  { name: 'name',                   required: false, example: 'Class A EUR',     notes: 'Share class name' },
+  { name: 'notice_period_days',     required: false, example: '30',             notes: 'Investor notice period in days (default 90)' },
+  { name: 'redemption_frequency',   required: false, example: 'monthly',        notes: 'Redemption frequency (daily / weekly / monthly / quarterly / other)' },
+]
+
 const ASSET_CLASSES = [
   { value: 'cash',              adv: '1,000,000,000+', spread: '0 bps' },
   { value: 'government_bond',   adv: '30,000,000',     spread: '4 bps' },
@@ -75,7 +92,7 @@ export default function InfoModal() {
   const [tab, setTab] = useState(0)
   const { t } = useTranslation()
 
-  const tabLabels = [...FILES.map(f => t(f.tabKey)), t('infoModal.tabs.assetDefaults')]
+  const tabLabels = [...FILES.map(f => t(f.tabKey)), t('infoModal.tabs.assetDefaults'), t('infoModal.tabs.annexIvMeta')]
 
   return (
     <>
@@ -120,8 +137,10 @@ export default function InfoModal() {
             <div className="overflow-auto flex-1 px-6 py-4">
               {tab < FILES.length ? (
                 <FileTab file={FILES[tab]} />
-              ) : (
+              ) : tab === FILES.length ? (
                 <AssetDefaultsTab />
+              ) : (
+                <AnnexIvMetaTab />
               )}
             </div>
           </div>
@@ -200,6 +219,88 @@ function AssetDefaultsTab() {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function AnnexIvMetaTab() {
+  const { t } = useTranslation()
+  const colStyle = { borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }
+  return (
+    <div className="space-y-5">
+      <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
+        {t('infoModal.annexIvMeta.note')}
+      </p>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{t('infoModal.annexIvMeta.topLevelFields')}</h3>
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr style={colStyle}>
+              <th className="text-left py-2 pr-4 font-semibold w-56">{t('infoModal.table.columnName')}</th>
+              <th className="text-left py-2 pr-4 font-semibold w-20">{t('infoModal.table.required')}</th>
+              <th className="text-left py-2 pr-4 font-semibold w-40">{t('infoModal.table.example')}</th>
+              <th className="text-left py-2 font-semibold">{t('infoModal.table.notes')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ANNEX_IV_FIELDS.map((f) => (
+              <tr key={f.name} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-accent)' }}>{f.name}</td>
+                <td className="py-2 pr-4" style={{ color: f.required ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                  {f.required ? t('infoModal.values.yes') : t('common.no')}
+                </td>
+                <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-secondary)' }}>{f.example}</td>
+                <td className="py-2" style={{ color: 'var(--text-secondary)' }}>{f.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{t('infoModal.annexIvMeta.shareClassFields')}</h3>
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr style={colStyle}>
+              <th className="text-left py-2 pr-4 font-semibold w-56">{t('infoModal.table.columnName')}</th>
+              <th className="text-left py-2 pr-4 font-semibold w-20">{t('infoModal.table.required')}</th>
+              <th className="text-left py-2 pr-4 font-semibold w-40">{t('infoModal.table.example')}</th>
+              <th className="text-left py-2 font-semibold">{t('infoModal.table.notes')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SHARE_CLASS_FIELDS.map((f) => (
+              <tr key={f.name} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-accent)' }}>{f.name}</td>
+                <td className="py-2 pr-4" style={{ color: 'var(--text-secondary)' }}>
+                  {t('common.no')}
+                </td>
+                <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-secondary)' }}>{f.example}</td>
+                <td className="py-2" style={{ color: 'var(--text-secondary)' }}>{f.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('infoModal.annexIvMeta.exampleLabel')}</h3>
+        <pre className="text-xs rounded-lg px-3 py-2 overflow-x-auto" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{`{
+  "aifm_lei": "222100XXXXXXXXXX",
+  "aifm_name": "Lux ManCo S.A.",
+  "reporting_member_state": "LU",
+  "aif_lei": "549300XXXXXXXXXX",
+  "share_classes": [
+    {
+      "isin": "LU0000000001",
+      "name": "Class A EUR",
+      "notice_period_days": 30,
+      "redemption_frequency": "monthly"
+    }
+  ]
+}`}</pre>
+      </div>
     </div>
   )
 }

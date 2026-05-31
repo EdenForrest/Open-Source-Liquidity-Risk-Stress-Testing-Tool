@@ -1,20 +1,17 @@
+import { useTranslation } from 'react-i18next'
 import { pct, eur } from '../utils/formatters'
 
 // ---------------------------------------------------------------------------
-// AIFMD II tool taxonomy
+// AIFMD II tool taxonomy (IDs only — labels/descriptions come from i18n)
 // ---------------------------------------------------------------------------
 
 export const ALWAYS_AVAILABLE = [
   {
     id: 'suspension',
-    label: 'Temporary Suspension',
-    description: 'Fully halts redemptions during severe market dislocations. Always available; requires regulatory notification.',
     informational: true,
   },
   {
     id: 'side_pockets',
-    label: 'Side Pockets',
-    description: 'Segregates illiquid assets from the liquid portfolio, protecting continuing investors from dilution.',
     informational: true,
   },
 ]
@@ -22,48 +19,34 @@ export const ALWAYS_AVAILABLE = [
 export const QUANTITATIVE_TOOLS = [
   {
     id: 'gate',
-    label: 'Redemption Gate',
-    description: 'Limits redemptions to a maximum percentage of NAV per dealing day.',
-    param: { key: 'gate_threshold', label: 'Gate threshold (% NAV)', type: 'pct', min: 2, max: 25, step: 1, defaultVal: 10 },
+    param: { key: 'gate_threshold', type: 'pct', min: 2, max: 25, step: 1, defaultVal: 10 },
   },
   {
     id: 'notice_period_extension',
-    label: 'Notice Period Extension',
-    description: 'Extends the notice period before redemption payment is due, giving the fund more time to liquidate.',
-    param: { key: 'notice_extension_days', label: 'Extension (days)', type: 'int', min: 0, max: 30, step: 1, defaultVal: 7 },
+    param: { key: 'notice_extension_days', type: 'int', min: 0, max: 30, step: 1, defaultVal: 7 },
   },
   {
     id: 'redemption_in_kind',
-    label: 'Redemptions in Kind',
-    description: 'Satisfies a portion of redemptions via asset transfer instead of cash. Professional investors only.',
-    param: { key: 'in_kind_pct', label: 'In-kind fraction (% of redemption)', type: 'pct', min: 0, max: 100, step: 5, defaultVal: 25 },
+    param: { key: 'in_kind_pct', type: 'pct', min: 0, max: 100, step: 5, defaultVal: 25 },
   },
 ]
 
 export const ANTIDILUTION_TOOLS = [
   {
     id: 'redemption_fee',
-    label: 'Redemption Fee',
-    description: 'A fee charged to redeeming investors, retained in the fund to offset liquidation costs.',
-    param: { key: 'fee_rate', label: 'Fee rate (bps)', type: 'bps', min: 0, max: 200, step: 5, defaultVal: 50 },
+    param: { key: 'fee_rate', type: 'bps', min: 0, max: 200, step: 5, defaultVal: 50 },
   },
   {
     id: 'swing_pricing',
-    label: 'Swing Pricing',
-    description: 'Adjusts NAV to reflect transaction costs when net flows exceed a threshold.',
-    param: { key: 'swing_threshold', label: 'Swing threshold (% NAV)', type: 'pct', min: 1, max: 20, step: 1, defaultVal: 5 },
+    param: { key: 'swing_threshold', type: 'pct', min: 1, max: 20, step: 1, defaultVal: 5 },
   },
   {
     id: 'dual_pricing',
-    label: 'Dual Pricing',
-    description: 'Publishes separate bid/offer prices; subscriptions/redemptions transact at the corresponding price.',
-    param: { key: 'dual_spread_frac', label: 'Bid/ask spread (bps)', type: 'bps', min: 0, max: 150, step: 5, defaultVal: 30 },
+    param: { key: 'dual_spread_frac', type: 'bps', min: 0, max: 150, step: 5, defaultVal: 30 },
   },
   {
     id: 'adl',
-    label: 'Anti-Dilution Levy (ADL)',
-    description: 'An explicit charge to redeeming investors equal to the estimated cost of liquidating assets.',
-    param: { key: 'adl_rate', label: 'ADL rate (bps)', type: 'bps', min: 0, max: 200, step: 5, defaultVal: 50 },
+    param: { key: 'adl_rate', type: 'bps', min: 0, max: 200, step: 5, defaultVal: 50 },
   },
 ]
 
@@ -114,17 +97,22 @@ function deltaColor(delta) {
 // ---------------------------------------------------------------------------
 
 export function InfoCard({ tool }) {
+  const { t } = useTranslation()
+  const toolData = t(`lmt.tools.${tool.id}`, { returnObjects: true })
   return (
     <div className="rounded border p-3" style={{ background: 'var(--bg-surface)', borderColor: 'var(--border)' }}>
-      <div className="font-semibold text-xs" style={{ color: 'var(--text-primary)' }}>{tool.label}</div>
-      <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{tool.description}</div>
-      <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-accent)' }}>Always available — no selection required</div>
+      <div className="font-semibold text-xs" style={{ color: 'var(--text-primary)' }}>{toolData.label}</div>
+      <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{toolData.description}</div>
+      <div className="mt-1 text-xs font-medium" style={{ color: 'var(--text-accent)' }}>{t('lmt.alwaysAvailableNote')}</div>
     </div>
   )
 }
 
 export function ToolCard({ tool, enabled, paramValues, onToggle, onParam }) {
+  const { t } = useTranslation()
   const isOn = !!enabled[tool.id]
+  const toolData = t(`lmt.tools.${tool.id}`, { returnObjects: true })
+  const paramLabel = toolData.paramLabel ?? ''
   return (
     <div className="rounded border p-3" style={{
       background: 'var(--bg-surface)',
@@ -132,8 +120,8 @@ export function ToolCard({ tool, enabled, paramValues, onToggle, onParam }) {
     }}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
-          <div className="font-semibold text-xs" style={{ color: 'var(--text-primary)' }}>{tool.label}</div>
-          {isOn && <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{tool.description}</div>}
+          <div className="font-semibold text-xs" style={{ color: 'var(--text-primary)' }}>{toolData.label}</div>
+          {isOn && <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{toolData.description}</div>}
         </div>
         <button
           onClick={() => onToggle(tool.id)}
@@ -149,7 +137,7 @@ export function ToolCard({ tool, enabled, paramValues, onToggle, onParam }) {
       {isOn && tool.param && (
         <div className="mt-2 flex items-center gap-2">
           <label className="text-xs" style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-            {tool.param.label}
+            {paramLabel}
           </label>
           <input
             type="range"
@@ -170,6 +158,7 @@ export function ToolCard({ tool, enabled, paramValues, onToggle, onParam }) {
 }
 
 export function ComplianceStrip({ enabled, onRun, loading }) {
+  const { t } = useTranslation()
   const selectableIds = [...QUANTITATIVE_TOOLS, ...ANTIDILUTION_TOOLS].map(t => t.id)
   const selectedCount = selectableIds.filter(id => enabled[id]).length
   const swingOnly = enabled['swing_pricing'] && enabled['dual_pricing'] &&
@@ -181,15 +170,15 @@ export function ComplianceStrip({ enabled, onRun, loading }) {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
-            AIFMD II Compliance:
+            {t('lmt.compliance')}
           </span>
           <span className="text-xs font-semibold" style={{ color: tooFew ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>
-            {selectedCount} selectable tool{selectedCount !== 1 ? 's' : ''} selected
-            {tooFew ? ' (min 2 required)' : ' ✓'}
+            {t('lmt.toolsSelected', { count: selectedCount })}
+            {tooFew ? ` ${t('lmt.minRequired')}` : ' ✓'}
           </span>
           {swingOnly && (
             <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>
-              ⚠ Swing Pricing + Dual Pricing alone is prohibited under AIFMD II
+              {t('lmt.swingDualProhibited')}
             </span>
           )}
         </div>
@@ -199,7 +188,7 @@ export function ComplianceStrip({ enabled, onRun, loading }) {
           className="rounded px-4 py-1.5 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50"
           style={{ background: 'var(--text-accent)', color: '#fff' }}
         >
-          {loading ? 'Running…' : 'Apply to Redemption Tables'}
+          {loading ? t('lmt.running') : t('lmt.applyToTables')}
         </button>
       </div>
     </div>
@@ -207,6 +196,7 @@ export function ComplianceStrip({ enabled, onRun, loading }) {
 }
 
 export function CoverageTable({ normal, stress, baseNormal, baseStress, hasConfigured }) {
+  const { t } = useTranslation()
   if (!baseNormal?.length) return null
 
   const rows = baseNormal.map((bn, i) => {
@@ -219,19 +209,19 @@ export function CoverageTable({ normal, stress, baseNormal, baseStress, hasConfi
   return (
     <div className="rounded border overflow-auto" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
       <div className="px-3 pt-2 pb-1 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-secondary)' }}>
-        Coverage Impact by Scenario
+        {t('lmt.coverageImpact')}
       </div>
       <table className="w-full text-xs">
         <thead style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
           <tr>
-            <th className="px-3 py-2 text-left">Scenario</th>
-            <th className="px-3 py-2 text-right">Shortfall (Base)</th>
-            <th className="px-3 py-2 text-right">Shortfall (Config)</th>
-            <th className="px-3 py-2 text-right">Δ</th>
-            <th className="px-3 py-2 text-right">Days (Base)</th>
-            <th className="px-3 py-2 text-right">Days (Config)</th>
-            <th className="px-3 py-2 text-right">Stress Shortfall</th>
-            <th className="px-3 py-2 text-left">Tools Active</th>
+            <th className="px-3 py-2 text-left">{t('lmt.columns.scenario')}</th>
+            <th className="px-3 py-2 text-right">{t('lmt.columns.shortfallBase')}</th>
+            <th className="px-3 py-2 text-right">{t('lmt.columns.shortfallConfig')}</th>
+            <th className="px-3 py-2 text-right">{t('lmt.columns.delta')}</th>
+            <th className="px-3 py-2 text-right">{t('lmt.columns.daysBase')}</th>
+            <th className="px-3 py-2 text-right">{t('lmt.columns.daysConfig')}</th>
+            <th className="px-3 py-2 text-right">{t('lmt.columns.stressShortfall')}</th>
+            <th className="px-3 py-2 text-left">{t('lmt.columns.toolsActive')}</th>
           </tr>
         </thead>
         <tbody>
@@ -268,12 +258,13 @@ export function CoverageTable({ normal, stress, baseNormal, baseStress, hasConfi
 }
 
 export function InvestorCostSummary({ results }) {
+  const { t } = useTranslation()
   if (!results?.length) return null
 
   return (
     <div className="rounded border p-3" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
       <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-secondary)' }}>
-        Investor Cost Summary (per scenario)
+        {t('lmt.investorCost')}
       </div>
       <div className="flex flex-wrap gap-3">
         {results.map((r, i) => {
@@ -293,17 +284,8 @@ export function InvestorCostSummary({ results }) {
   )
 }
 
-const TOOL_LABELS = {
-  gate: 'Gate',
-  notice_period_extension: 'Notice Period Extension',
-  redemption_in_kind: 'Redemptions in Kind',
-  redemption_fee: 'Redemption Fee',
-  swing_pricing: 'Swing Pricing',
-  dual_pricing: 'Dual Pricing',
-  adl: 'Anti-Dilution Levy',
-}
-
 export function RecommendationCard({ normal, base }) {
+  const { t } = useTranslation()
   if (!normal?.length) return null
 
   const allCovered = normal.every(r => (r.shortfall_eur || 0) <= 0)
@@ -314,42 +296,46 @@ export function RecommendationCard({ normal, base }) {
   const activeTools = new Set(
     activeToolsRaw.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
   )
-  const suggestTools = Object.keys(TOOL_LABELS).filter(t => !activeTools.has(t))
+  const allToolIds = [...QUANTITATIVE_TOOLS, ...ANTIDILUTION_TOOLS].map(tool => tool.id)
+  const suggestToolIds = allToolIds.filter(id => !activeTools.has(id))
+  const suggestLabels = suggestToolIds.slice(0, 3).map(id => {
+    const td = t(`lmt.tools.${id}`, { returnObjects: true })
+    return td.label || id
+  })
 
   return (
     <div className="rounded border p-3" style={{ background: 'var(--bg-panel)', borderColor: allCovered ? 'var(--kpi-green-border, var(--border))' : 'var(--kpi-red-border, var(--border))' }}>
-      <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--text-secondary)' }}>Recommendation</div>
+      <div className="text-xs font-semibold uppercase tracking-wide mb-1" style={{ color: 'var(--text-secondary)' }}>{t('lmt.recommendation')}</div>
       {allCovered ? (
         <div className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>
-          ✓ Selected tools provide full liquidity coverage across all scenarios. AIFMD II minimum tool count met.
+          {t('lmt.allCovered')}
         </div>
       ) : (
         <div>
           <div className="text-xs font-semibold mb-1" style={{ color: 'var(--kpi-red-text)' }}>
-            ⚠ Shortfall persists in {uncovered.length} scenario{uncovered.length > 1 ? 's' : ''}:
+            {t('lmt.shortfallPersists', { count: uncovered.length })}
             {' '}{uncovered.map(r => pct(r.scenario_pct)).join(', ')}
           </div>
-          {improved.length > 0 && suggestTools.length > 0 && (
+          {improved.length > 0 && suggestToolIds.length > 0 && (
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              {improved.length} scenario{improved.length > 1 ? 's' : ''} improved vs. baseline.
-              Consider adding {suggestTools.slice(0, 3).map(t => TOOL_LABELS[t]).join(', ')} to close the remaining gap.
+              {t('lmt.improved', { count: improved.length })}
+              {' '}{t('lmt.considerAdding', { tools: suggestLabels.join(', ') })}
             </div>
           )}
-          {improved.length > 0 && suggestTools.length === 0 && (
+          {improved.length > 0 && suggestToolIds.length === 0 && (
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              {improved.length} scenario{improved.length > 1 ? 's' : ''} improved vs. baseline.
-              All available tools are already active — consider increasing thresholds or parameters.
+              {t('lmt.improved', { count: improved.length })}
+              {' '}{t('lmt.allToolsActive')}
             </div>
           )}
-          {improved.length === 0 && suggestTools.length > 0 && (
+          {improved.length === 0 && suggestToolIds.length > 0 && (
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              Current configuration does not improve on baseline. Consider enabling{' '}
-              {suggestTools.slice(0, 3).map(t => TOOL_LABELS[t]).join(', ')} to reduce cash demand.
+              {t('lmt.noImprovement', { tools: suggestLabels.join(', ') })}
             </div>
           )}
-          {improved.length === 0 && suggestTools.length === 0 && (
+          {improved.length === 0 && suggestToolIds.length === 0 && (
             <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-              All available tools are active but shortfall remains. Consider increasing gate thresholds or in-kind percentage.
+              {t('lmt.allToolsShortfall')}
             </div>
           )}
         </div>

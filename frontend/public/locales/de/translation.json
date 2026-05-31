@@ -154,7 +154,9 @@
       "advScalar": "ADV-Skalar",
       "redemptionRate": "Rücknahmerate",
       "description": "Beschreibung",
-      "regulatoryBasis": "Regulierungsgrundlage"
+      "regulatoryBasis": "Regulierungsgrundlage",
+      "name": "Name",
+      "worstCase": "Schlechtester Fall"
     },
     "yes": "Ja",
     "no": "Nein"
@@ -163,7 +165,36 @@
     "title": "Rücknahmendeckung",
     "normalRegime": "Normalbetrieb",
     "stressedRegime": "Stressbetrieb",
+    "configureLmts": "LMT konfigurieren",
+    "lmtActive": "LMT aktiv",
+    "clear": "Zurücksetzen",
+    "lmtSimActive": "LMT-Simulation aktiv — Vorher/Nachher-Vergleich.",
+    "withoutLmt": "Ohne LMT",
+    "withLmt": "Mit LMT",
+    "kpi": {
+      "scenariosCovered": "Abgedeckte Szenarien",
+      "allClear": "Alles gedeckt",
+      "atRisk": "{{count}} gefährdet",
+      "minCoverage": "Mindestdeckung",
+      "worstScenario": "Schlimmstes Szenario",
+      "maxShortfall": "Max. Defizit",
+      "cashDeficit": "Liquiditätsdefizit",
+      "none": "keines",
+      "daysToClear": "Tage bis zur Abwicklung",
+      "worstCase": "schlimmster Fall"
+    },
     "columns": {
+      "scenario": "Szenario",
+      "demand": "Nachfrage (€)",
+      "horizons": "Horizonte",
+      "coverage": "Deckung",
+      "shortfall": "Defizit",
+      "days": "Tage",
+      "deltaShortfall": "Δ Defizit",
+      "gate": "Gate",
+      "suspend": "Suspension",
+      "costBps": "Kosten (Bps)",
+      "activeTools": "Aktive Instrumente",
       "redemptionPct": "Rücknahme %",
       "redemptionEur": "Rücknahmen (€)",
       "liquidAvail": "Verfügbare Liquidität (€)",
@@ -172,11 +203,13 @@
       "gateTriggered": "Gate ausgelöst",
       "suspensionTriggered": "Suspension ausgelöst",
       "swingPricing": "Swing Pricing",
-      "swingFactor": "Swing-Faktor"
+      "swingFactor": "Swing-Faktor",
+      "daysToClear": "Tage bis zur Abwicklung"
     },
     "yes": "Ja",
     "no": "Nein",
-    "triggered": "Ausgelöst"
+    "triggered": "Ausgelöst",
+    "stressed": "Gestresst"
   },
   "waterfall": {
     "title": "Erzwungene Verkaufskaskade",
@@ -195,8 +228,12 @@
     "columns": {
       "isin": "ISIN",
       "name": "Name",
+      "assetClass": "Anlageklasse",
       "bucket": "Eimer",
       "day": "Tag",
+      "grossValue": "Bruttowert (€)",
+      "marketImpact": "Marktauswirkung (€)",
+      "netProceeds": "Nettoerlös (€)",
       "sellAmount": "Verkaufsbetrag (€)",
       "proceeds": "Erlös (€)",
       "partial": "Teilweise",
@@ -291,15 +328,158 @@
     "lmtNonCompliant": "nicht konform",
     "footer": "Hebelwirkung berechnet gemäß AIFMD II (Richtlinie (EU) 2024/927), Artikel 15 und der Delegierten Verordnung der Kommission (EU) 231/2013, Artikel 7 (Bruttomethode) und Artikel 8 (Commitment-Methode)."
   },
+  "lmt": {
+    "panelTitle": "AIFMD II — Liquiditätsmanagement-Instrumente",
+    "alwaysAvailable": "Immer verfügbar",
+    "quantitativeTools": "Quantitative Instrumente",
+    "antiDilutionTools": "Anti-Verwässerungs-Instrumente",
+    "alwaysAvailableNote": "Immer verfügbar — keine Auswahl erforderlich",
+    "compliance": "AIFMD-II-Konformität:",
+    "toolsSelected_one": "{{count}} auswählbares Instrument ausgewählt",
+    "toolsSelected_other": "{{count}} auswählbare Instrumente ausgewählt",
+    "minRequired": "(mind. 2 erforderlich)",
+    "swingDualProhibited": "⚠ Swing Pricing + Dual Pricing allein ist unter AIFMD II verboten",
+    "running": "Läuft…",
+    "applyToTables": "Auf Rücknahmetabellen anwenden",
+    "coverageImpact": "Deckungsauswirkung je Szenario",
+    "investorCost": "Investorenkostenzusammenfassung (je Szenario)",
+    "recommendation": "Empfehlung",
+    "allCovered": "✓ Ausgewählte Instrumente gewährleisten vollständige Liquiditätsdeckung über alle Szenarien. AIFMD-II-Mindestinstrumentenanzahl erreicht.",
+    "shortfallPersists_one": "⚠ Defizit bleibt in {{count}} Szenario bestehen:",
+    "shortfallPersists_other": "⚠ Defizit bleibt in {{count}} Szenarien bestehen:",
+    "improved_one": "{{count}} Szenario gegenüber Basis verbessert.",
+    "improved_other": "{{count}} Szenarien gegenüber Basis verbessert.",
+    "considerAdding": "Erwägen Sie, {{tools}} hinzuzufügen, um die verbleibende Lücke zu schließen.",
+    "allToolsActive": "Alle verfügbaren Instrumente sind bereits aktiv — erwägen Sie, Schwellenwerte oder Parameter zu erhöhen.",
+    "noImprovement": "Die aktuelle Konfiguration verbessert die Basis nicht. Erwägen Sie, {{tools}} zu aktivieren, um den Bargeldbedarf zu reduzieren.",
+    "allToolsShortfall": "Alle verfügbaren Instrumente sind aktiv, aber das Defizit bleibt bestehen. Erwägen Sie, Gate-Schwellen oder den In-Natura-Anteil zu erhöhen.",
+    "columns": {
+      "scenario": "Szenario",
+      "shortfallBase": "Defizit (Basis)",
+      "shortfallConfig": "Defizit (Konfig.)",
+      "delta": "Δ",
+      "daysBase": "Tage (Basis)",
+      "daysConfig": "Tage (Konfig.)",
+      "stressShortfall": "Stress-Defizit",
+      "toolsActive": "Aktive Instrumente"
+    },
+    "tools": {
+      "suspension": {
+        "label": "Vorübergehende Aussetzung",
+        "description": "Unterbricht Rücknahmen vollständig bei schweren Marktdisruptionen. Immer verfügbar; erfordert aufsichtsrechtliche Benachrichtigung."
+      },
+      "side_pockets": {
+        "label": "Side Pockets",
+        "description": "Trennt illiquide Vermögenswerte vom liquiden Portfolio und schützt verbleibende Anleger vor Verwässerung."
+      },
+      "gate": {
+        "label": "Rücknahme-Gate",
+        "description": "Begrenzt Rücknahmen auf einen maximalen Prozentsatz des NAV pro Handelstag.",
+        "paramLabel": "Gate-Schwelle (% NAV)"
+      },
+      "notice_period_extension": {
+        "label": "Kündigungsfristverlängerung",
+        "description": "Verlängert die Kündigungsfrist vor Rücknahmezahlung und gibt dem Fonds mehr Zeit zur Liquidation.",
+        "paramLabel": "Verlängerung (Tage)"
+      },
+      "redemption_in_kind": {
+        "label": "Sachleistungsrücknahmen",
+        "description": "Erfüllt einen Teil der Rücknahmen durch Vermögensübertragung statt Bargeld. Nur für professionelle Anleger.",
+        "paramLabel": "Sachleistungsanteil (% der Rücknahme)"
+      },
+      "redemption_fee": {
+        "label": "Rücknahmegebühr",
+        "description": "Eine Gebühr, die rücknehmenden Anlegern berechnet und im Fonds einbehalten wird, um Liquidationskosten auszugleichen.",
+        "paramLabel": "Gebührensatz (Bps)"
+      },
+      "swing_pricing": {
+        "label": "Swing Pricing",
+        "description": "Passt den NAV an, um Transaktionskosten widerzuspiegeln, wenn Nettoflüsse einen Schwellenwert überschreiten.",
+        "paramLabel": "Swing-Schwelle (% NAV)"
+      },
+      "dual_pricing": {
+        "label": "Dual Pricing",
+        "description": "Veröffentlicht separate Geld-/Briefkurse; Zeichnungen/Rücknahmen werden zum entsprechenden Kurs abgewickelt.",
+        "paramLabel": "Geld-/Brief-Spread (Bps)"
+      },
+      "adl": {
+        "label": "Anti-Verwässerungs-Abgabe (AVA)",
+        "description": "Eine explizite Belastung rücknehmender Anleger in Höhe der geschätzten Kosten für die Liquidation von Vermögenswerten.",
+        "paramLabel": "AVA-Satz (Bps)"
+      }
+    }
+  },
   "riskStory": {
     "title": "Liquiditätsrisiko-Zusammenfassung",
     "copyText": "Text kopieren",
     "downloadJson": "JSON herunterladen",
     "copyError": "In die Zwischenablage kopieren nicht möglich — versuchen Sie, den Text manuell auszuwählen.",
     "downloadError": "Download fehlgeschlagen — Browserberechtigungen prüfen.",
-    "statusBreach": "⚠️ VERLETZUNG: {{message}}",
-    "statusWarning": "⚠️ WARNUNG: {{message}}",
-    "statusOk": "✅ Das Liquiditätsprofil des Fonds liegt innerhalb der Normalparameter."
+    "statusBreach": "⚠️  VERLETZUNG: Die liquiden Vermögenswerte des Fonds liegen unterhalb der regulatorischen Verletzungsschwelle.",
+    "statusWarning": "⚠️  WARNUNG: Das Liquiditätsprofil des Fonds nähert sich der Warnschwelle.",
+    "statusOk": "✅  Das Liquiditätsprofil des Fonds liegt innerhalb der Normalparameter.",
+    "header": "LIQUIDITÄTSRISIKO-NARRATIV — {{fundName}}",
+    "reportingDate": "Berichtsdatum: {{date}}",
+    "totalNav": "Gesamt-NAV: {{nav}}",
+    "section1": "1. LIQUIDITÄTSPROFIL",
+    "section2": "2. STRESSTESTS",
+    "section3": "3. RÜCKNAHMENDECKUNG",
+    "section4": "4. KASKADE — WORST-CASE-LIQUIDATION",
+    "section5": "5. AIFMD-II-HEBELWIRKUNG",
+    "lcrT1": "Liquiditätsdeckungsquote T+1 : {{value}}",
+    "lcrT3": "Liquiditätsdeckungsquote T+3 : {{value}}",
+    "lcrT7": "Liquiditätsdeckungsquote T+7 : {{value}}",
+    "illiquid": "Illiquide Vermögenswerte (>T+7): {{value}}",
+    "days50": "Tage zur Liquidation von 50 % NAV: {{value}}",
+    "days75": "Tage zur Liquidation von 75 % NAV: {{value}}",
+    "days90": "Tage zur Liquidation von 90 % NAV: {{value}}",
+    "top10": "Top-10-Anlegerkonzentration    : {{value}}",
+    "liqVsConc": "Liquidität / Konzentration     : {{value}}x",
+    "stressScenarios": "{{count}} ESMA-Szenarien wurden ausgeführt.",
+    "worstCase": "Schlimmstes Szenario: „{{name}}"",
+    "navImpact": "  NAV-Auswirkung  : {{pct}} ({{eur}})",
+    "equityLoss": "  Aktienverlust   : {{value}}",
+    "creditLoss": "  Kreditverlust   : {{value}}",
+    "liqAfterShock": "  Liquidität nach Schock: {{after}} (von {{before}})",
+    "daysToLiq": "  Liquidationstage: {{value}}",
+    "canMeetRedemption": "  Rücknahme erfüllbar: {{value}}",
+    "canMeetYes": "Ja",
+    "canMeetNo": "Nein",
+    "noStress": "Keine Stressergebnisse verfügbar.",
+    "redemptionLine": "  Rücknahme {{pct}}: Liquidität {{liq}}, Defizit {{shortfall}}, T+1: {{t1}}, Gate: {{gate}}",
+    "shortfallNone": "Keines",
+    "t1Met": "Erfüllt",
+    "t1NotMet": "Nicht erfüllt",
+    "gateTriggered": "Ausgelöst",
+    "gateNo": "Nein",
+    "noRedemption": "Keine Rücknahmeergebnisse.",
+    "wfTarget": "Ziel                    : {{value}}",
+    "wfProceeds": "Gesamterlös             : {{value}}",
+    "wfTargetMet": "Ziel erreicht           : {{value}}",
+    "wfTargetMetYes": "Ja",
+    "wfTargetMetNo": "Nein",
+    "wfDays": "Tage bis zum Ziel       : {{value}}",
+    "wfShortfall": "Verbleibendes Defizit   : {{value}}",
+    "wfNavImpact": "NAV-Auswirkung (Abbau)  : {{value}}",
+    "aifmdBasis": "Regulierungsgrundlage   : {{value}}",
+    "aifmdGross": "Brutto-Hebel            : {{value}} (Grenze {{cap}})",
+    "aifmdCommit": "Engagement-Hebel        : {{value}}",
+    "aifmdBreach": "Hebelverletzung         : {{value}}",
+    "aifmdBreachYes": "JA ⚠",
+    "aifmdBreachNo": "Nein",
+    "aifmdLoan": "Kreditvergabe-AIF       : {{value}}",
+    "aifmdLoanYes": "JA — {{pct}} % NAV in originierenden Krediten",
+    "aifmdLoanNo": "Nein",
+    "aifmdRetention": "Risikoretention OK      : {{value}}",
+    "aifmdRetentionOk": "Ja",
+    "aifmdRetentionBreach": "VERLETZUNG ⚠",
+    "aifmdBorrower": "Schuldnerverletzungen   : {{value}}",
+    "aifmdLmts": "LMT vorausgewählt       : {{tools}} ({{count}} Instrumente — {{status}})",
+    "aifmdLmtCompliant": "konform",
+    "aifmdLmtNonCompliant": "nicht konform",
+    "aifmdWarnings": "Warnungen               : {{value}}",
+    "aifmdNoData": "AIFMD-II-Hebeldaten nicht verfügbar.",
+    "footer": "Erstellt vom Liquiditätsrisiko-Tool v1.1"
   },
   "validation": {
     "title": "Validierungsbericht",
@@ -307,7 +487,16 @@
     "passed_one": "{{count}} bestanden",
     "passed_other": "{{count}} bestanden",
     "failed_one": "{{count}} fehlgeschlagen",
-    "failed_other": "{{count}} fehlgeschlagen"
+    "failed_other": "{{count}} fehlgeschlagen",
+    "allPassed": "Alle {{total}} Prüfungen bestanden",
+    "allPassedShort": "Alle Prüfungen bestanden",
+    "someFailedShort": "{{count}} Prüfung fehlgeschlagen",
+    "someFailedShort_plural": "{{count}} Prüfungen fehlgeschlagen",
+    "criticalHeader": "Kritische Fehler — {{count}} Prüfung",
+    "criticalHeader_plural": "Kritische Fehler — {{count}} Prüfungen",
+    "warningsHeader": "Warnungen — {{count}} Prüfung zu prüfen",
+    "warningsHeader_plural": "Warnungen — {{count}} Prüfungen zu prüfen",
+    "passingHeader": "Bestandene Prüfungen"
   },
   "infoModal": {
     "title": "Dateiformat-Referenz",
@@ -315,7 +504,8 @@
       "holdings": "Positionen CSV",
       "nav": "NAV CSV",
       "marketData": "Marktdaten CSV (optional)",
-      "assetDefaults": "Standardwerte der Anlageklassen"
+      "assetDefaults": "Standardwerte der Anlageklassen",
+      "annexIvMeta": "Anhang IV Metadaten"
     },
     "meta": {
       "required": "Erforderlich",
@@ -340,7 +530,13 @@
     },
     "footer": "Spaltennamen werden ohne Berücksichtigung der Groß-/Kleinschreibung abgeglichen. Alle anerkannten Synonyme werden akzeptiert.",
     "marketNote": "Alle Spalten außer isin sind optional. Fehlende Werte werden durch Anlageklassen-Standardwerte ersetzt.",
-    "noMarketDataNote": "Wenn keine Marktdaten-CSV bereitgestellt wird, werden diese Standardwerte verwendet. Stellen Sie eine Marktdaten-CSV bereit, um positionsspezifische Werte zu überschreiben."
+    "noMarketDataNote": "Wenn keine Marktdaten-CSV bereitgestellt wird, werden diese Standardwerte verwendet. Stellen Sie eine Marktdaten-CSV bereit, um positionsspezifische Werte zu überschreiben.",
+    "annexIvMeta": {
+      "note": "Dieses JSON als Formularfeld annex_iv_meta_json beim Upload mitgeben. Die drei Pflichtfelder (aifm_lei, aif_lei, reporting_member_state) und mindestens eine Anteilsklasse müssen vorhanden sein, um den Anhang-IV-XML/Excel-Export freizuschalten.",
+      "topLevelFields": "Felder der obersten Ebene",
+      "shareClassFields": "share_classes-Array — je Objekt",
+      "exampleLabel": "Beispiel-Payload"
+    }
   },
   "annexIv": {
     "title": "Anhang IV — AIFMD II Regulierungsbericht",
