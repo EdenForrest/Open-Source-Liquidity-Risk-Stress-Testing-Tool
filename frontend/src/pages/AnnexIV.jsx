@@ -8,16 +8,6 @@ const PERIODS = [
   '2026H1', '2026H2', '2026',
 ]
 
-const ESMA_HORIZON_LABELS = {
-  DAY_1:        '1 day',
-  DAY_2_7:      '2–7 days',
-  DAY_8_30:     '8–30 days',
-  DAY_31_90:    '31–90 days',
-  DAY_91_180:   '91–180 days',
-  DAY_181_365:  '181–365 days',
-  DAY_MORE_365: '> 365 days',
-}
-
 function SectionHeader({ children }) {
   return (
     <tr>
@@ -255,7 +245,7 @@ export default function AnnexIV() {
               <tbody>
                 {data.asset_liquidity_profile && Object.entries(data.asset_liquidity_profile).map(([hz, pct]) => (
                   <tr key={hz}>
-                    <td className="px-3 py-1 text-xs" style={{ color: 'var(--text-secondary)' }}>{ESMA_HORIZON_LABELS[hz] ?? hz}</td>
+                    <td className="px-3 py-1 text-xs" style={{ color: 'var(--text-secondary)' }}>{t(`annexIv.horizonLabels.${hz}`) || hz}</td>
                     <td className="px-3 py-1 text-xs font-semibold text-right" style={{ color: 'var(--text-primary)' }}>
                       {pctFmt(pct)}
                     </td>
