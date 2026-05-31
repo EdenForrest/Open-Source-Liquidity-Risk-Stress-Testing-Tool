@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
 import StatusBanner from '../components/StatusBanner'
@@ -95,6 +96,7 @@ function CheckRow({ check, isCritical }) {
 }
 
 function CollapsibleSection({ label, checks, criticalFails, defaultOpen = false }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(defaultOpen)
   const failed = checks.filter(c => !c.passed)
   const passed = checks.filter(c => c.passed)
@@ -112,9 +114,9 @@ function CollapsibleSection({ label, checks, criticalFails, defaultOpen = false 
         <span className="text-sm font-semibold flex-1" style={{ color: 'var(--text-primary)' }}>{label}</span>
         <div className="flex items-center gap-2 text-xs font-semibold tabular-nums">
           {failed.length > 0 && (
-            <span style={{ color: 'var(--kpi-red-text)' }}>{failed.length} failed</span>
+            <span style={{ color: 'var(--kpi-red-text)' }}>{t('validation.failed', { count: failed.length })}</span>
           )}
-          <span style={{ color: 'var(--text-muted)' }}>{passed.length}/{checks.length} passed</span>
+          <span style={{ color: 'var(--text-muted)' }}>{t('validation.passed', { count: passed.length })}/{checks.length}</span>
         </div>
       </button>
 
@@ -132,6 +134,7 @@ function CollapsibleSection({ label, checks, criticalFails, defaultOpen = false 
 }
 
 export default function Validation() {
+  const { t } = useTranslation()
   const { data, error } = useAnalysis()
   const v = data?.validation
   if (error) return <StatusBanner />
@@ -169,9 +172,9 @@ export default function Validation() {
       {/* Header row */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Validation</h1>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('validation.title')}</h1>
           <p className="text-sm mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-            Business-logic integrity checks on the computed pipeline output
+            {t('validation.subtitle')}
           </p>
         </div>
         <div className="rounded border px-4 py-2.5 shrink-0 text-center" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
@@ -179,7 +182,7 @@ export default function Validation() {
             {v.passed}/{v.total}
           </div>
           <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-            {allOk ? 'All checks passed' : `${totalFailed} check${totalFailed > 1 ? 's' : ''} failed`}
+            {allOk ? t('validation.allPassedShort') : t('validation.someFailedShort', { count: totalFailed })}
           </div>
         </div>
       </div>
@@ -190,7 +193,7 @@ export default function Validation() {
           <div className="px-3 py-2 flex items-center gap-2" style={{ background: 'color-mix(in srgb, var(--kpi-red-text) 10%, var(--bg-surface))', borderBottom: '1px solid var(--border)' }}>
             <FailIcon size={14} />
             <span className="text-sm font-semibold" style={{ color: 'var(--kpi-red-text)' }}>
-              Critical failures — {criticalFails.length} check{criticalFails.length > 1 ? 's' : ''}
+              {t('validation.criticalHeader', { count: criticalFails.length })}
             </span>
           </div>
           <table className="w-full">
@@ -206,7 +209,7 @@ export default function Validation() {
       {/* Warning failures — collapsible, open by default */}
       {warningFails.length > 0 && (
         <CollapsibleSection
-          label={`Warnings — ${warningFails.length} check${warningFails.length > 1 ? 's' : ''} to review`}
+          label={t('validation.warningsHeader', { count: warningFails.length })}
           checks={warningFails}
           criticalFails={false}
           defaultOpen={true}
@@ -228,7 +231,7 @@ export default function Validation() {
       {allOk && (
         <div className="rounded border px-4 py-3 flex items-center gap-3" style={{ background: 'color-mix(in srgb, var(--kpi-green-text) 8%, var(--bg-panel))', borderColor: 'var(--kpi-green-text)' }}>
           <PassIcon size={18} />
-          <span className="text-sm font-semibold" style={{ color: 'var(--kpi-green-text)' }}>All {v.total} checks passed</span>
+          <span className="text-sm font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('validation.allPassed', { total: v.total })}</span>
         </div>
       )}
     </div>
@@ -236,6 +239,7 @@ export default function Validation() {
 }
 
 function CollapsibleSummary({ allPassing, byCategory, total }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [expandedCats, setExpandedCats] = useState({})
 
@@ -258,9 +262,9 @@ function CollapsibleSummary({ allPassing, byCategory, total }) {
         onClick={() => setOpen(o => !o)}
       >
         <ChevronIcon open={open} />
-        <span className="text-sm font-semibold flex-1" style={{ color: 'var(--text-primary)' }}>Passing checks</span>
+        <span className="text-sm font-semibold flex-1" style={{ color: 'var(--text-primary)' }}>{t('validation.passingHeader')}</span>
         <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--kpi-green-text)' }}>
-          {allPassing.length}/{total} passed
+          {t('validation.passed', { count: allPassing.length })}/{total}
         </span>
       </button>
 
@@ -279,7 +283,7 @@ function CollapsibleSummary({ allPassing, byCategory, total }) {
                   <ChevronIcon open={catOpen} />
                   <span className="text-xs font-semibold flex-1" style={{ color: 'var(--text-secondary)' }}>{cat}</span>
                   <span className="text-xs tabular-nums" style={{ color: 'var(--kpi-green-text)' }}>
-                    {catChecks.length} passed
+                    {t('validation.passed', { count: catChecks.length })}
                   </span>
                 </button>
                 {catOpen && (

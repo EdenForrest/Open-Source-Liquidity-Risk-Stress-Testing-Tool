@@ -104,10 +104,10 @@ export default function AnnexIV() {
     const resp = await fetch(buildDownloadUrl(fmt))
     if (!resp.ok) {
       if (resp.status === 409) {
-        alert('Annex IV metadata not uploaded — provide AIFM/AIF identification and share-class data on the Upload page to enable regulatory export.')
+        alert(t('annexIv.metadataNotUploaded'))
         return
       }
-      alert(`Download failed: ${resp.status}`); return
+      alert(t('annexIv.downloadFailed', { status: resp.status })); return
     }
     const blob = await resp.blob()
     const url = URL.createObjectURL(blob)
@@ -181,19 +181,17 @@ export default function AnnexIV() {
       {exportBlocked && (
         <div className="rounded border px-3 py-2 text-xs"
           style={{ background: 'var(--kpi-amber-bg)', color: 'var(--kpi-amber-text)', borderColor: 'var(--border)' }}>
-          Regulatory export is disabled. Upload AIFM/AIF identification and share-class
-          data on the Upload page to enable XML/Excel Annex IV export. Preview below is
-          informational and gap-flagged.
+          {t('annexIv.exportDisabled')}
         </div>
       )}
 
       <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('annexIv.periodNote')}</p>
 
       {loading && (
-        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>Loading Annex IV data…</p>
+        <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{t('annexIv.loading')}</p>
       )}
       {error && (
-        <p className="text-xs" style={{ color: 'var(--kpi-red-text)' }}>Error: {error}</p>
+        <p className="text-xs" style={{ color: 'var(--kpi-red-text)' }}>{t('annexIv.error', { error })}</p>
       )}
 
       {data && (
@@ -235,7 +233,7 @@ export default function AnnexIV() {
                 <DataRow label={t('annexIv.aifmName')} value={data.aifm?.name || '—'} />
                 <DataRow label={t('annexIv.aifmLei')} value={data.aifm?.lei || '—'} highlight={!data.aifm?.lei ? 'amber' : undefined} />
                 <DataRow label={t('annexIv.reportingMemberState')} value={data.aifm?.reporting_member_state} />
-                <DataRow label="Period" value={`${data.period_type} (${data.period_start} – ${data.period_end})`} />
+                <DataRow label={t('annexIv.period')} value={`${data.period_type} (${data.period_start} – ${data.period_end})`} />
               </tbody>
             </table>
           </div>
@@ -302,14 +300,14 @@ export default function AnnexIV() {
                   <DataRow
                     key={tool}
                     label={tool.replace(/_/g, ' ')}
-                    value={data.special_arrangements[tool] ? 'Active' : 'Inactive'}
+                    value={data.special_arrangements[tool] ? t('annexIv.active') : t('annexIv.inactive')}
                     highlight={data.special_arrangements[tool] ? 'green' : undefined}
                   />
                 ))}
-                <DataRow label="LMT Count" value={data.special_arrangements?.lmt_count ?? '—'} />
+                <DataRow label={t('annexIv.lmtCount')} value={data.special_arrangements?.lmt_count ?? '—'} />
                 <DataRow
-                  label="AIFMD II Compliant (≥2 LMTs)"
-                  value={data.special_arrangements?.lmt_compliant ? 'Yes' : 'No'}
+                  label={t('annexIv.aifmdCompliant')}
+                  value={data.special_arrangements?.lmt_compliant ? t('common.yes') : t('common.no')}
                   highlight={data.special_arrangements?.lmt_compliant ? 'green' : 'red'}
                 />
               </tbody>
@@ -325,11 +323,11 @@ export default function AnnexIV() {
             </div>
             <table className="w-full text-xs">
               <tbody>
-                <DataRow label={t('annexIv.minNoticeDays')} value={data.investor_liquidity_profile?.min_notice_period_days != null ? `${data.investor_liquidity_profile.min_notice_period_days} days` : '—'} />
+                <DataRow label={t('annexIv.minNoticeDays')} value={data.investor_liquidity_profile?.min_notice_period_days != null ? `${data.investor_liquidity_profile.min_notice_period_days} ${t('annexIv.days')}` : '—'} />
                 <DataRow label={t('annexIv.redemptionFrequency')} value={data.investor_liquidity_profile?.redemption_frequency} />
                 <DataRow
-                  label="Data complete"
-                  value={data.investor_liquidity_profile?.data_complete ? 'Yes' : 'Using defaults'}
+                  label={t('annexIv.dataComplete')}
+                  value={data.investor_liquidity_profile?.data_complete ? t('common.yes') : t('annexIv.usingDefaults')}
                   highlight={data.investor_liquidity_profile?.data_complete ? 'green' : 'amber'}
                 />
               </tbody>
@@ -391,7 +389,7 @@ export default function AnnexIV() {
                   </tr>
                 ))}
                 {(data.principal_markets ?? []).length === 0 && (
-                  <tr><td colSpan={2} className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>No country data</td></tr>
+                  <tr><td colSpan={2} className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>{t('annexIv.noCountryData')}</td></tr>
                 )}
               </tbody>
             </table>
@@ -426,7 +424,7 @@ export default function AnnexIV() {
                     </tr>
                   ))}
                   {(data.principal_instruments ?? []).length === 0 && (
-                    <tr><td colSpan={5} className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>No instruments</td></tr>
+                    <tr><td colSpan={5} className="px-3 py-2 text-xs" style={{ color: 'var(--text-muted)' }}>{t('annexIv.noInstruments')}</td></tr>
                   )}
                 </tbody>
               </table>

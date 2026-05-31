@@ -61,7 +61,11 @@
       "lcrT7": "LCR T+7",
       "illiquid": "Illiquide",
       "totalNav": "Gesamt-NAV",
-      "geoStatus": "Geo-Status"
+      "geoStatus": "Geo-Status",
+      "days50Pct": "Tage bis 50 % NAV",
+      "days75Pct": "Tage bis 75 % NAV",
+      "days90Pct": "Tage bis 90 % NAV",
+      "top10Concentration": "Top-10-Konzentration"
     },
     "downloadReport": "Bericht herunterladen",
     "ladderTitle": "Liquiditätsleiter — Normal vs. Gestresst (% NAV)",
@@ -84,7 +88,23 @@
       "incomplete": "UNVOLLSTÄNDIG",
       "ok": "OK",
       "warningText": "Eine oder mehrere AIFMD-II-Kennzahlen sind verletzt oder das Compliance-Bild ist unvollständig. Details siehe Seite Hebelwirkung.",
-      "lmtLabel": "LMT vorausgewählt"
+      "lmtLabel": "LMT vorausgewählt",
+      "grossLeverageTooltip": "Brutto-Hebel (Art. 7 DelVO 231/2013)",
+      "commitmentLeverageTooltip": "Engagement-Hebel",
+      "aifmdIiDataNotAvailable": "AIFMD-II-Hebeldaten sind für dieses Portfolio nicht verfügbar. Laden Sie eine Datei mit Hebelpositionen oder Derivatexpositionen hoch, um diesen Bereich zu aktivieren."
+    },
+    "ucits": {
+      "title": "UCITS 5/10/40 Emittenten-Konzentration (ESMA Art. 52)",
+      "breachHighIssuer": "VERSTOESS — Emittent >5 % NAV",
+      "breachBucket": "VERSTOESS — 5–10%-Eimer >40%",
+      "compliant": "UCITS-kompatibel",
+      "isin": "ISIN",
+      "name": "Name",
+      "weight": "Gewichtung",
+      "status": "5/10/40-Status",
+      "breachHigh": "VERSTOESS (>10%)",
+      "inBucket": "Im 5–10%-Eimer",
+      "ok": "OK"
     },
     "geo": {
       "title": "Geografische Konzentration (AIFMD Anhang IV)",
@@ -323,7 +343,7 @@
       "none": "Keine"
     },
     "lmtText": "{{n}} Instrument vorausgewählt — {{status}} (AIFMD II Art. 16 erfordert ≥ 2).",
-    "lmtText_plural": "{{n}} Instrumente vorausgewählt — {{status}} (AIFMD II Art. 16 erfordert ≥ 2).",
+    "lmtTextPlural": "{{n}} Instrumente vorausgewählt — {{status}} (AIFMD II Art. 16 erfordert ≥ 2).",
     "lmtCompliant": "konform",
     "lmtNonCompliant": "nicht konform",
     "footer": "Hebelwirkung berechnet gemäß AIFMD II (Richtlinie (EU) 2024/927), Artikel 15 und der Delegierten Verordnung der Kommission (EU) 231/2013, Artikel 7 (Bruttomethode) und Artikel 8 (Commitment-Methode)."
@@ -580,7 +600,31 @@
     "bucket": "Bucket",
     "geoConcentration": "Geografische Konzentration",
     "euPct": "EU-Exposition",
-    "nonEuPct": "Nicht-EU-Exposition"
+    "nonEuPct": "Nicht-EU-Exposition",
+    "metadataNotUploaded": "Anhang IV Metadaten nicht hochgeladen — AIFM/AIF-Identifikation und Anteilsklassendaten auf der Upload-Seite bereitstellen, um Regulierungsexport zu aktivieren.",
+    "downloadFailed": "Download fehlgeschlagen: {{status}}",
+    "exportDisabled": "Regulierungsexport ist deaktiviert. Laden Sie AIFM/AIF-Identifikation und Anteilsklassendaten auf der Upload-Seite hoch, um XML/Excel-Anhang-IV-Export zu aktivieren. Vorschau unten ist informativ und lückenmarkiert.",
+    "loading": "Anhang-IV-Daten werden geladen…",
+    "error": "Fehler: {{error}}",
+    "period": "Zeitraum",
+    "lmtCount": "LMT-Anzahl",
+    "aifmdCompliant": "AIFMD II-konform (≥2 LMT)",
+    "dataComplete": "Daten vollständig",
+    "usingDefaults": "Standardwerte verwenden",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "days": "Tage",
+    "noCountryData": "Keine Länderdaten",
+    "noInstruments": "Keine Instrumente",
+    "horizonLabels": {
+      "DAY_1": "1 Tag",
+      "DAY_2_7": "2–7 Tage",
+      "DAY_8_30": "8–30 Tage",
+      "DAY_31_90": "31–90 Tage",
+      "DAY_91_180": "91–180 Tage",
+      "DAY_181_365": "181–365 Tage",
+      "DAY_MORE_365": "> 365 Tage"
+    }
   },
   "common": {
     "breach": "VERLETZUNG",

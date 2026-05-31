@@ -61,7 +61,11 @@
       "lcrT7": "RLC T+7",
       "illiquid": "Illiquide",
       "totalNav": "VNI totale",
-      "geoStatus": "Statut géo."
+      "geoStatus": "Statut géo.",
+      "days50Pct": "Jours vers 50 % VNI",
+      "days75Pct": "Jours vers 75 % VNI",
+      "days90Pct": "Jours vers 90 % VNI",
+      "top10Concentration": "Concentration Top-10"
     },
     "downloadReport": "Télécharger le rapport",
     "ladderTitle": "Échelle de liquidité — Normal vs Stressé (% VNI)",
@@ -84,7 +88,23 @@
       "incomplete": "INCOMPLET",
       "ok": "OK",
       "warningText": "Un ou plusieurs indicateurs AIFMD II sont en dépassement ou le bilan de conformité est incomplet. Consultez la page Effet de levier pour plus de détails.",
-      "lmtLabel": "OGL présélectionnés"
+      "lmtLabel": "OGL présélectionnés",
+      "grossLeverageTooltip": "Levier brut (Art. 7 RD 231/2013)",
+      "commitmentLeverageTooltip": "Levier d'engagement",
+      "aifmdIiDataNotAvailable": "Les données de levier AIFMD II ne sont pas disponibles pour ce portefeuille. Chargez un fichier de positions avec des positions avec effet de levier ou des expositions à dérivés pour activer cette section."
+    },
+    "ucits": {
+      "title": "Concentration d'émetteur UCITS 5/10/40 (ESMA Art. 52)",
+      "breachHighIssuer": "DÉPASSEMENT — émetteur >5 % VNI",
+      "breachBucket": "DÉPASSEMENT — seau 5–10 % >40 %",
+      "compliant": "Conforme UCITS",
+      "isin": "ISIN",
+      "name": "Nom",
+      "weight": "Poids",
+      "status": "Statut 5/10/40",
+      "breachHigh": "DÉPASSEMENT (>10 %)",
+      "inBucket": "Dans le seau 5–10 %",
+      "ok": "OK"
     },
     "geo": {
       "title": "Concentration géographique (Annexe IV AIFMD)",
@@ -323,7 +343,7 @@
       "none": "Aucun"
     },
     "lmtText": "{{n}} outil présélectionné — {{status}} (AIFMD II Art. 16 exige ≥ 2).",
-    "lmtText_plural": "{{n}} outils présélectionnés — {{status}} (AIFMD II Art. 16 exige ≥ 2).",
+    "lmtTextPlural": "{{n}} outils présélectionnés — {{status}} (AIFMD II Art. 16 exige ≥ 2).",
     "lmtCompliant": "conforme",
     "lmtNonCompliant": "non conforme",
     "footer": "Levier calculé conformément à l'AIFMD II (Directive (UE) 2024/927), article 15 et au règlement délégué de la Commission (UE) 231/2013, article 7 (méthode brute) et article 8 (méthode de l'engagement)."
@@ -547,6 +567,30 @@
     "downloadExcel": "Télécharger Annexe IV Excel",
     "gaps": "Complétude / Analyse des lacunes",
     "gapsDesc": "Ces contrôles identifient les champs requis pour une soumission ESMA valide.",
+    "metadataNotUploaded": "Métadonnées Annexe IV non chargées — fournissez l'identification AIFM/FIA et les données de classe de parts sur la page Téléversement pour activer l'export réglementaire.",
+    "downloadFailed": "Échec du téléchargement : {status}",
+    "exportDisabled": "L'export réglementaire est désactivé. Chargez l'identification AIFM/FIA et les données de classe de parts sur la page Téléversement pour activer l'export XML/Excel Annexe IV. L'aperçu ci-dessous est informatif et signale les lacunes.",
+    "loading": "Chargement des données Annexe IV…",
+    "error": "Erreur : {error}",
+    "period": "Période",
+    "lmtCount": "Nombre d'OGL",
+    "aifmdCompliant": "Conforme AIFMD II (≥2 OGL)",
+    "dataComplete": "Données complètes",
+    "usingDefaults": "Utilisation des valeurs par défaut",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "days": "jours",
+    "noCountryData": "Pas de données de pays",
+    "noInstruments": "Pas d'instruments",
+    "horizonLabels": {
+      "DAY_1": "1 jour",
+      "DAY_2_7": "2–7 jours",
+      "DAY_8_30": "8–30 jours",
+      "DAY_31_90": "31–90 jours",
+      "DAY_91_180": "91–180 jours",
+      "DAY_181_365": "181–365 jours",
+      "DAY_MORE_365": "> 365 jours"
+    },
     "aifIdentification": "Identification du FIA",
     "fundName": "Nom du fonds",
     "reportingDate": "Date de déclaration",

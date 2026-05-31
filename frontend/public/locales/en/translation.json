@@ -61,7 +61,11 @@
       "lcrT7": "LCR T+7",
       "illiquid": "Illiquid",
       "totalNav": "Total NAV",
-      "geoStatus": "Geo Status"
+      "geoStatus": "Geo Status",
+      "days50Pct": "Days to 50% NAV",
+      "days75Pct": "Days to 75% NAV",
+      "days90Pct": "Days to 90% NAV",
+      "top10Concentration": "Top-10 Concentration"
     },
     "downloadReport": "Download Report",
     "ladderTitle": "Liquidity Ladder — Normal vs Stressed (% NAV)",
@@ -78,13 +82,16 @@
       "daysToLiq": "Days to Liq."
     },
     "aifmd": {
-      "title": "AIFMD II — Directive (EU) 2024/927",
+      "title": "AIFMD II — Directive (EU) 2024/927)",
       "status": "Status",
       "breach": "BREACH",
       "incomplete": "INCOMPLETE",
       "ok": "OK",
       "warningText": "One or more AIFMD II metrics are in breach or the compliance picture is incomplete. Review Leverage page for detail.",
-      "lmtLabel": "LMTs pre-selected"
+      "lmtLabel": "LMTs pre-selected",
+      "grossLeverageTooltip": "Gross Leverage (Art. 7 CDR 231/2013)",
+      "commitmentLeverageTooltip": "Commitment Leverage",
+      "aifmdIiDataNotAvailable": "AIFMD II leverage data is not available for this portfolio. Upload a holdings file with leveraged positions or derivative exposures to enable this section."
     },
     "geo": {
       "title": "Geographical Concentration (AIFMD Annex IV)",
@@ -92,6 +99,19 @@
       "warning": "Warning — Single country >35%",
       "ok": "Geo OK",
       "top": "Top:"
+    },
+    "ucits": {
+      "title": "UCITS 5/10/40 Issuer Concentration (ESMA Art. 52)",
+      "breachHighIssuer": "BREACH — issuer >5% NAV",
+      "breachBucket": "BREACH — 5–10% bucket >40%",
+      "compliant": "UCITS Compliant",
+      "isin": "ISIN",
+      "name": "Name",
+      "weight": "Weight",
+      "status": "5/10/40 Status",
+      "breachHigh": "BREACH (>10%)",
+      "inBucket": "In 5–10% bucket",
+      "ok": "OK"
     }
   },
   "allPortfolios": {
@@ -323,7 +343,7 @@
       "none": "None"
     },
     "lmtText": "{{n}} tool pre-selected — compliant (AIFMD II Art. 16 requires ≥ 2).",
-    "lmtText_plural": "{{n}} tools pre-selected — {{status}} (AIFMD II Art. 16 requires ≥ 2).",
+    "lmtTextPlural": "{{n}} tools pre-selected — {{status}} (AIFMD II Art. 16 requires ≥ 2).",
     "lmtCompliant": "compliant",
     "lmtNonCompliant": "non-compliant",
     "footer": "Leverage computed per AIFMD II (Directive (EU) 2024/927), Article 15 and Commission Delegated Regulation (EU) 231/2013, Article 7 (Gross Method) and Article 8 (Commitment Method)."
@@ -580,7 +600,31 @@
     "bucket": "Bucket",
     "geoConcentration": "Geographical Concentration",
     "euPct": "EU Exposure",
-    "nonEuPct": "Non-EU Exposure"
+    "nonEuPct": "Non-EU Exposure",
+    "metadataNotUploaded": "Annex IV metadata not uploaded — provide AIFM/AIF identification and share-class data on the Upload page to enable regulatory export.",
+    "downloadFailed": "Download failed: {status}",
+    "exportDisabled": "Regulatory export is disabled. Upload AIFM/AIF identification and share-class data on the Upload page to enable XML/Excel Annex IV export. Preview below is informational and gap-flagged.",
+    "loading": "Loading Annex IV data…",
+    "error": "Error: {error}",
+    "period": "Period",
+    "lmtCount": "LMT Count",
+    "aifmdCompliant": "AIFMD II Compliant (≥2 LMTs)",
+    "dataComplete": "Data complete",
+    "usingDefaults": "Using defaults",
+    "active": "Active",
+    "inactive": "Inactive",
+    "days": "days",
+    "noCountryData": "No country data",
+    "noInstruments": "No instruments",
+    "horizonLabels": {
+      "DAY_1": "1 day",
+      "DAY_2_7": "2–7 days",
+      "DAY_8_30": "8–30 days",
+      "DAY_31_90": "31–90 days",
+      "DAY_91_180": "91–180 days",
+      "DAY_181_365": "181–365 days",
+      "DAY_MORE_365": "> 365 days"
+    }
   },
   "common": {
     "breach": "BREACH",

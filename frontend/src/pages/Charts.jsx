@@ -5,12 +5,14 @@ import {
   PieChart, Pie,
 } from 'recharts'
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from 'react-simple-maps'
+import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import { useTheme } from '../ThemeContext'
 import EmptyState from '../components/EmptyState'
 import { BUCKET_COLORS, SERIES_COLORS, CATEGORY_COLORS, stressImpactColor, chartTheme, assetClassColor } from '../theme'
 
 export default function Charts() {
+  const { t } = useTranslation()
   const { data } = useAnalysis()
   const { theme } = useTheme()
   const ct = chartTheme(theme)
@@ -24,16 +26,21 @@ export default function Charts() {
   const stressLadder = liq.stress_ladder || []
   const positions = liq.position_buckets || []
 
+  const normalKey = t('charts.legend.normal')
+  const stressedKey = t('charts.legend.stressed')
+  const liqBeforeKey = t('charts.legend.liqBefore')
+  const liqAfterKey = t('charts.legend.liqAfter')
+  const navDeltaKey = t('charts.legend.navDelta')
+
   const ladderChart = ladder.map((r) => ({
     bucket: r.bucket,
-    Normal: +((r.nav_pct || 0) * 100).toFixed(2),
-    Stressed: +((stressLadder.find((s) => s.bucket === r.bucket)?.nav_pct || 0) * 100).toFixed(2),
+    [normalKey]: +((r.nav_pct || 0) * 100).toFixed(2),
+    [stressedKey]: +((stressLadder.find((s) => s.bucket === r.bucket)?.nav_pct || 0) * 100).toFixed(2),
   }))
 
-  // Asset class composition — deterministic color by class name
   const assetMap = {}
   for (const p of positions) {
-    const cls = p.asset_class || 'Other'
+    const cls = p.asset_class || t('charts.legend.other')
     assetMap[cls] = (assetMap[cls] || 0) + (p.market_value_eur || 0)
   }
   const total = Object.values(assetMap).reduce((a, b) => a + b, 0)
@@ -48,9 +55,9 @@ export default function Charts() {
 
   const stressChart = (stress?.stress_results || []).map((r) => ({
     name: r.scenario_name?.replace(' Combined', '').replace('Stress ', '') ?? '',
-    'NAV Δ%': +((r.nav_impact_pct || 0) * 100).toFixed(2),
-    'Liq Before': +((r.liquid_pct_before || 0) * 100).toFixed(1),
-    'Liq After': +((r.liquid_pct_after || 0) * 100).toFixed(1),
+    [navDeltaKey]: +((r.nav_impact_pct || 0) * 100).toFixed(2),
+    [liqBeforeKey]: +((r.liquid_pct_before || 0) * 100).toFixed(1),
+    [liqAfterKey]: +((r.liquid_pct_after || 0) * 100).toFixed(1),
   }))
 
   const wfOrders = wf?.waterfall || []
@@ -74,24 +81,24 @@ export default function Charts() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Charts</h1>
+      <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('charts.title')}</h1>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* 1. Liquidity Ladder */}
-        <ChartCard title="Liquidity Ladder — Normal vs Stressed">
+        <ChartCard title={t('charts.ladderTitle')}>
           <BarChart data={ladderChart}>
             {grid}
             {xAxis('bucket')}
             {yAxis('%')}
             <Tooltip formatter={(v) => v.toFixed(1) + '%'} {...tooltip} />
             <Legend />
-            <Bar dataKey="Normal" fill={SERIES_COLORS.normal} radius={[4, 4, 0, 0]} />
-            <Bar dataKey="Stressed" fill={SERIES_COLORS.stressed} radius={[4, 4, 0, 0]} fillOpacity={0.9} />
+            <Bar dataKey={normalKey} fill={SERIES_COLORS.normal} radius={[4, 4, 0, 0]} />
+            <Bar dataKey={stressedKey} fill={SERIES_COLORS.stressed} radius={[4, 4, 0, 0]} fillOpacity={0.9} />
           </BarChart>
         </ChartCard>
 
         {/* 2. Portfolio Composition */}
-        <ChartCard title="Portfolio Composition by Asset Class">
+        <ChartCard title={t('charts.compositionTitle')}>
           <PieChart>
             <Pie data={compositionData} dataKey="pct" nameKey="name" cx="50%" cy="45%" outerRadius={75}>
               {compositionData.map((d, i) => (
@@ -105,15 +112,15 @@ export default function Charts() {
 
         {/* 3. Stress NAV Impact */}
         {stressChart.length > 0 && (
-          <ChartCard title="Stress NAV Impact (%)">
+          <ChartCard title={t('charts.stressNavTitle')}>
             <BarChart data={stressChart}>
               {grid}
               {xAxis('name')}
               {yAxis('%')}
               <Tooltip formatter={(v) => v.toFixed(2) + '%'} {...tooltip} />
-              <Bar dataKey="NAV Δ%" radius={[4, 4, 0, 0]}>
+              <Bar dataKey={navDeltaKey} radius={[4, 4, 0, 0]}>
                 {stressChart.map((d, i) => (
-                  <Cell key={i} fill={stressImpactColor(d['NAV Δ%'])} />
+                  <Cell key={i} fill={stressImpactColor(d[navDeltaKey])} />
                 ))}
               </Bar>
             </BarChart>
@@ -122,15 +129,15 @@ export default function Charts() {
 
         {/* 4. Liquidity Before vs After */}
         {stressChart.length > 0 && (
-          <ChartCard title="Liquidity Before vs After — Each Scenario">
+          <ChartCard title={t('charts.liquidityScenarioTitle')}>
             <BarChart data={stressChart}>
               {grid}
               {xAxis('name')}
               {yAxis('%')}
               <Tooltip formatter={(v) => v.toFixed(1) + '%'} {...tooltip} />
               <Legend />
-              <Bar dataKey="Liq Before" fill={SERIES_COLORS.normal} radius={[4, 4, 0, 0]} />
-              <Bar dataKey="Liq After" fill={SERIES_COLORS.stressed} radius={[4, 4, 0, 0]} />
+              <Bar dataKey={liqBeforeKey} fill={SERIES_COLORS.normal} radius={[4, 4, 0, 0]} />
+              <Bar dataKey={liqAfterKey} fill={SERIES_COLORS.stressed} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ChartCard>
         )}
@@ -140,14 +147,14 @@ export default function Charts() {
           <div className="lg:col-span-2 rounded-xl shadow-sm border p-5"
             style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
             <h2 className="text-sm font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-secondary)' }}>
-              Geographical Concentration (AIFMD Annex IV)
+              {t('charts.geoTitle')}
             </h2>
             <div className="flex gap-4 text-sm mb-3">
               <span className="font-semibold" style={{ color: m.geo_breach_flag ? 'var(--kpi-red-text)' : m.geo_warning_flag ? 'var(--kpi-amber-text)' : 'var(--kpi-green-text)' }}>
-                {m.geo_breach_flag ? 'BREACH — Non-EU >50%' : m.geo_warning_flag ? 'Warning — Single country >35%' : 'Geo OK'}
+                {m.geo_breach_flag ? t('charts.geo.breach') : m.geo_warning_flag ? t('charts.geo.warning') : t('charts.geo.ok')}
               </span>
               <span style={{ color: 'var(--text-secondary)' }}>
-                Top: <strong style={{ color: 'var(--text-primary)' }}>{m.geo_top_country}</strong> {m.geo_top_country_pct != null ? (m.geo_top_country_pct * 100).toFixed(1) + '%' : '—'}
+                {t('charts.geo.top')} <strong style={{ color: 'var(--text-primary)' }}>{m.geo_top_country}</strong> {m.geo_top_country_pct != null ? (m.geo_top_country_pct * 100).toFixed(1) + '%' : '—'}
               </span>
             </div>
             <GeoWorldMap topCountries={m.top_countries} />
@@ -164,15 +171,15 @@ export default function Charts() {
           <div className="lg:col-span-2 rounded-xl shadow-sm border p-5"
             style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
             <h2 className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: 'var(--text-secondary)' }}>
-              Days to Liquidate — by Position
+              {t('charts.daysToLiqTitle')}
             </h2>
             <ResponsiveContainer width="100%" height={Math.max(240, ttlData.slice(0, 20).length * 28)}>
               <BarChart data={ttlData.slice(0, 20)} layout="vertical" margin={{ top: 4, right: 24, bottom: 4, left: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.gridColor} horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10, fill: ct.tickColor }} axisLine={{ stroke: ct.axisColor }} tickLine={false}
-                  label={{ value: 'days', position: 'insideBottomRight', offset: 0, fill: ct.tickColor }} />
+                  label={{ value: t('charts.axis.days'), position: 'insideBottomRight', offset: 0, fill: ct.tickColor }} />
                 <YAxis type="category" dataKey="name" width={180} tick={{ fontSize: 11, fill: ct.tickColor }} axisLine={false} tickLine={false} />
-                <Tooltip formatter={(v) => v + ' days'} {...tooltip} />
+                <Tooltip formatter={(v) => v + ' ' + t('charts.axis.days')} {...tooltip} />
                 <Bar dataKey="days" radius={[0, 4, 4, 0]}>
                   {ttlData.slice(0, 20).map((d, i) => (
                     <Cell key={i} fill={BUCKET_COLORS[d.bucket] || '#7a8fa8'} />
@@ -188,13 +195,13 @@ export default function Charts() {
           <div className="lg:col-span-2 rounded-xl shadow-sm border p-5"
             style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
             <h2 className="text-sm font-semibold uppercase tracking-wide mb-4" style={{ color: 'var(--text-secondary)' }}>
-              Waterfall — Cumulative Proceeds (€M)
+              {t('charts.waterfallCumTitle')}
             </h2>
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={cumulChart}>
                 {grid}
                 <XAxis dataKey="day" tick={{ fontSize: 11, ...axisTick }} axisLine={{ stroke: ct.axisColor }} tickLine={false}
-                  label={{ value: 'Day', position: 'insideBottom', offset: -2, fill: ct.tickColor }} />
+                  label={{ value: t('charts.axis.day'), position: 'insideBottom', offset: -2, fill: ct.tickColor }} />
                 <YAxis unit="M" tick={{ fontSize: 11, ...axisTick }} axisLine={false} tickLine={false} />
                 <Tooltip formatter={(v) => '€' + v + 'M'} {...tooltip} />
                 <Line type="monotone" dataKey="cumulative" stroke={SERIES_COLORS.normal} strokeWidth={2} dot={{ r: 3, fill: SERIES_COLORS.normal }} />
@@ -252,6 +259,7 @@ function geoFill(pct) {
 }
 
 export function GeoWorldMap({ topCountries = {} }) {
+  const { t } = useTranslation()
   const [tip, setTip] = useState(null)
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
@@ -312,18 +320,18 @@ export function GeoWorldMap({ topCountries = {} }) {
           {tip.pct != null
             ? <>
                 <div style={{ color: 'var(--text-secondary)' }}>
-                  NAV: <strong style={{ color: 'var(--text-primary)' }}>{(tip.pct * 100).toFixed(1)}%</strong>
+                  {t('charts.tooltip.nav')} <strong style={{ color: 'var(--text-primary)' }}>{(tip.pct * 100).toFixed(1)}%</strong>
                 </div>
                 <div style={{ marginTop: 2 }}>
                   <span style={{
                     color: tip.pct > 0.35 ? '#ef4444' : '#f59e0b',
                     fontWeight: 700, fontSize: 11,
                   }}>
-                    {tip.pct > 0.35 ? 'WARNING' : 'ELEVATED'}
+                    {tip.pct > 0.35 ? t('charts.tooltip.warning') : t('charts.tooltip.elevated')}
                   </span>
                 </div>
               </>
-            : <div style={{ color: 'var(--text-secondary)' }}>No exposure</div>
+            : <div style={{ color: 'var(--text-secondary)' }}>{t('charts.tooltip.noExposure')}</div>
           }
         </div>
       )}
@@ -332,23 +340,26 @@ export function GeoWorldMap({ topCountries = {} }) {
 }
 
 export function GeoLegend() {
+  const { t } = useTranslation()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: 'var(--text-secondary)', marginTop: 6 }}>
       <span>0%</span>
       <div style={{ flex: 1, height: 7, borderRadius: 4, background: 'linear-gradient(to right, #fde68a, #f59e0b, #ef4444)' }} />
-      <span style={{ whiteSpace: 'nowrap' }}>35% <span style={{ color: '#f59e0b', fontWeight: 600 }}>Warn</span></span>
-      <span style={{ whiteSpace: 'nowrap' }}>50%+ <span style={{ color: '#ef4444', fontWeight: 700 }}>Breach</span></span>
+      <span style={{ whiteSpace: 'nowrap' }}>35% <span style={{ color: '#f59e0b', fontWeight: 600 }}>{t('charts.geoLegend.warn')}</span></span>
+      <span style={{ whiteSpace: 'nowrap' }}>50%+ <span style={{ color: '#ef4444', fontWeight: 700 }}>{t('charts.geoLegend.breach')}</span></span>
     </div>
   )
 }
 
 export function GeoBarChart({ topCountries = {} }) {
+  const { t } = useTranslation()
+  const otherKey = t('charts.legend.other')
   const entries = Object.entries(topCountries).sort((a, b) => b[1] - a[1]).slice(0, 10)
   const totalShown = entries.reduce((s, [, v]) => s + v, 0)
   const other = Math.max(0, 1 - totalShown)
   const data = [
     ...entries.map(([k, v]) => ({ country: k, pct: +(v * 100).toFixed(1), eu: EU_ALPHA2.has(k) })),
-    ...(other > 0.005 ? [{ country: 'Other', pct: +(other * 100).toFixed(1), eu: null }] : []),
+    ...(other > 0.005 ? [{ country: otherKey, pct: +(other * 100).toFixed(1), eu: null }] : []),
   ]
   if (!data.length) return null
   return (
@@ -363,7 +374,7 @@ export function GeoBarChart({ topCountries = {} }) {
           itemStyle={{ color: 'var(--text-primary)' }} />
         <Bar dataKey="pct" radius={[0, 4, 4, 0]}>
           {data.map((d, i) => (
-            <Cell key={i} fill={d.country === 'Other' ? '#64748b' : d.pct > 35 ? '#ef4444' : d.pct > 15 ? '#f59e0b' : '#fde68a'} />
+            <Cell key={i} fill={d.country === otherKey ? '#64748b' : d.pct > 35 ? '#ef4444' : d.pct > 15 ? '#f59e0b' : '#fde68a'} />
           ))}
         </Bar>
       </BarChart>
@@ -372,9 +383,10 @@ export function GeoBarChart({ topCountries = {} }) {
 }
 
 export function GeoDonut({ euPct = 0, nonEuPct = 0 }) {
+  const { t } = useTranslation()
   const data = [
-    { name: 'EU', value: +(euPct * 100).toFixed(1) },
-    { name: 'Non-EU', value: +(nonEuPct * 100).toFixed(1) },
+    { name: t('charts.legend.eu'), value: +(euPct * 100).toFixed(1) },
+    { name: t('charts.legend.nonEu'), value: +(nonEuPct * 100).toFixed(1) },
   ]
   const nonEuColor = nonEuPct > 0.50 ? '#ef4444' : '#f59e0b'
   return (

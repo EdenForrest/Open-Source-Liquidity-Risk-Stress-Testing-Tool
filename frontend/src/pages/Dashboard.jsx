@@ -106,10 +106,10 @@ export default function Dashboard() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <KPICard label={<MetricTooltip id="days_to_50pct">Days to 50% NAV</MetricTooltip>} value={m.days_to_50pct?.toFixed(1) ?? '—'} color="slate" />
-        <KPICard label={<MetricTooltip id="days_to_75pct">Days to 75% NAV</MetricTooltip>} value={m.days_to_75pct?.toFixed(1) ?? '—'} color="slate" />
-        <KPICard label={<MetricTooltip id="days_to_90pct">Days to 90% NAV</MetricTooltip>} value={m.days_to_90pct?.toFixed(1) ?? '—'} color="slate" />
-        <KPICard label={<MetricTooltip id="top10_concentration">Top-10 Concentration</MetricTooltip>} value={fmt(m.top10_concentration)} color="slate" />
+        <KPICard label={<MetricTooltip id="days_to_50pct">{t('dashboard.kpi.days50Pct')}</MetricTooltip>} value={m.days_to_50pct?.toFixed(1) ?? '—'} color="slate" />
+        <KPICard label={<MetricTooltip id="days_to_75pct">{t('dashboard.kpi.days75Pct')}</MetricTooltip>} value={m.days_to_75pct?.toFixed(1) ?? '—'} color="slate" />
+        <KPICard label={<MetricTooltip id="days_to_90pct">{t('dashboard.kpi.days90Pct')}</MetricTooltip>} value={m.days_to_90pct?.toFixed(1) ?? '—'} color="slate" />
+        <KPICard label={<MetricTooltip id="top10_concentration">{t('dashboard.kpi.top10Concentration')}</MetricTooltip>} value={fmt(m.top10_concentration)} color="slate" />
       </div>
 
       {aifmd2 && aifmd2.gross_leverage != null ? (
@@ -131,7 +131,7 @@ export default function Dashboard() {
               </tr>
               <tr>
                 <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  <MetricTooltip id="gross_leverage">Gross Leverage (Art. 7 CDR 231/2013)</MetricTooltip>
+                  <MetricTooltip id="gross_leverage">{t('dashboard.aifmd.grossLeverageTooltip')}</MetricTooltip>
                 </td>
                 <td className="px-3 py-1.5 text-sm font-semibold text-right"
                   style={{ color: aifmd2.leverage_breach ? 'var(--kpi-red-text)' : 'var(--text-primary)' }}>
@@ -141,7 +141,7 @@ export default function Dashboard() {
               </tr>
               <tr>
                 <td className="px-3 py-1.5 text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>
-                  <MetricTooltip id="commitment_leverage">Commitment Leverage</MetricTooltip>
+                  <MetricTooltip id="commitment_leverage">{t('dashboard.aifmd.commitmentLeverageTooltip')}</MetricTooltip>
                 </td>
                 <td className="px-3 py-1.5 text-sm font-semibold text-right" style={{ color: 'var(--text-primary)' }}>
                   {aifmd2.commitment_leverage != null ? (aifmd2.commitment_leverage * 100).toFixed(1) + '%' : '—'}
@@ -174,7 +174,7 @@ export default function Dashboard() {
           style={{ background: 'var(--kpi-amber-bg)', borderColor: 'var(--kpi-amber-border)' }}>
           <span style={{ color: 'var(--kpi-amber-text)' }}>⚠</span>
           <p className="text-sm" style={{ color: 'var(--kpi-amber-text)' }}>
-            AIFMD II leverage data is not available for this portfolio. Upload a holdings file with leveraged positions or derivative exposures to enable this section.
+            {t('dashboard.aifmd.aifmdIiDataNotAvailable')}
           </p>
         </div>
       )}
@@ -182,11 +182,11 @@ export default function Dashboard() {
       {m.ucits_issuer_weights && Object.keys(m.ucits_issuer_weights).length > 0 && (
         <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
           <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
-            <MetricTooltip id="ucits_5_10_40">UCITS 5/10/40 Issuer Concentration (ESMA Art. 52)</MetricTooltip>
+            <MetricTooltip id="ucits_5_10_40">{t('dashboard.ucits.title')}</MetricTooltip>
           </h2>
           <div className="px-3 py-2 flex gap-4 text-sm flex-wrap" style={{ borderBottom: '1px solid var(--border)' }}>
             <span className="font-semibold" style={{ color: m.ucits_single_breach || m.ucits_aggregate_breach ? 'var(--kpi-red-text)' : 'var(--kpi-green-text)' }}>
-              {m.ucits_single_breach ? 'BREACH — issuer >5% NAV' : m.ucits_aggregate_breach ? 'BREACH — 5–10% bucket >40%' : 'UCITS Compliant'}
+              {m.ucits_single_breach ? t('dashboard.ucits.breachHighIssuer') : m.ucits_aggregate_breach ? t('dashboard.ucits.breachBucket') : t('dashboard.ucits.compliant')}
             </span>
             <span style={{ color: 'var(--text-secondary)' }}>
               5–10% bucket aggregate: <strong style={{ color: m.ucits_aggregate_breach ? 'var(--kpi-red-text)' : 'var(--text-primary)' }}>{(m.ucits_aggregate_5_10 * 100).toFixed(1)}%</strong>
@@ -196,10 +196,10 @@ export default function Dashboard() {
           <table className="w-full text-sm">
             <thead style={surfaceStyle}>
               <tr>
-                <th className="px-3 py-2 text-left text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>ISIN</th>
-                <th className="px-3 py-2 text-left text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>Name</th>
-                <th className="px-3 py-2 text-right text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>Weight</th>
-                <th className="px-3 py-2 text-right text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>5/10/40 Status</th>
+                <th className="px-3 py-2 text-left text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>{t('dashboard.ucits.isin')}</th>
+                <th className="px-3 py-2 text-left text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>{t('dashboard.ucits.name')}</th>
+                <th className="px-3 py-2 text-right text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>{t('dashboard.ucits.weight')}</th>
+                <th className="px-3 py-2 text-right text-xs uppercase" style={{ color: 'var(--text-secondary)' }}>{t('dashboard.ucits.status')}</th>
               </tr>
             </thead>
             <tbody>
