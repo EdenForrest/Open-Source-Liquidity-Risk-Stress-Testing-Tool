@@ -1,9 +1,11 @@
+import { useState, useCallback } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, CartesianGrid,
 } from 'recharts'
 import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import { useTheme } from '../ThemeContext'
+import client from '../api/client'
 import KPICard from '../components/KPICard'
 import EmptyState from '../components/EmptyState'
 import { BUCKET_COLORS, bucketBadgeStyle, chartTheme } from '../theme'
@@ -23,14 +25,45 @@ const rowOdd  = { background: 'var(--bg-surface)' }
 
 export default function Waterfall() {
   const { t } = useTranslation()
-  const { data } = useAnalysis()
+  const { data, runId, selectedPortfolio } = useAnalysis()
   const { theme } = useTheme()
   const ct = chartTheme(theme)
+
+  // LP optimiser state: when set, the LP-optimised schedule replaces the
+  // pipeline's greedy schedule in every panel below.
+  const [lpResult, setLpResult] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [lpError, setLpError] = useState(null)
+
   const wf = data?.waterfall
+
+  const handleOptimise = useCallback(async () => {
+    if (!runId) return
+    setLoading(true)
+    setLpError(null)
+    try {
+      const res = await client.post(`/run/${runId}/waterfall-optimise`, {
+        portfolio: selectedPortfolio || undefined,
+      })
+      setLpResult(res.data)
+    } catch (e) {
+      setLpError(e?.response?.data?.detail || e.message || t('waterfall.lpError'))
+    } finally {
+      setLoading(false)
+    }
+  }, [runId, selectedPortfolio, t])
+
+  const handleShowGreedy = useCallback(() => {
+    setLpResult(null)
+    setLpError(null)
+  }, [])
+
   if (!wf) return <EmptyState />
 
-  const meta = wf.waterfall_meta || {}
-  const orders = wf.waterfall || []
+  const active = lpResult || wf
+  const isLp = !!lpResult
+  const meta = active.waterfall_meta || {}
+  const orders = active.waterfall || []
 
   const buckets = [...new Set(orders.map((o) => o.bucket))].filter(Boolean)
   const dayMap = {}
@@ -54,7 +87,40 @@ export default function Waterfall() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('waterfall.title')}</h1>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('waterfall.title')}</h1>
+
+        {!isLp ? (
+          <button
+            onClick={handleOptimise}
+            disabled={loading || !runId}
+            className="rounded border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ background: 'var(--text-accent)', color: '#fff', borderColor: 'var(--text-accent)' }}
+          >
+            {loading ? t('waterfall.optimising') : t('waterfall.activateLp')}
+          </button>
+        ) : (
+          <button
+            onClick={handleShowGreedy}
+            className="rounded border px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer"
+            style={{ background: 'var(--bg-panel)', color: 'var(--text-secondary)', borderColor: 'var(--border)' }}
+          >
+            {t('waterfall.showGreedy')}
+          </button>
+        )}
+
+        <span className="rounded px-2 py-0.5 text-xs font-semibold"
+          style={isLp
+            ? { background: 'var(--kpi-green-bg, #dcfce7)', color: 'var(--kpi-green-text, #166534)' }
+            : { background: 'var(--bg-surface)', color: 'var(--text-secondary)' }
+          }>
+          {isLp ? t('waterfall.lpActive') : t('waterfall.greedyActive')}
+        </span>
+
+        {lpError && (
+          <span className="text-xs font-semibold" style={{ color: '#ff3b3b' }}>{lpError}</span>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard label={<MetricTooltip id="wf_target">{t('waterfall.kpi.target')}</MetricTooltip>} value={eur(meta.target_eur)} color="slate" />

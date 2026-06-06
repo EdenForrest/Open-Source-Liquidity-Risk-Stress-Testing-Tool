@@ -261,7 +261,13 @@
     },
     "yes": "Yes",
     "no": "No",
-    "partialBadge": "Partial"
+    "partialBadge": "Partial",
+    "activateLp": "Activate LP optimiser",
+    "showGreedy": "Show greedy schedule",
+    "optimising": "Optimising…",
+    "lpActive": "LP-optimised schedule",
+    "greedyActive": "Greedy schedule",
+    "lpError": "LP optimisation failed"
   },
   "charts": {
     "title": "Charts",

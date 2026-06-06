@@ -261,7 +261,13 @@
     },
     "yes": "Ja",
     "no": "Nein",
-    "partialBadge": "Teilweise"
+    "partialBadge": "Teilweise",
+    "activateLp": "LP-Optimierer aktivieren",
+    "showGreedy": "Greedy-Plan anzeigen",
+    "optimising": "Optimierung…",
+    "lpActive": "LP-optimierter Plan",
+    "greedyActive": "Greedy-Plan",
+    "lpError": "LP-Optimierung fehlgeschlagen"
   },
   "charts": {
     "title": "Diagramme",

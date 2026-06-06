@@ -8,6 +8,7 @@ GET  /api/run/{run_id}/waterfall    — day-by-day sell schedule
 GET  /api/run/{run_id}/report       — full results as JSON download
 GET  /api/run/{run_id}/export/all   — zip of all portfolio reports in chosen format
 POST /api/run/{run_id}/lmt-simulate — re-run RedemptionSimulator with custom LMT config
+POST /api/run/{run_id}/waterfall-optimise — re-run the waterfall via LP optimiser
 """
 from __future__ import annotations
 
@@ -406,4 +407,70 @@ def lmt_simulate(run_id: str, body: LMTSimRequest):
         "normal":            _clean_records(normal_df.to_dict(orient="records")),
         "stress":            _clean_records(stress_df.to_dict(orient="records")),
         "lmt_config_applied": lmt_config_dict,
+    }
+
+
+class WaterfallOptimiseRequest(BaseModel):
+    portfolio: Optional[str] = None
+
+
+@router.post("/run/{run_id}/waterfall-optimise")
+def waterfall_optimise(run_id: str, body: WaterfallOptimiseRequest):
+    """
+    Re-run the liquidation waterfall against stored stress position buckets
+    using the LP optimiser (``WaterfallEngine.run_lp_optimised``) instead of the
+    greedy bucket-priority sell-down. No full pipeline re-run — instant response.
+
+    The LP minimises total liquidation time subject to raising at least the
+    stored target (plus the minimum cash buffer). Falls back to the greedy
+    schedule inside the engine if scipy is unavailable or the LP is infeasible.
+
+    Returns the same shape as ``GET /run/{run_id}/waterfall``
+    (``waterfall_meta``, ``waterfall``, ``waterfall_summary``) plus
+    ``optimiser: "lp"`` so the caller can label the active schedule.
+    """
+    from liquidity_risk_tool.engines.waterfall_engine import WaterfallEngine
+    from backend.services.pipeline_service import _clean_records, _clean_dict
+
+    r = _portfolio_results(run_id, body.portfolio)
+
+    stress_buckets_raw = r.get("stress_position_buckets") or r.get("position_buckets")
+    stress_buckets = pd.DataFrame(stress_buckets_raw)
+
+    target_eur = (r.get("waterfall_meta") or {}).get("target_eur")
+    if target_eur is None:
+        raise HTTPException(
+            status_code=404,
+            detail="No stored waterfall target for this run — run the pipeline first.",
+        )
+
+    # Reconstruct minimal Portfolio stub — the engine only reads total_nav.
+    class _PortfolioStub:
+        total_nav = r["total_nav_eur"]
+
+    engine = WaterfallEngine(
+        portfolio=_PortfolioStub(),  # type: ignore[arg-type]
+        profile=stress_buckets,
+        stress=True,
+    )
+    result = engine.run_lp_optimised(float(target_eur))
+
+    return {
+        "optimiser": "lp",
+        "waterfall_meta": _clean_dict({
+            "target_eur": result.target_eur,
+            "total_proceeds_eur": result.total_proceeds_eur,
+            "target_met": result.target_met,
+            "days_to_target": result.days_to_target,
+            "residual_shortfall_eur": result.residual_shortfall_eur,
+            "nav_before": result.nav_before,
+            "nav_after": result.nav_after,
+            "nav_impact_pct": result.nav_impact_pct,
+        }),
+        "waterfall": _clean_records(
+            result.sell_schedule_df().to_dict(orient="records")
+        ),
+        "waterfall_summary": _clean_records(
+            result.daily_summary_df().to_dict(orient="records")
+        ),
     }

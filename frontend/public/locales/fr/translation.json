@@ -261,7 +261,13 @@
     },
     "yes": "Oui",
     "no": "Non",
-    "partialBadge": "Partiel"
+    "partialBadge": "Partiel",
+    "activateLp": "Activer l'optimiseur PL",
+    "showGreedy": "Afficher le plan glouton",
+    "optimising": "Optimisation…",
+    "lpActive": "Plan optimisé par PL",
+    "greedyActive": "Plan glouton",
+    "lpError": "Échec de l'optimisation PL"
   },
   "charts": {
     "title": "Graphiques",
