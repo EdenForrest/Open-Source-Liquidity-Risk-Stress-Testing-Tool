@@ -59,6 +59,16 @@ async def _run_pipeline_bg(
     lmt_config: dict | None = None,
 ) -> None:
     store.update(run_id, status="running")
+    # Persist the source paths so on-demand re-runs (e.g. a user-defined custom
+    # stress scenario) can re-load the *exact* same portfolio positions. The
+    # StressEngine reprices real positions, so a stub cannot stand in for the
+    # portfolio — we must be able to re-load it from these CSVs.
+    store.update(
+        run_id,
+        holdings_path=str(holdings_path),
+        nav_path=str(nav_path),
+        market_data_path=str(market_data_path) if market_data_path else None,
+    )
     try:
         loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(
@@ -70,8 +80,10 @@ async def _run_pipeline_bg(
         tb = traceback.format_exc()
         logger.error("Pipeline failed for run %s\n%s", run_id, tb)
         store.update(run_id, status="error", error=f"{type(exc).__name__}: {exc}")
-    finally:
-        # Only delete files that are NOT in the bundled data directory
+        # Only failed runs clean up their uploaded temp files immediately — there
+        # is no successful run to re-load from. Files in the bundled data dir are
+        # never deleted. Successful uploaded runs retain their temp files for the
+        # process lifetime so custom-scenario re-runs can re-load the portfolio.
         for p in [holdings_path, nav_path, market_data_path]:
             if p and p.exists() and DATA_DIR not in p.parents:
                 p.unlink(missing_ok=True)

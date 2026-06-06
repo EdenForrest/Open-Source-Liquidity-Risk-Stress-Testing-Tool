@@ -182,7 +182,23 @@
       "worstCase": "Worst-Case"
     },
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "creator": {
+      "title": "Custom Scenario Creator",
+      "subtitle": "Define your own shock and run it against this portfolio. Results appear in the tables above.",
+      "name": "Scenario name",
+      "equityShock": "Equity shock (%)",
+      "spreadShock": "Credit spread shock (bps)",
+      "rateShock": "Rate shock (bps)",
+      "haircutMult": "Liquidity haircut multiplier (×)",
+      "redemptionRate": "Redemption rate (%)",
+      "advScalar": "ADV stress scalar (×)",
+      "run": "Run scenario",
+      "running": "Running…",
+      "clear": "Clear custom",
+      "error": "Could not run scenario. Please check the values and try again.",
+      "customBadge": "Custom"
+    }
   },
   "redemption": {
     "title": "Redemption Coverage",

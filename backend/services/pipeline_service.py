@@ -4,9 +4,12 @@ and returns a single serialisable dict that the API routes hand back to the clie
 """
 from __future__ import annotations
 
+import logging
 import math
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from liquidity_risk_tool.models.csv_loader import (
     load_portfolio_from_csv,
@@ -95,6 +98,23 @@ def run_full_pipeline(
     stress_engine = StressEngine(portfolio, scenario_library=scenario_library)
     stress_detail = stress_engine.run_detail()
 
+    # Reverse stress: the minimum single-parameter shock that drives T0-T1 liquidity
+    # below the regulatory breach threshold. We sweep the liquidity_haircut_multiplier
+    # (the parameter that actually stresses *liquidity* — an equity price shock alone
+    # rarely makes assets illiquid) from 1x up to 10x. The breach is materialised as a
+    # forward scenario so it slots into the same results/params tables as the standard
+    # scenarios. Skipped silently when no breach is reachable within 10x (a deeply
+    # liquid book), which is itself a meaningful resilience result.
+    reverse_scenario = None
+    try:
+        reverse_scenario, reverse_result, _ = stress_engine.reverse_stress_scenario(
+            shock_parameter="liquidity_haircut_multiplier", lo=1.0, hi=10.0
+        )
+        if reverse_result is not None:
+            stress_detail = stress_detail + [reverse_result]
+    except Exception:  # reverse stress is supplementary — never break the run
+        logger.exception("Reverse stress computation failed; continuing without it")
+
     worst = max(stress_detail, key=lambda s: abs(s.nav_impact_pct))
     waterfall_target = portfolio.total_nav * worst.redemption_pct
     waterfall = WaterfallEngine(portfolio, stress_buckets, stress=True).run(waterfall_target)
@@ -121,8 +141,12 @@ def run_full_pipeline(
     _stressed_agg["nav_pct"] = _stressed_agg["market_value_eur"] / _stressed_nav if _stressed_nav > 0 else 0.0
     _stressed_agg["cumulative_nav_pct"] = _stressed_agg["nav_pct"].cumsum()
 
-    # Scenario metadata (name + governance fields) from the active scenario list
-    _active_scenarios = stress_engine.scenarios
+    # Scenario metadata (name + governance fields) from the active scenario list,
+    # plus the reverse-stress breach scenario (if one was found) so it shows up in
+    # the Scenario Parameters table alongside the standard scenarios.
+    _active_scenarios = list(stress_engine.scenarios)
+    if reverse_scenario is not None:
+        _active_scenarios = _active_scenarios + [reverse_scenario]
     scenario_meta = []
     for sc in _active_scenarios:
         scenario_meta.append({

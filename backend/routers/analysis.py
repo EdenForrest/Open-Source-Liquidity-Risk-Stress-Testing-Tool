@@ -410,6 +410,128 @@ def lmt_simulate(run_id: str, body: LMTSimRequest):
     }
 
 
+# ---------------------------------------------------------------------------
+# Custom stress scenario
+# ---------------------------------------------------------------------------
+
+class CustomScenarioRequest(BaseModel):
+    """
+    A user-defined stress scenario. Field semantics mirror ``StressScenario``:
+
+      equity_shock                multiplicative price shock on equities/ETFs,
+                                  e.g. -0.10 == -10% (range [-1, 1]).
+      credit_spread_shock_bps     additive credit-spread widening in basis points.
+      rate_shock_bps              parallel rate shift applied to government bonds.
+      liquidity_haircut_multiplier  uplift on stress haircuts (1.0 == no uplift).
+      redemption_rate             fraction of NAV redeemed in the scenario (0–1).
+      adv_stress_scalar           ADV collapse: 0.5 == 50% of normal volume.
+
+    The scenario is run via the StressEngine against a freshly re-loaded
+    portfolio (the engine reprices real positions, so a results-only stub will
+    not do), and the resulting ScenarioResult + parameter metadata are returned
+    in the same shape as the pipeline's ``stress_results`` / ``scenario_metadata``
+    so the UI can append them to the existing tables.
+    """
+
+    name: str = Field(default="Custom Scenario", min_length=1, max_length=80)
+    equity_shock: float = Field(default=0.0, ge=-1.0, le=1.0)
+    credit_spread_shock_bps: int = Field(default=0, ge=0, le=10000)
+    rate_shock_bps: int = Field(default=0, ge=-10000, le=10000)
+    liquidity_haircut_multiplier: float = Field(default=1.0, ge=1.0, le=20.0)
+    redemption_rate: float = Field(default=0.05, ge=0.0, le=1.0)
+    adv_stress_scalar: float = Field(default=1.0, gt=0.0, le=5.0)
+    portfolio: Optional[str] = None
+
+
+@router.post("/run/{run_id}/custom-scenario")
+def custom_scenario(run_id: str, body: CustomScenarioRequest):
+    """
+    Run a single user-defined stress scenario against the run's portfolio and
+    return its ScenarioResult plus the scenario parameters, ready to append to
+    the Scenario Results / Scenario Parameters tables.
+
+    Unlike ``/lmt-simulate`` and ``/waterfall-optimise`` (which re-use stored
+    aggregate buckets), the StressEngine reprices *real* positions, so this
+    endpoint re-loads the exact same portfolio from the source CSVs that were
+    persisted on the originating run. Requires those source paths to still
+    exist on disk (they are retained for the process lifetime).
+    """
+    from pathlib import Path
+
+    from liquidity_risk_tool.config.settings import StressScenario
+    from liquidity_risk_tool.engines.stress_engine import StressEngine
+    from liquidity_risk_tool.models.csv_loader import (
+        load_portfolio_from_csv,
+        enrich_portfolio_from_market_data,
+    )
+    from backend.services.pipeline_service import _clean_dict
+
+    # Validate the run exists & is complete, and resolve the portfolio code.
+    r = _portfolio_results(run_id, body.portfolio)
+    codes: list[str] = _require_complete(run_id).get("portfolio_codes", [])
+    code = body.portfolio or (codes[0] if codes else None)
+
+    record = store.get(run_id)
+    holdings_path = getattr(record, "holdings_path", None) if record else None
+    nav_path = getattr(record, "nav_path", None) if record else None
+    market_data_path = getattr(record, "market_data_path", None) if record else None
+
+    if not holdings_path or not nav_path or not Path(holdings_path).exists() or not Path(nav_path).exists():
+        raise HTTPException(
+            status_code=409,
+            detail="Source portfolio files for this run are no longer available. "
+            "Re-run the pipeline (upload or demo) before creating a custom scenario.",
+        )
+
+    try:
+        portfolio = load_portfolio_from_csv(holdings_path, nav_path, portfolio_code=code)
+        if market_data_path and Path(market_data_path).exists():
+            enrich_portfolio_from_market_data(portfolio, Path(market_data_path))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to re-load portfolio: {exc}") from exc
+
+    scenario = StressScenario(
+        name=body.name,
+        equity_shock=body.equity_shock,
+        credit_spread_shock_bps=body.credit_spread_shock_bps,
+        liquidity_haircut_multiplier=body.liquidity_haircut_multiplier,
+        redemption_rate=body.redemption_rate,
+        adv_stress_scalar=body.adv_stress_scalar,
+        rate_shock_bps=body.rate_shock_bps,
+        description="User-defined custom stress scenario.",
+        regulatory_basis="User-defined - not a prescribed regulatory scenario",
+    )
+
+    try:
+        results = StressEngine(portfolio, scenarios=[scenario]).run_detail()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Stress run failed: {exc}") from exc
+
+    if not results:
+        raise HTTPException(status_code=500, detail="Stress run produced no result")
+
+    result = results[0]
+
+    scenario_meta = {
+        "name": scenario.name,
+        "equity_shock": scenario.equity_shock,
+        "credit_spread_shock_bps": scenario.credit_spread_shock_bps,
+        "rate_shock_bps": scenario.rate_shock_bps,
+        "liquidity_haircut_multiplier": scenario.liquidity_haircut_multiplier,
+        "redemption_rate": scenario.redemption_rate,
+        "adv_stress_scalar": scenario.adv_stress_scalar,
+        "description": scenario.description,
+        "regulatory_basis": scenario.regulatory_basis,
+        "is_worst_case": scenario.is_worst_case,
+        "version": scenario.version,
+    }
+
+    return {
+        "stress_result": _clean_dict(result.to_dict()),
+        "scenario_metadata": _clean_dict(scenario_meta),
+    }
+
+
 class WaterfallOptimiseRequest(BaseModel):
     portfolio: Optional[str] = None
 

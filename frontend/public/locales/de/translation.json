@@ -182,7 +182,23 @@
       "worstCase": "Schlechtester Fall"
     },
     "yes": "Ja",
-    "no": "Nein"
+    "no": "Nein",
+    "creator": {
+      "title": "Ersteller benutzerdefinierter Szenarien",
+      "subtitle": "Definieren Sie Ihren eigenen Schock und führen Sie ihn auf dieses Portfolio aus. Die Ergebnisse erscheinen in den Tabellen oben.",
+      "name": "Szenarioname",
+      "equityShock": "Aktienschock (%)",
+      "spreadShock": "Kreditspread-Schock (Bp)",
+      "rateShock": "Zinsschock (Bp)",
+      "haircutMult": "Liquiditätsabschlag-Multiplikator (×)",
+      "redemptionRate": "Rücknahmerate (%)",
+      "advScalar": "ADV-Stress-Skalar (×)",
+      "run": "Szenario ausführen",
+      "running": "Wird ausgeführt…",
+      "clear": "Benutzerdefiniert löschen",
+      "error": "Szenario konnte nicht ausgeführt werden. Bitte überprüfen Sie die Werte und versuchen Sie es erneut.",
+      "customBadge": "Benutzerdefiniert"
+    }
   },
   "redemption": {
     "title": "Rücknahmendeckung",
@@ -465,7 +481,7 @@
     "top10": "Top-10-Anlegerkonzentration    : {{value}}",
     "liqVsConc": "Liquidität / Konzentration     : {{value}}x",
     "stressScenarios": "{{count}} ESMA-Szenarien wurden ausgeführt.",
-    "worstCase": "Schlimmstes Szenario: „{{name}}"",
+    "worstCase": "Schlimmstes Szenario: „{{name}}“",
     "navImpact": "  NAV-Auswirkung  : {{pct}} ({{eur}})",
     "equityLoss": "  Aktienverlust   : {{value}}",
     "creditLoss": "  Kreditverlust   : {{value}}",

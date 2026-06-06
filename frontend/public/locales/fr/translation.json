@@ -182,7 +182,23 @@
       "worstCase": "Pire cas"
     },
     "yes": "Oui",
-    "no": "Non"
+    "no": "Non",
+    "creator": {
+      "title": "Créateur de scénario personnalisé",
+      "subtitle": "Définissez votre propre choc et exécutez-le sur ce portefeuille. Les résultats apparaissent dans les tableaux ci-dessus.",
+      "name": "Nom du scénario",
+      "equityShock": "Choc actions (%)",
+      "spreadShock": "Choc de spread de crédit (pb)",
+      "rateShock": "Choc de taux (pb)",
+      "haircutMult": "Multiplicateur de décote de liquidité (×)",
+      "redemptionRate": "Taux de rachat (%)",
+      "advScalar": "Scalaire de stress ADV (×)",
+      "run": "Exécuter le scénario",
+      "running": "Exécution…",
+      "clear": "Effacer personnalisé",
+      "error": "Impossible d'exécuter le scénario. Vérifiez les valeurs et réessayez.",
+      "customBadge": "Personnalisé"
+    }
   },
   "redemption": {
     "title": "Couverture des rachats",

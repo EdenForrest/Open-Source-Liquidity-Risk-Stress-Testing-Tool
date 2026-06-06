@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, CartesianGrid,
 } from 'recharts'
 import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import { useTheme } from '../ThemeContext'
+import client from '../api/client'
 import KPICard from '../components/KPICard'
 import EmptyState from '../components/EmptyState'
 import StatusBanner from '../components/StatusBanner'
@@ -17,17 +19,84 @@ const headingStyle = { color: 'var(--text-secondary)' }
 const rowEven = { background: 'var(--bg-panel)' }
 const rowOdd  = { background: 'var(--bg-surface)' }
 
+const inputStyle = {
+  background: 'var(--bg-surface)',
+  borderColor: 'var(--border)',
+  color: 'var(--text-primary)',
+}
+
+// Form defaults mirror the backend CustomScenarioRequest defaults. Percentage
+// fields are expressed as whole percent in the UI and converted on submit.
+const EMPTY_FORM = {
+  name: 'My Custom Scenario',
+  equity_shock_pct: -20,
+  credit_spread_shock_bps: 150,
+  rate_shock_bps: 0,
+  liquidity_haircut_multiplier: 2,
+  redemption_rate_pct: 10,
+  adv_stress_scalar: 1,
+}
+
 export default function StressTests() {
   const { t } = useTranslation()
-  const { data, error } = useAnalysis()
+  const { data, error, runId, selectedPortfolio } = useAnalysis()
   const { theme } = useTheme()
   const ct = chartTheme(theme)
   const stress = data?.stress
+
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [customResults, setCustomResults] = useState([])
+  const [customMeta, setCustomMeta] = useState([])
+  const [running, setRunning] = useState(false)
+  const [formError, setFormError] = useState(null)
+
   if (error) return <StatusBanner />
   if (!stress) return <EmptyState />
 
-  const results = stress.stress_results || []
-  const meta = stress.scenario_metadata || []
+  const results = [...(stress.stress_results || []), ...customResults]
+  const meta = [...(stress.scenario_metadata || []), ...customMeta]
+
+  const setField = (key) => (e) => {
+    const v = e.target.value
+    setForm((f) => ({ ...f, [key]: v }))
+  }
+
+  const num = (v, fallback = 0) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : fallback
+  }
+
+  const runCustom = async () => {
+    if (!runId) return
+    setRunning(true)
+    setFormError(null)
+    try {
+      const payload = {
+        name: (form.name || '').trim() || 'Custom Scenario',
+        equity_shock: num(form.equity_shock_pct) / 100,
+        credit_spread_shock_bps: Math.round(num(form.credit_spread_shock_bps)),
+        rate_shock_bps: Math.round(num(form.rate_shock_bps)),
+        liquidity_haircut_multiplier: num(form.liquidity_haircut_multiplier, 1),
+        redemption_rate: num(form.redemption_rate_pct) / 100,
+        adv_stress_scalar: num(form.adv_stress_scalar, 1),
+        portfolio: selectedPortfolio,
+      }
+      const res = await client.post(`/run/${runId}/custom-scenario`, payload)
+      setCustomResults((rs) => [...rs, { ...res.data.stress_result, _custom: true }])
+      setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _custom: true }])
+    } catch (err) {
+      // The api client interceptor flattens the server detail into err.message.
+      setFormError(err?.message || t('stress.creator.error'))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const clearCustom = () => {
+    setCustomResults([])
+    setCustomMeta([])
+    setFormError(null)
+  }
 
   const worstNav = results.reduce((a, b) => (b.nav_impact_pct < a.nav_impact_pct ? b : a), results[0])
   const worstLiq = results.reduce((a, b) => (b.liquid_pct_after < a.liquid_pct_after ? b : a), results[0])
@@ -68,6 +137,62 @@ export default function StressTests() {
   return (
     <div className="p-3 space-y-3">
       <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('stress.title')}</h1>
+
+      <div className="rounded shadow-sm border p-3 space-y-2" style={panelStyle}>
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide bb-head" style={headingStyle}>
+            {t('stress.creator.title')}
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+            {t('stress.creator.subtitle')}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+          {[
+            ['name', t('stress.creator.name'), 'text', undefined],
+            ['equity_shock_pct', t('stress.creator.equityShock'), 'number', '1'],
+            ['credit_spread_shock_bps', t('stress.creator.spreadShock'), 'number', '1'],
+            ['rate_shock_bps', t('stress.creator.rateShock'), 'number', '1'],
+            ['liquidity_haircut_multiplier', t('stress.creator.haircutMult'), 'number', '0.1'],
+            ['redemption_rate_pct', t('stress.creator.redemptionRate'), 'number', '1'],
+            ['adv_stress_scalar', t('stress.creator.advScalar'), 'number', '0.1'],
+          ].map(([key, label, type, step]) => (
+            <label key={key} className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              <span className="whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
+              <input
+                type={type}
+                step={step}
+                value={form[key]}
+                onChange={setField(key)}
+                className="rounded border px-2 py-1 text-sm w-full"
+                style={inputStyle}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={runCustom}
+            disabled={running || !runId}
+            className="rounded px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+          >
+            {running ? t('stress.creator.running') : t('stress.creator.run')}
+          </button>
+          {customResults.length > 0 && (
+            <button
+              onClick={clearCustom}
+              className="rounded px-3 py-1.5 text-sm font-medium border"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+            >
+              {t('stress.creator.clear')}
+            </button>
+          )}
+          {formError && (
+            <span className="text-xs font-medium" style={{ color: '#ff3b3b' }}>{formError}</span>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         <KPICard label={<MetricTooltip id="worst_nav_impact">{t('stress.kpi.worstNavImpact')}</MetricTooltip>} value={pct(worstNav?.nav_impact_pct)} sub={worstNav?.scenario_name} color="red" />
@@ -118,7 +243,15 @@ export default function StressTests() {
           <tbody>
             {results.map((r, i) => (
               <tr key={i} style={i % 2 === 0 ? rowEven : rowOdd}>
-                <td className="px-3 py-2 font-medium">{r.scenario_name}</td>
+                <td className="px-3 py-2 font-medium">
+                  {r.scenario_name}
+                  {r._custom && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                      style={{ background: 'var(--accent)', color: '#fff' }}>
+                      {t('stress.creator.customBadge')}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right">{eur(r.nav_before)}</td>
                 <td className="px-3 py-2 text-right">{eur(r.nav_after_shock)}</td>
                 <td className="px-3 py-2 text-right font-semibold"
@@ -160,7 +293,15 @@ export default function StressTests() {
           <tbody>
             {meta.map((sc, i) => (
               <tr key={i} style={i % 2 === 0 ? rowEven : rowOdd}>
-                <td className="px-3 py-2 font-medium">{sc.name}</td>
+                <td className="px-3 py-2 font-medium">
+                  {sc.name}
+                  {sc._custom && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                      style={{ background: 'var(--accent)', color: '#fff' }}>
+                      {t('stress.creator.customBadge')}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right">{pct(sc.equity_shock)}</td>
                 <td className="px-3 py-2 text-right">{sc.credit_spread_shock_bps}</td>
                 <td className="px-3 py-2 text-right">{sc.rate_shock_bps}</td>
