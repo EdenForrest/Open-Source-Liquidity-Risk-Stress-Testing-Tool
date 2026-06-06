@@ -19,6 +19,16 @@ function fmtDays(n) {
   return n.toFixed(1) + 'd'
 }
 
+// A fund is an AIF when it is a loan-origination AIF or carries leverage above
+// 100% NAV (derivatives/loans → AIFMD II regime). Otherwise it is treated as a
+// UCITS. UCITS issuer-concentration rows are hidden for AIFs, and AIFMD II
+// leverage/LMT rows are hidden for UCITS — a fund is one or the other.
+function isAif(a) {
+  if (!a) return false
+  return !!a.is_loan_origination_aif || (a.gross_leverage != null && a.gross_leverage > 1.0)
+}
+const naCell = <span style={{ color: 'var(--text-muted)' }}>—</span>
+
 function StatusDot({ warning_flag, breach_flag }) {
   const { t } = useTranslation()
   if (breach_flag) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>{t('allPortfolios.breach')}</span>
@@ -135,9 +145,9 @@ export default function AllPortfolios() {
               </tr>
             </thead>
             <tbody>
+              <RegimeRow codes={portfolioCodes} allData={allData} />
               <MetricRow label={t('allPortfolios.metrics.totalNav')} codes={portfolioCodes} allData={allData} getter={m => fmtEur(m?.total_nav_eur)} />
               <MetricRow label="Reporting Date" codes={portfolioCodes} allData={allData} getter={m => m?.reporting_date ?? '—'} />
-              <BreachRow codes={portfolioCodes} allData={allData} />
               <MetricRow label={t('allPortfolios.metrics.lcrT1')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t1} />} />
               <MetricRow label={t('allPortfolios.metrics.lcrT3')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t3} />} />
               <MetricRow label={t('allPortfolios.metrics.lcrT7')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t7} />} />
@@ -170,18 +180,14 @@ export default function AllPortfolios() {
                 if (m?.geo_warning_flag) return <span className="font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>{t('allPortfolios.warning')}</span>
                 return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('allPortfolios.ok')}</span>
               }} />
-              <MetricRow label="UCITS Status" codes={portfolioCodes} allData={allData} getter={m => {
+              <MetricRow label="UCITS Status" codes={portfolioCodes} allData={allData} regime="ucits" getter={m => {
                 if (m?.ucits_single_breach || m?.ucits_aggregate_breach)
                   return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
                 return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
               }} />
-              <MetricRow label="UCITS 5–10% Bucket" codes={portfolioCodes} allData={allData} getter={m => (
+              <MetricRow label="UCITS 5–10% Bucket" codes={portfolioCodes} allData={allData} regime="ucits" getter={m => (
                 <RiskCell value={m?.ucits_aggregate_5_10} warnAt={0.30} redAt={0.40} display={m?.ucits_aggregate_5_10 != null ? (m.ucits_aggregate_5_10 * 100).toFixed(1) + '%' : null} />
               )} />
-              <MetricRow label="UCITS Breaching Issuers" codes={portfolioCodes} allData={allData} getter={m => {
-                const count = m?.ucits_breaching_issuers ? Object.keys(m.ucits_breaching_issuers).length : 0
-                return <span style={{ color: count > 0 ? 'var(--kpi-red-text)' : 'var(--text-primary)' }} className={count > 0 ? 'font-semibold' : ''}>{count}</span>
-              }} />
               <LeverageMetricRow label={t('dashboard.aifmd.status')} codes={portfolioCodes} allData={allData} getter={a => {
                 if (!a) return <span style={{ color: 'var(--text-muted)' }}>—</span>
                 if (a.leverage_breach) return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>{t('allPortfolios.breach')}</span>
@@ -189,12 +195,16 @@ export default function AllPortfolios() {
                 return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('allPortfolios.ok')}</span>
               }} />
               <LeverageMetricRow label={t('allPortfolios.metrics.grossLev')} codes={portfolioCodes} allData={allData} getter={a => (
-                <RiskCell value={a?.gross_leverage} warnAt={1.5} redAt={1.75} display={a?.gross_leverage != null ? (a.gross_leverage * 100).toFixed(1) + '%' : null} />
+                a?.gross_leverage == null ? <span style={{ color: 'var(--text-muted)' }}>—</span> : (
+                  <span>
+                    <RiskCell value={a.gross_leverage} warnAt={1.5} redAt={1.75} display={(a.gross_leverage * 100).toFixed(1) + '%'} />
+                    {a.leverage_cap != null && <span className="ml-1 text-xs font-normal opacity-60">/ cap {(a.leverage_cap * 100).toFixed(0)}%</span>}
+                  </span>
+                )
               )} />
               <LeverageMetricRow label={t('allPortfolios.metrics.commitLev')} codes={portfolioCodes} allData={allData} getter={a => (
                 <RiskCell value={a?.commitment_leverage} warnAt={1.5} redAt={1.75} display={a?.commitment_leverage != null ? (a.commitment_leverage * 100).toFixed(1) + '%' : null} />
               )} />
-              <LeverageMetricRow label={t('allPortfolios.metrics.leverageCap')} codes={portfolioCodes} allData={allData} getter={a => a?.leverage_cap != null ? (a.leverage_cap * 100).toFixed(0) + '%' : '—'} />
               <LeverageMetricRow label={t('allPortfolios.metrics.lmtCount')} codes={portfolioCodes} allData={allData} getter={a => {
                 if (a?.lmt_count == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
                 const color = a.lmt_compliant ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
@@ -208,43 +218,38 @@ export default function AllPortfolios() {
   )
 }
 
-function BreachRow({ codes, allData }) {
-  const { t } = useTranslation()
+// Labels each portfolio's regulatory regime so the n/a cells in the
+// regime-specific rows below read clearly (UCITS rows blank for AIFs, and the
+// AIFMD II leverage/LMT rows blank for UCITS).
+function RegimeRow({ codes, allData }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }} className="transition-colors hover:opacity-80">
       <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>
-        {t('allPortfolios.breach')} / {t('allPortfolios.warning')}
+        Regime
       </td>
-      {codes.map(code => {
-        const m = allData[code]?.liquidity?.liquidity_metrics
-        const a = allData[code]?.aifmd2
-        const isBreach = m?.breach_flag || a?.leverage_breach
-        const isWarning = !isBreach && m?.warning_flag
-        return (
-          <td key={code} className="px-3 py-1.5 text-right">
-            {isBreach
-              ? <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>{t('allPortfolios.breach')}</span>
-              : isWarning
-              ? <span className="text-xs font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>{t('allPortfolios.warning')}</span>
-              : <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('allPortfolios.ok')}</span>
-            }
-          </td>
-        )
-      })}
+      {codes.map(code => (
+        <td key={code} className="px-3 py-1.5 text-right text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>
+          {isAif(allData[code]?.aifmd2) ? 'AIF' : 'UCITS'}
+        </td>
+      ))}
     </tr>
   )
 }
 
-function MetricRow({ label, codes, allData, getter }) {
+// `regime` (optional): 'ucits' shows the cell only for UCITS funds, 'aif' only
+// for AIFs. Cells for the opposite regime render n/a — a fund is one or the other.
+function MetricRow({ label, codes, allData, getter, regime }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}
       className="transition-colors hover:opacity-80">
       <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>{label}</td>
       {codes.map(code => {
         const m = allData[code]?.liquidity?.liquidity_metrics
+        const aif = isAif(allData[code]?.aifmd2)
+        const hide = regime === 'ucits' ? aif : regime === 'aif' ? !aif : false
         return (
           <td key={code} className="px-3 py-1.5 text-right" style={{ color: 'var(--text-primary)' }}>
-            {getter(m)}
+            {hide ? naCell : getter(m)}
           </td>
         )
       })}
@@ -252,6 +257,7 @@ function MetricRow({ label, codes, allData, getter }) {
   )
 }
 
+// AIFMD II rows: shown only for AIFs (UCITS funds render n/a).
 function LeverageMetricRow({ label, codes, allData, getter }) {
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }}
@@ -261,7 +267,7 @@ function LeverageMetricRow({ label, codes, allData, getter }) {
         const a = allData[code]?.aifmd2
         return (
           <td key={code} className="px-3 py-1.5 text-right" style={{ color: 'var(--text-primary)' }}>
-            {getter(a)}
+            {isAif(a) ? getter(a) : naCell}
           </td>
         )
       })}
