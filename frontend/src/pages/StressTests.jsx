@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, CartesianGrid,
 } from 'recharts'
@@ -56,11 +56,29 @@ export default function StressTests() {
   const [reverseError, setReverseError] = useState(null)
   const [reverseInfo, setReverseInfo] = useState(null)
 
+  // The reverse-stress banner reflects the last run for the *currently selected*
+  // portfolio. Clear it when the user switches portfolios so a stale "robust" /
+  // "breach found" message from another portfolio is never shown.
+  useEffect(() => {
+    setReverseInfo(null)
+    setReverseError(null)
+    setFormError(null)
+  }, [selectedPortfolio])
+
   if (error) return <StatusBanner />
   if (!stress) return <EmptyState />
 
-  const results = [...(stress.stress_results || []), ...customResults]
-  const meta = [...(stress.scenario_metadata || []), ...customMeta]
+  // Custom + reverse results are tagged with the portfolio they were run for so
+  // switching the selected portfolio shows only that portfolio's on-demand runs
+  // (the pipeline `stress.stress_results` are already scoped to the selection).
+  const scopedCustom = customResults.filter(
+    (r) => !selectedPortfolio || !r._portfolio || r._portfolio === selectedPortfolio,
+  )
+  const scopedMeta = customMeta.filter(
+    (m) => !selectedPortfolio || !m._portfolio || m._portfolio === selectedPortfolio,
+  )
+  const results = [...(stress.stress_results || []), ...scopedCustom]
+  const meta = [...(stress.scenario_metadata || []), ...scopedMeta]
 
   const setField = (key) => (e) => {
     const v = e.target.value
@@ -88,8 +106,8 @@ export default function StressTests() {
         portfolio: selectedPortfolio,
       }
       const res = await client.post(`/run/${runId}/custom-scenario`, payload)
-      setCustomResults((rs) => [...rs, { ...res.data.stress_result, _custom: true }])
-      setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _custom: true }])
+      setCustomResults((rs) => [...rs, { ...res.data.stress_result, _custom: true, _portfolio: selectedPortfolio }])
+      setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _custom: true, _portfolio: selectedPortfolio }])
     } catch (err) {
       // The api client interceptor flattens the server detail into err.message.
       setFormError(err?.message || t('stress.creator.error'))
@@ -107,8 +125,8 @@ export default function StressTests() {
       const res = await client.post(`/run/${runId}/reverse-stress`, { portfolio: selectedPortfolio })
       const rev = res.data?.reverse_result || {}
       if (res.data?.found && res.data?.stress_result) {
-        setCustomResults((rs) => [...rs, { ...res.data.stress_result, _reverse: true }])
-        setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _reverse: true }])
+        setCustomResults((rs) => [...rs, { ...res.data.stress_result, _reverse: true, _portfolio: selectedPortfolio }])
+        setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _reverse: true, _portfolio: selectedPortfolio }])
         setReverseInfo({ found: true, distance: rev.severity_distance })
       } else {
         // Robust across the plausible box — no breach reachable.
@@ -122,8 +140,11 @@ export default function StressTests() {
   }
 
   const clearCustom = () => {
-    setCustomResults([])
-    setCustomMeta([])
+    // Clear only the on-demand runs for the currently selected portfolio so other
+    // portfolios' results are preserved.
+    const keep = (r) => selectedPortfolio && r._portfolio && r._portfolio !== selectedPortfolio
+    setCustomResults((rs) => rs.filter(keep))
+    setCustomMeta((ms) => ms.filter(keep))
     setFormError(null)
     setReverseError(null)
     setReverseInfo(null)
@@ -206,11 +227,11 @@ export default function StressTests() {
             onClick={runCustom}
             disabled={running || !runId}
             className="rounded px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
-            style={{ background: 'var(--accent)', color: '#fff' }}
+            style={{ background: 'var(--text-accent)', color: '#fff' }}
           >
             {running ? t('stress.creator.running') : t('stress.creator.run')}
           </button>
-          {customResults.length > 0 && (
+          {scopedCustom.length > 0 && (
             <button
               onClick={clearCustom}
               className="rounded px-3 py-1.5 text-sm font-medium border"
@@ -239,7 +260,7 @@ export default function StressTests() {
             onClick={runReverse}
             disabled={reverseRunning || !runId}
             className="rounded px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
-            style={{ background: 'var(--accent)', color: '#fff' }}
+            style={{ background: 'var(--text-accent)', color: '#fff' }}
           >
             {reverseRunning ? t('stress.reverse.running') : t('stress.reverse.run')}
           </button>
@@ -314,7 +335,7 @@ export default function StressTests() {
                   {r.scenario_name}
                   {r._custom && (
                     <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
-                      style={{ background: 'var(--accent)', color: '#fff' }}>
+                      style={{ background: 'var(--text-accent)', color: '#fff' }}>
                       {t('stress.creator.customBadge')}
                     </span>
                   )}
@@ -370,7 +391,7 @@ export default function StressTests() {
                   {sc.name}
                   {sc._custom && (
                     <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
-                      style={{ background: 'var(--accent)', color: '#fff' }}>
+                      style={{ background: 'var(--text-accent)', color: '#fff' }}>
                       {t('stress.creator.customBadge')}
                     </span>
                   )}
