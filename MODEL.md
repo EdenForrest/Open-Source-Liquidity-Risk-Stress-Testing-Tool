@@ -520,7 +520,10 @@ endpoint:
 | `redemption_rate` | 0% | 50% | 1.2 |
 
 The credit-spread shock is intentionally **not** a free variable so the five
-requested drivers are isolated; an axis can be appended to `axes` if desired.
+requested drivers are isolated; an axis can be appended to `axes` if desired. The
+weight column $w_i$ marks how implausible an axis is to move on its own (redemptions
+weigh most, the two liquidity-microstructure axes least); it forms the diagonal
+$W=\mathrm{diag}(w_i)$ of the Mahalanobis metric in §14.2.
 
 ### 14.2 Optimisation problem
 
@@ -528,14 +531,42 @@ Let $\mathbf{s} = (s_1,\dots,s_5) \in [0,1]^5$. We seek the **most plausible
 (least-severe) joint shock that still breaches** — the "closest scenario to the calm
 state on the breach boundary":
 
-$$\min_{\mathbf{s}} \ D(\mathbf{s}) = \sqrt{\textstyle\sum_i w_i\, s_i^2} \quad \text{s.t.} \quad L_{\text{after}}(\mathbf{s}) \leq L_{\text{breach}}, \quad 0 \leq s_i \leq 1$$
+$$\min_{\mathbf{s}} \ D(\mathbf{s}) = \sqrt{\mathbf{s}^{\top}\,\Sigma^{-1}\,\mathbf{s}} \quad \text{s.t.} \quad \underbrace{\neg\,\text{CanMeet}(\mathbf{s})}_{\text{breach}}, \quad \underbrace{\max_j s_j^{\text{liq}} \leq \max_k s_k^{\text{mkt}} + \alpha}_{\text{coherence guardrail}}, \quad 0 \leq s_i \leq 1$$
 
-$D(\mathbf{s})$ is a plausibility-weighted (Mahalanobis-style) distance from calm;
-larger $w_i$ marks an axis as more implausible to move, so the optimiser prefers to
-leave it near $c_i$. The breach threshold defaults to `LIQUIDITY_BREACH_THRESHOLD`.
-$L_{\text{after}}(\mathbf{s})$ is evaluated by **re-pricing the real portfolio**
-through the host `StressEngine._apply_scenario` — the engine never re-implements the
-pricing logic, and evaluations are cached because the optimiser revisits points.
+$D(\mathbf{s})$ is a **Mahalanobis distance** from the calm state $\mathbf{s}=\mathbf{0}$
+under the crisis co-movement metric $\Sigma$. A *diagonal* severity norm
+$\sqrt{\sum_i w_i s_i^2}$ treats the five drivers as independent, which let the
+optimiser reach economically **incoherent** corners — e.g. a ×3 liquidity-haircut
+blow-out with equities flat, spreads unchanged and normal trading volume. That never
+happens: liquidity dries up *because* markets fall. Both ESMA Guideline 17 and AIFMD
+II Art.16(1) require shocks to be "severe **but plausible**" — i.e. jointly coherent.
+
+**Calibration.** $\Sigma = W^{1/2} R\, W^{1/2}$, where $W=\mathrm{diag}(w_i)$ folds in
+the per-axis implausibility weights and $R$ (`SHOCK_CORRELATION`) is the crisis
+co-movement correlation matrix, calibrated to the firm's own hand-built forward
+`STRESS_SCENARIOS` — in which liquidity stress (haircut↑, ADV↓, redemptions↑) always
+rises *together* with market stress (equity↓, rate↑). With $R=I$ the norm collapses
+back to the old diagonal form; with the real positive off-diagonals, an incoherent
+combination sits *far* from calm because $\Sigma^{-1}$ penalises moves that violate
+the expected co-movement. (When the active axes are not the canonical five-driver
+set — e.g. a custom `axes` tuple — the engine falls back to the diagonal precision so
+those configurations keep working.)
+
+**Coherence guardrail.** Beyond the soft Mahalanobis penalty, a *hard* constraint
+forbids liquidity-only / redemption-only breaches with no justifying market driver:
+the worst liquidity-side severity $\max_j s_j^{\text{liq}}$ (over ADV, haircut,
+redemptions) may exceed the worst market-side severity $\max_k s_k^{\text{mkt}}$ (over
+equity, rate) by at most an *autonomous allowance* $\alpha=$ `COHERENCE_AUTONOMY`
+$=0.25$ — room for idiosyncratic fund-specific pressure (a large investor leaving, an
+operational ADV hit) — but not a fully market-detached liquidity collapse.
+
+The breach test is the **redemption-coverage failure** $\neg\,\text{CanMeet}(\mathbf{s})$
+(see §14.3 / `_is_breach`), with the smooth liquidity-floor margin
+$L_{\text{breach}} - L_{\text{after}}(\mathbf{s})$ used only to *guide* the gradient
+solver. $L_{\text{after}}(\mathbf{s})$ and CanMeet are evaluated by **re-pricing the
+real portfolio** through the host `StressEngine._apply_scenario` — the engine never
+re-implements the pricing logic, and evaluations are cached because the optimiser
+revisits points.
 
 ### 14.3 Solver
 
@@ -556,13 +587,20 @@ fallback:
    even that does not breach, the book is robust across the whole plausible box and
    the result is `found=False` (a meaningful resilience result).
 2. **Coarse grid** — sample a small per-axis grid to seed starting points and to
-   give the fallback something to refine.
+   give the fallback something to refine. Grid seeds are filtered through the
+   coherence guardrail (`_is_coherent`) *before* the breach test, so incoherent
+   corners never enter the candidate pool.
 3. **Multi-start SLSQP** (`scipy.optimize.minimize`) — from the severe corner plus
-   the most-breaching grid seeds, minimise $D(\mathbf{s})$ subject to
-   $L_{\text{breach}} - L_{\text{after}}(\mathbf{s}) \geq 0$; keep the feasible
-   optimum with the smallest $D$.
+   the most-breaching grid seeds, minimise $D(\mathbf{s})=\sqrt{\mathbf{s}^{\top}\Sigma^{-1}\mathbf{s}}$
+   (with its analytic gradient $\Sigma^{-1}\mathbf{s}/D$) subject to **two** inequality
+   constraints: the breach margin $L_{\text{breach}} - L_{\text{after}}(\mathbf{s}) \geq 0$
+   *and* the coherence guardrail $\max_k s_k^{\text{mkt}} + \alpha - \max_j s_j^{\text{liq}} \geq 0$;
+   accept a converged $\mathbf{s}^*$ only if it is both coherent and a genuine breach,
+   and keep the feasible optimum with the smallest $D$.
 4. **Fallback** — if scipy is unavailable or SLSQP finds nothing feasible, return
-   the best breaching grid point (or the severe corner).
+   the best breaching grid point (or the severe corner). The severe corner
+   $\mathbf{s}=\mathbf{1}$ is always coherent (margin $=1+\alpha-1=\alpha>0$), so this
+   fallback never resurrects an incoherent result.
 
 `solve()` returns a `ReverseStressResult` carrying `found`, `severity_distance`
 ($D(\mathbf{s}^*)$), the per-axis `severity_fractions` and mapped

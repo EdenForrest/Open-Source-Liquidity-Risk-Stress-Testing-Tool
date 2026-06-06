@@ -21,11 +21,18 @@ from liquidity_risk_tool.models.position import Position, Portfolio
 from liquidity_risk_tool.engines.stress_engine import StressEngine
 from liquidity_risk_tool.engines.liquidity_profiler import LiquidityProfiler
 from liquidity_risk_tool.engines.waterfall_engine import WaterfallEngine
-from liquidity_risk_tool.engines.reverse_stress_engine import ReverseStressEngine
+from liquidity_risk_tool.engines.reverse_stress_engine import (
+    ReverseStressEngine,
+    DEFAULT_AXES,
+    COHERENCE_AUTONOMY,
+    SHOCK_CORRELATION,
+)
 from liquidity_risk_tool.config.settings import (
     StressScenario,
     MIN_CASH_BUFFER_PCT,
 )
+
+import numpy as np
 
 
 # ---------------------------------------------------------------------------
@@ -286,3 +293,143 @@ class TestReverseStressIsRedemptionFailure:
         assert reverse_result.found is False
         assert scenario is None
         assert scenario_result is None
+
+
+# ---------------------------------------------------------------------------
+# Finding #4 — reverse-stress breaches must be ECONOMICALLY COHERENT
+# ---------------------------------------------------------------------------
+
+class TestReverseStressCoherence:
+    """A reverse-stress breach must be *severe but plausible* (ESMA Guideline 17 /
+    AIFMD II Art.16(1)) — not just individually-bounded on each axis.
+
+    The bug: a diagonal severity norm treated the five drivers as independent, so
+    the optimiser could return economically incoherent corners — e.g. a ×3
+    liquidity-haircut blow-out with 25% redemptions while equities, spreads and
+    rates are all flat and trading volume is normal. Liquidity never dries up on
+    its own; it dries up *because* markets fall. The fix is a Mahalanobis severity
+    norm (penalising shocks that violate the crisis co-movement structure) plus a
+    hard coherence guardrail forbidding liquidity-only / redemption-only breaches
+    with no justifying market driver.
+
+    Axis order (matches DEFAULT_AXES):
+        0 equity_shock  1 rate_shock_bps  2 adv_stress_scalar
+        3 liquidity_haircut_multiplier   4 redemption_rate
+    """
+
+    def _engine(self):
+        """A ReverseStressEngine wired to its plausibility model only (the helper
+        methods under test never reprice the portfolio, so no StressEngine needed)."""
+        eng = ReverseStressEngine.__new__(ReverseStressEngine)
+        eng.axes = DEFAULT_AXES
+        eng._precision = eng._build_precision()
+        return eng
+
+    # ---- the precise incoherent corner the user reported --------------------
+
+    def test_user_reported_incoherent_corner_is_rejected(self):
+        """Equity 0%, spread 0, rate 0, ADV 1x, haircut ~3x, redemptions 25% — the
+        exact incoherent result from the bug report — must fail the guardrail."""
+        eng = self._engine()
+        # haircut multiplier ~3x is severity ~0.5 (calm 1.0 -> severe 5.0);
+        # 25% redemptions is severity 0.5 (calm 0.0 -> severe 0.50). Markets calm.
+        s = np.array([0.0, 0.0, 0.0, 0.5, 0.5])
+        assert eng._is_coherent(s) is False
+        assert eng._coherence_margin(s) < 0
+
+    def test_coherent_combined_shock_is_accepted(self):
+        """A liquidity blow-out of the SAME severity, but with markets also stressed
+        (the way real crises move), must pass the guardrail."""
+        eng = self._engine()
+        s = np.array([0.5, 0.3, 0.5, 0.6, 0.5])  # equity/rate/adv stressed too
+        assert eng._is_coherent(s) is True
+        assert eng._coherence_margin(s) >= 0
+
+    def test_autonomous_allowance_band(self):
+        """Liquidity stress may exceed market stress by up to COHERENCE_AUTONOMY
+        (idiosyncratic fund pressure), but not beyond."""
+        eng = self._engine()
+        within = np.array([0.40, 0.0, 0.0, 0.40 + COHERENCE_AUTONOMY - 1e-3, 0.0])
+        beyond = np.array([0.40, 0.0, 0.0, 0.40 + COHERENCE_AUTONOMY + 1e-2, 0.0])
+        assert eng._is_coherent(within) is True
+        assert eng._is_coherent(beyond) is False
+
+    def test_severe_corner_is_coherent(self):
+        """The all-severe corner (every driver at 1.0) is coherent — markets and
+        liquidity are maximally and jointly stressed — so the feasibility check and
+        materialisation fallback remain valid."""
+        eng = self._engine()
+        assert eng._is_coherent(np.ones(len(DEFAULT_AXES))) is True
+
+    # ---- the Mahalanobis distance itself ------------------------------------
+
+    def test_incoherent_corner_is_farther_than_coherent_of_equal_liquidity(self):
+        """Under the Mahalanobis norm, an incoherent liquidity-only corner is more
+        *implausible* (larger distance) than a coherent shock with the same
+        liquidity severity — so the least-severe-breach search prefers coherence."""
+        eng = self._engine()
+        incoherent = np.array([0.0, 0.0, 0.0, 0.6, 0.5])
+        coherent = np.array([0.5, 0.3, 0.5, 0.6, 0.5])
+        assert eng._distance(incoherent) > eng._distance(coherent)
+
+    def test_precision_matrix_is_symmetric_positive_definite(self):
+        """Sigma^-1 must be a valid metric: symmetric and positive-definite."""
+        eng = self._engine()
+        p = eng._precision
+        assert np.allclose(p, p.T, atol=1e-9)
+        assert float(np.linalg.eigvalsh(p).min()) > 0.0
+
+    def test_distance_gradient_matches_finite_difference(self):
+        """The analytic gradient used by SLSQP must match a central finite-diff."""
+        eng = self._engine()
+        s = np.array([0.3, 0.2, 0.4, 0.5, 0.3])
+        g = eng._distance_grad(s)
+        h = 1e-6
+        fd = np.empty_like(s)
+        for i in range(len(s)):
+            sp = s.copy(); sp[i] += h
+            sm = s.copy(); sm[i] -= h
+            fd[i] = (eng._distance(sp) - eng._distance(sm)) / (2 * h)
+        assert np.max(np.abs(g - fd)) < 1e-6
+
+    def test_correlation_calibrated_to_forward_scenario_comovement(self):
+        """The calibration anchor: SHOCK_CORRELATION must encode POSITIVE crisis
+        co-movement (all drivers stress together), matching the firm's own forward
+        STRESS_SCENARIOS where liquidity stress always rises with market stress."""
+        n = len(DEFAULT_AXES)
+        assert SHOCK_CORRELATION.shape == (n, n)
+        assert np.allclose(np.diag(SHOCK_CORRELATION), 1.0)
+        assert np.allclose(SHOCK_CORRELATION, SHOCK_CORRELATION.T)
+        # every off-diagonal co-movement is strictly positive (no driver moves
+        # *against* the crisis), and equity is the dominant driver of liquidity.
+        off = SHOCK_CORRELATION[~np.eye(n, dtype=bool)]
+        assert (off > 0).all()
+        eq, _rate, adv, hc, redeem = range(n)
+        assert SHOCK_CORRELATION[eq, hc] > 0.5   # equity drawdown drives haircuts
+        assert SHOCK_CORRELATION[eq, adv] > 0.5  # equity drawdown drives ADV collapse
+
+    # ---- end-to-end: the full solver only returns coherent breaches ---------
+
+    def test_solver_returns_a_coherent_breach(self):
+        """Running the full reverse-stress search on a breachable book must return a
+        breach whose severity fractions satisfy the coherence guardrail — i.e. the
+        located 'easiest breach' has a genuine market driver, never a liquidity-only
+        corner with flat markets (the original bug)."""
+        port = _equity_plus_illiquid_portfolio()
+        engine = StressEngine(port, scenarios=[
+            StressScenario(
+                name="dummy", equity_shock=0.0, credit_spread_shock_bps=0,
+                liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
+            )
+        ])
+        rev = ReverseStressEngine(engine)
+
+        result = rev.solve(n_starts=6, grid_per_axis=3, max_evaluations=300)
+
+        assert result.found is True
+        s = np.array([result.severity_fractions[a.name] for a in rev.axes])
+        # the materialised breach is economically coherent ...
+        assert rev._is_coherent(s)
+        # ... which for this book means a real equity drawdown drives it: the
+        # liquidity stress is NOT autonomous of the market.
+        assert result.breach_parameters["equity_shock"] < 0.0
