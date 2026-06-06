@@ -168,6 +168,9 @@ class ReverseStressEngine:
             LIQUIDITY_BREACH_THRESHOLD if target_liquid_pct is None else target_liquid_pct
         )
         self._n_eval = 0
+        # Hard ceiling on *fresh* (uncached) portfolio repricings, so a single
+        # solve can never run away past the client timeout. Set per-solve.
+        self._eval_budget: Optional[int] = None
         # Cache evaluations: the optimiser revisits points (gradient FD, restarts).
         self._cache: Dict[Tuple[float, ...], Tuple[float, bool]] = {}
 
@@ -200,6 +203,12 @@ class ReverseStressEngine:
         key = tuple(round(float(x), 4) for x in np.clip(s, 0.0, 1.0))
         if key in self._cache:
             return self._cache[key]
+        # Budget guard: once the fresh-evaluation budget is spent, stop repricing.
+        # Returning a non-breaching sentinel makes the constraint look unsatisfied,
+        # so SLSQP stops exploring and the search settles on the best point already
+        # found (or the severe corner). This bounds wall-clock time hard.
+        if self._eval_budget is not None and self._n_eval >= self._eval_budget:
+            return (1.0, True)
         scenario = self._scenario_from_fractions(np.asarray(key), name="__reverse_probe__")
         result = self.stress_engine._apply_scenario(scenario)
         self._n_eval += 1
@@ -223,8 +232,9 @@ class ReverseStressEngine:
     def solve(
         self,
         n_starts: int = 6,
-        grid_per_axis: int = 4,
+        grid_per_axis: int = 3,
         max_iter: int = 60,
+        max_evaluations: int = 300,
     ) -> ReverseStressResult:
         """Find the least-severe joint shock that breaches the liquidity target.
 
@@ -243,6 +253,7 @@ class ReverseStressEngine:
         """
         self._n_eval = 0
         self._cache.clear()
+        self._eval_budget = max_evaluations
         dim = len(self.axes)
 
         # ---- 1. Feasibility at the severe corner -------------------------------
@@ -261,11 +272,18 @@ class ReverseStressEngine:
             )
 
         # ---- 2. Coarse grid seeds ---------------------------------------------
+        # Each grid point is a full portfolio repricing, so the grid dominates the
+        # cost. Reserve a slice of the evaluation budget for the SLSQP refinement
+        # (gradient finite-differences + restarts) and decimate the grid to fit the
+        # remainder. ``max_grid_points`` is therefore strictly below the raw grid
+        # size whenever the budget is tight — the cap that follows is a real
+        # down-sample, not a no-op.
         grid_vals = np.linspace(0.0, 1.0, grid_per_axis)
         feasible_seeds: List[Tuple[float, np.ndarray]] = []  # (distance, s) breaching
         all_seeds: List[Tuple[float, np.ndarray]] = []        # (margin, s) by closeness
-        # Cap grid size to keep evaluations bounded for high dimensions.
-        max_grid_points = 4 ** 5
+        # Keep ~2/3 of the budget for the grid, leaving room for SLSQP. Always
+        # allow at least a minimal grid so seeding still works.
+        max_grid_points = max(32, (2 * max_evaluations) // 3)
         coords = list(product(grid_vals, repeat=dim))
         if len(coords) > max_grid_points:
             coords = coords[:: max(1, len(coords) // max_grid_points)]
@@ -420,8 +438,9 @@ class ReverseStressEngine:
     def run(
         self,
         n_starts: int = 6,
-        grid_per_axis: int = 4,
+        grid_per_axis: int = 3,
         max_iter: int = 60,
+        max_evaluations: int = 300,
     ) -> Tuple[Optional[StressScenario], Optional["object"], ReverseStressResult]:
         """Convenience driver: solve, materialise, and re-apply through the host
         engine so the breach slots into the standard result tables.
@@ -431,7 +450,10 @@ class ReverseStressEngine:
         ``(None, None, reverse_result)``.
         """
         reverse_result = self.solve(
-            n_starts=n_starts, grid_per_axis=grid_per_axis, max_iter=max_iter
+            n_starts=n_starts,
+            grid_per_axis=grid_per_axis,
+            max_iter=max_iter,
+            max_evaluations=max_evaluations,
         )
         scenario = self.build_breach_scenario(reverse_result)
         if scenario is None:

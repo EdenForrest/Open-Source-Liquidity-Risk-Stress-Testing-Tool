@@ -50,6 +50,12 @@ export default function StressTests() {
   const [running, setRunning] = useState(false)
   const [formError, setFormError] = useState(null)
 
+  // Reverse stress is run on demand only (expensive multi-start optimisation),
+  // never inside the pipeline. It appends into the same result/param tables.
+  const [reverseRunning, setReverseRunning] = useState(false)
+  const [reverseError, setReverseError] = useState(null)
+  const [reverseInfo, setReverseInfo] = useState(null)
+
   if (error) return <StatusBanner />
   if (!stress) return <EmptyState />
 
@@ -92,10 +98,35 @@ export default function StressTests() {
     }
   }
 
+  const runReverse = async () => {
+    if (!runId) return
+    setReverseRunning(true)
+    setReverseError(null)
+    setReverseInfo(null)
+    try {
+      const res = await client.post(`/run/${runId}/reverse-stress`, { portfolio: selectedPortfolio })
+      const rev = res.data?.reverse_result || {}
+      if (res.data?.found && res.data?.stress_result) {
+        setCustomResults((rs) => [...rs, { ...res.data.stress_result, _reverse: true }])
+        setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _reverse: true }])
+        setReverseInfo({ found: true, distance: rev.severity_distance })
+      } else {
+        // Robust across the plausible box — no breach reachable.
+        setReverseInfo({ found: false })
+      }
+    } catch (err) {
+      setReverseError(err?.message || t('stress.reverse.error'))
+    } finally {
+      setReverseRunning(false)
+    }
+  }
+
   const clearCustom = () => {
     setCustomResults([])
     setCustomMeta([])
     setFormError(null)
+    setReverseError(null)
+    setReverseInfo(null)
   }
 
   const worstNav = results.reduce((a, b) => (b.nav_impact_pct < a.nav_impact_pct ? b : a), results[0])
@@ -194,6 +225,42 @@ export default function StressTests() {
         </div>
       </div>
 
+      <div className="rounded shadow-sm border p-3 space-y-2" style={panelStyle}>
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide bb-head" style={headingStyle}>
+            {t('stress.reverse.title')}
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+            {t('stress.reverse.subtitle')}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={runReverse}
+            disabled={reverseRunning || !runId}
+            className="rounded px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+          >
+            {reverseRunning ? t('stress.reverse.running') : t('stress.reverse.run')}
+          </button>
+          {reverseInfo?.found && (
+            <span className="text-xs font-medium" style={{ color: 'var(--kpi-amber-text)' }}>
+              {t('stress.reverse.foundBanner', {
+                distance: reverseInfo.distance != null ? reverseInfo.distance.toFixed(3) : '—',
+              })}
+            </span>
+          )}
+          {reverseInfo && !reverseInfo.found && (
+            <span className="text-xs font-medium" style={{ color: 'var(--kpi-green-text)' }}>
+              {t('stress.reverse.robustBanner')}
+            </span>
+          )}
+          {reverseError && (
+            <span className="text-xs font-medium" style={{ color: '#ff3b3b' }}>{reverseError}</span>
+          )}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         <KPICard label={<MetricTooltip id="worst_nav_impact">{t('stress.kpi.worstNavImpact')}</MetricTooltip>} value={pct(worstNav?.nav_impact_pct)} sub={worstNav?.scenario_name} color="red" />
         <KPICard label={<MetricTooltip id="worst_liq_after">{t('stress.kpi.worstLiqAfter')}</MetricTooltip>} value={pct(worstLiq?.liquid_pct_after)} sub={worstLiq?.scenario_name} color="amber" />
@@ -251,6 +318,12 @@ export default function StressTests() {
                       {t('stress.creator.customBadge')}
                     </span>
                   )}
+                  {r._reverse && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                      style={{ background: 'var(--kpi-amber-bg)', color: 'var(--kpi-amber-text)' }}>
+                      {t('stress.reverse.badge')}
+                    </span>
+                  )}
                 </td>
                 <td className="px-3 py-2 text-right">{eur(r.nav_before)}</td>
                 <td className="px-3 py-2 text-right">{eur(r.nav_after_shock)}</td>
@@ -299,6 +372,12 @@ export default function StressTests() {
                     <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
                       style={{ background: 'var(--accent)', color: '#fff' }}>
                       {t('stress.creator.customBadge')}
+                    </span>
+                  )}
+                  {sc._reverse && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                      style={{ background: 'var(--kpi-amber-bg)', color: 'var(--kpi-amber-text)' }}>
+                      {t('stress.reverse.badge')}
                     </span>
                   )}
                 </td>

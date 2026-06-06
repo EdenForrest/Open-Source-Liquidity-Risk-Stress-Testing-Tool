@@ -198,6 +198,16 @@
       "clear": "Effacer personnalisé",
       "error": "Impossible d'exécuter le scénario. Vérifiez les valeurs et réessayez.",
       "customBadge": "Personnalisé"
+    },
+    "reverse": {
+      "title": "Test de résistance inversé",
+      "subtitle": "Recherche le choc combiné le moins sévère qui enfreint la contrainte de liquidité (Orientation 17 de l'ESMA / art. 16(1) AIFMD II). Exécution à la demande — il s'agit d'une optimisation multifactorielle coûteuse.",
+      "run": "Lancer le stress inversé",
+      "running": "Recherche…",
+      "badge": "Inversé",
+      "foundBanner": "Scénario de violation trouvé (distance de plausibilité {{distance}}). Ajouté aux tableaux ci-dessous.",
+      "robustBanner": "Aucune violation atteignable dans la plage plausible — le portefeuille est résilient.",
+      "error": "Impossible d'exécuter le stress inversé. Veuillez réessayer."
     }
   },
   "redemption": {

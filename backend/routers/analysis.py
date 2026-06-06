@@ -532,6 +532,102 @@ def custom_scenario(run_id: str, body: CustomScenarioRequest):
     }
 
 
+# ---------------------------------------------------------------------------
+# Reverse stress (multi-parameter breach search) — on demand only
+# ---------------------------------------------------------------------------
+
+class ReverseStressRequest(BaseModel):
+    portfolio: Optional[str] = None
+
+
+@router.post("/run/{run_id}/reverse-stress")
+def reverse_stress(run_id: str, body: ReverseStressRequest):
+    """
+    Run the multi-parameter reverse stress search on demand and return the
+    least-severe joint shock that breaches the liquidity constraint, materialised
+    as a StressScenario plus its ScenarioResult (same shape as the standard
+    ``stress_results`` / ``scenario_metadata`` rows) and the raw search summary.
+
+    This is deliberately NOT part of the main pipeline: it is an expensive,
+    multi-start optimisation that reprices the whole portfolio hundreds of times.
+    It is exposed only behind an explicit user action (button), and is internally
+    capped (evaluation budget) so it cannot run past the client timeout.
+
+    When the portfolio is robust across the whole plausible box (no breach is
+    reachable), ``found`` is False and ``stress_result`` / ``scenario_metadata``
+    are null — a meaningful resilience result, not an error.
+    """
+    from pathlib import Path
+
+    from liquidity_risk_tool.engines.stress_engine import StressEngine
+    from liquidity_risk_tool.engines.reverse_stress_engine import ReverseStressEngine
+    from liquidity_risk_tool.models.csv_loader import (
+        load_portfolio_from_csv,
+        enrich_portfolio_from_market_data,
+    )
+    from backend.services.pipeline_service import _clean_dict
+
+    # Validate the run exists & is complete, and resolve the portfolio code.
+    _portfolio_results(run_id, body.portfolio)
+    codes: list[str] = _require_complete(run_id).get("portfolio_codes", [])
+    code = body.portfolio or (codes[0] if codes else None)
+
+    record = store.get(run_id)
+    holdings_path = getattr(record, "holdings_path", None) if record else None
+    nav_path = getattr(record, "nav_path", None) if record else None
+    market_data_path = getattr(record, "market_data_path", None) if record else None
+
+    if not holdings_path or not nav_path or not Path(holdings_path).exists() or not Path(nav_path).exists():
+        raise HTTPException(
+            status_code=409,
+            detail="Source portfolio files for this run are no longer available. "
+            "Re-run the pipeline (upload or demo) before running reverse stress.",
+        )
+
+    try:
+        portfolio = load_portfolio_from_csv(holdings_path, nav_path, portfolio_code=code)
+        if market_data_path and Path(market_data_path).exists():
+            enrich_portfolio_from_market_data(portfolio, Path(market_data_path))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to re-load portfolio: {exc}") from exc
+
+    try:
+        stress_engine = StressEngine(portfolio)
+        scenario, scenario_result, reverse_result = ReverseStressEngine(stress_engine).run()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Reverse stress run failed: {exc}") from exc
+
+    if scenario is None or scenario_result is None:
+        # Robust across the plausible box — no breach found.
+        return {
+            "found": False,
+            "stress_result": None,
+            "scenario_metadata": None,
+            "reverse_result": _clean_dict(reverse_result.to_dict()),
+        }
+
+    scenario_meta = {
+        "name": scenario.name,
+        "equity_shock": scenario.equity_shock,
+        "credit_spread_shock_bps": scenario.credit_spread_shock_bps,
+        "rate_shock_bps": scenario.rate_shock_bps,
+        "liquidity_haircut_multiplier": scenario.liquidity_haircut_multiplier,
+        "redemption_rate": scenario.redemption_rate,
+        "adv_stress_scalar": scenario.adv_stress_scalar,
+        "description": scenario.description,
+        "regulatory_basis": scenario.regulatory_basis,
+        "is_worst_case": scenario.is_worst_case,
+        "version": getattr(scenario, "version", ""),
+    }
+
+    return {
+        "found": True,
+        "stress_result": _clean_dict(scenario_result.to_dict()),
+        "scenario_metadata": _clean_dict(scenario_meta),
+        "reverse_result": _clean_dict(reverse_result.to_dict()),
+    }
+
+
 class WaterfallOptimiseRequest(BaseModel):
     portfolio: Optional[str] = None
 

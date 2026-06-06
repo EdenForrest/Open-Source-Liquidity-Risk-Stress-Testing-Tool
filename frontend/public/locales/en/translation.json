@@ -198,6 +198,16 @@
       "clear": "Clear custom",
       "error": "Could not run scenario. Please check the values and try again.",
       "customBadge": "Custom"
+    },
+    "reverse": {
+      "title": "Reverse stress test",
+      "subtitle": "Search for the least-severe joint shock that breaches the liquidity constraint (ESMA Guideline 17 / AIFMD II Art. 16(1)). Run on demand — this is an expensive multi-factor optimisation.",
+      "run": "Run reverse stress",
+      "running": "Searching…",
+      "badge": "Reverse",
+      "foundBanner": "Breach scenario found (plausibility distance {{distance}}). Added to the tables below.",
+      "robustBanner": "No breach reachable within the plausible range — the portfolio is resilient.",
+      "error": "Could not run reverse stress. Please try again."
     }
   },
   "redemption": {

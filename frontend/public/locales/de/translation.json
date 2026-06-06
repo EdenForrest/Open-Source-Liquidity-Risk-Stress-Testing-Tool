@@ -198,6 +198,16 @@
       "clear": "Benutzerdefiniert löschen",
       "error": "Szenario konnte nicht ausgeführt werden. Bitte überprüfen Sie die Werte und versuchen Sie es erneut.",
       "customBadge": "Benutzerdefiniert"
+    },
+    "reverse": {
+      "title": "Inverser Stresstest",
+      "subtitle": "Sucht den am wenigsten schweren kombinierten Schock, der die Liquiditätsbeschränkung verletzt (ESMA-Leitlinie 17 / AIFMD II Art. 16(1)). Auf Abruf ausführen — eine rechenintensive Mehrfaktor-Optimierung.",
+      "run": "Inversen Stress ausführen",
+      "running": "Suche läuft…",
+      "badge": "Invers",
+      "foundBanner": "Verletzungsszenario gefunden (Plausibilitätsdistanz {{distance}}). Den Tabellen unten hinzugefügt.",
+      "robustBanner": "Keine Verletzung im plausiblen Bereich erreichbar — das Portfolio ist widerstandsfähig.",
+      "error": "Inverser Stresstest konnte nicht ausgeführt werden. Bitte versuchen Sie es erneut."
     }
   },
   "redemption": {
