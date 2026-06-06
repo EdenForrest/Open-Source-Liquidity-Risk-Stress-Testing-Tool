@@ -261,8 +261,8 @@ def download_sample_data():
     """Bundle the synthetic demo dataset into a single zip download.
 
     Includes the latest Holdings + matching NAV pair, the consolidated market
-    data, the zero-coupon yield curve, and a synthetic Annex IV metadata file.
-    All files are synthetic — safe to share publicly.
+    data, and a synthetic Annex IV metadata file. All files are synthetic —
+    safe to share publicly.
     """
     if not DATA_DIR.exists():
         raise HTTPException(status_code=404, detail="No synthetic demo data found")
@@ -288,7 +288,6 @@ def download_sample_data():
         (holdings_file, holdings_file.name),
         (nav_file, nav_file.name if nav_file else None),
         (DATA_DIR / "market_data_ALL.csv", "market_data_ALL.csv"),
-        (DATA_DIR / "zero_coupon_yields.xlsx", "zero_coupon_yields.xlsx"),
         (DATA_DIR / "annex_iv_meta.json", "annex_iv_meta.json"),
     ]
 
