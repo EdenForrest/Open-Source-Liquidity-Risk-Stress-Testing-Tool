@@ -207,6 +207,7 @@
       "badge": "Inversé",
       "foundBanner": "Scénario de violation trouvé (distance de plausibilité {{distance}}). Ajouté aux tableaux ci-dessous.",
       "robustBanner": "Aucune violation atteignable dans la plage plausible — le portefeuille est résilient.",
+      "baselineBanner": "Déjà en violation sans aucun choc appliqué : la liquidité T0-T1 de base est de {{liquid}}%, sous le seuil de {{target}}%. Le stress inversé ne s'applique pas — le fonds est en violation avant tout stress.",
       "error": "Impossible d'exécuter le stress inversé. Veuillez réessayer."
     }
   },

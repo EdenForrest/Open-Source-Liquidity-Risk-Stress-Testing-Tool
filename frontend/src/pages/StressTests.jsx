@@ -128,6 +128,10 @@ export default function StressTests() {
         setCustomResults((rs) => [...rs, { ...res.data.stress_result, _reverse: true, _portfolio: selectedPortfolio }])
         setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _reverse: true, _portfolio: selectedPortfolio }])
         setReverseInfo({ found: true, distance: rev.severity_distance })
+      } else if (rev.breached_at_baseline) {
+        // Already in breach with no shock — reverse stress is ill-posed. Surface
+        // this distinctly; do NOT show the "robust" banner.
+        setReverseInfo({ found: false, baseline: true, liquid: rev.baseline_liquid_pct, target: rev.target_liquid_pct })
       } else {
         // Robust across the plausible box — no breach reachable.
         setReverseInfo({ found: false })
@@ -271,7 +275,15 @@ export default function StressTests() {
               })}
             </span>
           )}
-          {reverseInfo && !reverseInfo.found && (
+          {reverseInfo && !reverseInfo.found && reverseInfo.baseline && (
+            <span className="text-xs font-medium" style={{ color: '#ff3b3b' }}>
+              {t('stress.reverse.baselineBanner', {
+                liquid: reverseInfo.liquid != null ? (reverseInfo.liquid * 100).toFixed(1) : '—',
+                target: reverseInfo.target != null ? (reverseInfo.target * 100).toFixed(1) : '—',
+              })}
+            </span>
+          )}
+          {reverseInfo && !reverseInfo.found && !reverseInfo.baseline && (
             <span className="text-xs font-medium" style={{ color: 'var(--kpi-green-text)' }}>
               {t('stress.reverse.robustBanner')}
             </span>

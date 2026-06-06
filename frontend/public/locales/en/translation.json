@@ -207,6 +207,7 @@
       "badge": "Reverse",
       "foundBanner": "Breach scenario found (plausibility distance {{distance}}). Added to the tables below.",
       "robustBanner": "No breach reachable within the plausible range — the portfolio is resilient.",
+      "baselineBanner": "Already in breach with no shock applied: baseline T0-T1 liquidity is {{liquid}}%, below the {{target}}% threshold. Reverse stress is not applicable — the fund breaches before any stress.",
       "error": "Could not run reverse stress. Please try again."
     }
   },

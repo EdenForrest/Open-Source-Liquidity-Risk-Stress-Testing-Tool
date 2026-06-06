@@ -122,6 +122,12 @@ class ReverseStressResult:
     n_evaluations: int = 0
     method: str = ""                              # "SLSQP+multistart" | "grid"
     margin_to_breach: Optional[float] = None      # liquid_pct_after - target (≤0 if breach)
+    # True when the portfolio is already below the liquidity target with NO shock
+    # applied (severity distance 0). Reverse stress is ill-posed in this case —
+    # there is no "least-severe shock to breach" because the fund is already in
+    # breach — so callers should surface this distinctly, not as a found scenario.
+    breached_at_baseline: bool = False
+    baseline_liquid_pct: Optional[float] = None   # T0-T1 liquidity at s = 0 (no shock)
 
     def to_dict(self) -> dict:
         return {
@@ -135,6 +141,8 @@ class ReverseStressResult:
             "n_evaluations": self.n_evaluations,
             "method": self.method,
             "margin_to_breach": self.margin_to_breach,
+            "breached_at_baseline": self.breached_at_baseline,
+            "baseline_liquid_pct": self.baseline_liquid_pct,
         }
 
 
@@ -256,6 +264,27 @@ class ReverseStressEngine:
         self._eval_budget = max_evaluations
         dim = len(self.axes)
 
+        # ---- 0. Calm-corner check: already in breach with no shock? ------------
+        # If the unstressed portfolio (s = 0) is already below the liquidity target,
+        # reverse stress is ill-posed: the "least-severe shock to breach" is no shock
+        # at all (distance 0). Report this distinctly instead of materialising a
+        # zero-shock "breach scenario", which is misleading.
+        s_zero = np.zeros(dim)
+        liquid_zero, can_meet_zero = self._evaluate(s_zero)
+        if liquid_zero <= self.target_liquid_pct:
+            return ReverseStressResult(
+                found=False,
+                target_liquid_pct=self.target_liquid_pct,
+                severity_distance=0.0,
+                liquid_pct_at_breach=liquid_zero,
+                can_meet_redemption_at_breach=can_meet_zero,
+                margin_to_breach=liquid_zero - self.target_liquid_pct,
+                breached_at_baseline=True,
+                baseline_liquid_pct=liquid_zero,
+                n_evaluations=self._n_eval,
+                method="baseline-breach",
+            )
+
         # ---- 1. Feasibility at the severe corner -------------------------------
         s_max = np.ones(dim)
         liquid_max, _ = self._evaluate(s_max)
@@ -267,6 +296,7 @@ class ReverseStressEngine:
                 severity_distance=None,
                 liquid_pct_at_breach=None,
                 margin_to_breach=liquid_max - self.target_liquid_pct,
+                baseline_liquid_pct=liquid_zero,
                 n_evaluations=self._n_eval,
                 method="infeasible",
             )
@@ -382,6 +412,7 @@ class ReverseStressEngine:
             liquid_pct_at_breach=liquid_star,
             can_meet_redemption_at_breach=can_meet_star,
             margin_to_breach=liquid_star - self.target_liquid_pct,
+            baseline_liquid_pct=liquid_zero,
             n_evaluations=self._n_eval,
             method=method,
         )
