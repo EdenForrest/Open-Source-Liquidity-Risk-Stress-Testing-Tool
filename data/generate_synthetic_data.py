@@ -17,6 +17,7 @@ Output files (written to the same directory as this script by default):
     market_data_ALL.csv             — market data (comma-delimited)
     market_data_ERRORS.csv          — fetch errors (comma-delimited)
     zero_coupon_yields.xlsx         — US zero-coupon yield curve (xlsx)
+    annex_iv_meta.json              — AIFMD Annex IV AIFM/AIF/share-class metadata
 
 Column schemas are taken from the real file headers only.
 """
@@ -1268,6 +1269,99 @@ def generate_zero_coupon_yields(
 
 
 # ---------------------------------------------------------------------------
+# Annex IV (AIFMD) metadata
+# ---------------------------------------------------------------------------
+
+# Per-mandate investor-side share-class terms. The annex_iv_meta share classes
+# are fund share classes (investor identification), NOT holdings ISINs — they
+# carry the redemption terms a unit-holder is subject to. We align the notice
+# period / dealing frequency to each portfolio's liquidity mandate so the
+# metadata is concordant with the synthetic fund identity: liquid equity/bond
+# funds deal daily with short notice; the illiquid / loan / leveraged mandates
+# carry longer lock-ups, matching their slower asset liquidity.
+_ANNEX_IV_SHARE_CLASS_TERMS: dict[str, tuple[int, str]] = {
+    # portfolio_code      (notice_period_days, redemption_frequency)
+    "SYN-EQUITY":         (1,  "daily"),
+    "SYN-GOVBOND":        (1,  "daily"),
+    "SYN-FIXEDINC":       (5,  "weekly"),
+    "SYN-MIXED":          (15, "monthly"),
+    "SYN-ILLIQ":          (90, "quarterly"),
+    "SYN-LOANFUND":       (90, "quarterly"),
+    "SYN-LEVERAGED":      (30, "monthly"),
+}
+
+
+def _lu_isin(serial: int) -> str:
+    """Generate a synthetic Luxembourg fund-share-class ISIN with a valid
+    Luhn check digit (LU + 9-digit zero-padded serial + check digit)."""
+    body = f"LU{serial:09d}"
+    # Expand letters to numbers (A=10 .. Z=35) then run the Luhn algorithm on
+    # the resulting digit string, per the ISO 6166 check-digit rule.
+    digits = ""
+    for ch in body:
+        if ch.isalpha():
+            digits += str(ord(ch) - 55)
+        else:
+            digits += ch
+    total = 0
+    # Process from the rightmost digit; double every second digit.
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2 == 0:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    check = (10 - (total % 10)) % 10
+    return f"{body}{check}"
+
+
+def generate_annex_iv_meta(
+    output_path: Path,
+    portfolios: list[str],
+) -> None:
+    """Write a synthetic AIFMD Annex IV metadata file (annex_iv_meta.json).
+
+    The AIFM/AIF identifiers and share-class ISINs are entirely synthetic but
+    internally consistent with the synthetic fund identity (Luxembourg-domiciled,
+    EUR, reporting member state LU). One investor-side share class is emitted per
+    generated portfolio, with notice period / dealing frequency matched to that
+    portfolio's liquidity mandate. This satisfies ``annex_iv_ready()`` (non-empty
+    aifm_lei / aif_lei / reporting_member_state and >=1 share class) so the
+    bundled demo can exercise the Annex IV XML/Excel export path end-to-end.
+    """
+    import json
+
+    share_classes = []
+    for idx, code in enumerate(portfolios, start=1):
+        notice, freq = _ANNEX_IV_SHARE_CLASS_TERMS.get(code, (30, "monthly"))
+        # Human-readable class name derived from the synthetic portfolio code.
+        label = code.replace("SYN-", "").title()
+        share_classes.append({
+            "isin": _lu_isin(idx),
+            "name": f"{label} Class EUR",
+            "notice_period_days": notice,
+            "redemption_frequency": freq,
+        })
+
+    meta = {
+        "aifm_lei": "222100SYNAIFM000000",
+        "aifm_name": "Synth ManCo S.A.",
+        "aifm_national_code": "SYN000000",
+        "reporting_member_state": "LU",
+        "aif_lei": "549300SYNAIF0000000",
+        "aif_national_code": "SYN12345678",
+        "share_classes": share_classes,
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"  ANNEX  -> {output_path}")
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -1380,6 +1474,11 @@ def generate_all(
 
     generate_zero_coupon_yields(
         output_path=output_dir / "zero_coupon_yields.xlsx",
+    )
+
+    generate_annex_iv_meta(
+        output_path=output_dir / "annex_iv_meta.json",
+        portfolios=portfolios,
     )
 
     print(f"\nDone. All files written to: {output_dir.resolve()}")
