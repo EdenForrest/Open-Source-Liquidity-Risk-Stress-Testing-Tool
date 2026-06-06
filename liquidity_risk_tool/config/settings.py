@@ -2,6 +2,7 @@
 Central configuration for the Liquidity Risk & Stress Testing Tool.
 All thresholds, bucket definitions, and scenario parameters live here.
 """
+import os
 from dataclasses import dataclass, field
 from typing import Dict, List
 
@@ -172,6 +173,16 @@ LIQUIDITY_BREACH_THRESHOLD: float  = 0.05   # <5% triggers breach
 # Represents a moderate market stress where trading volumes compress to 60% of normal.
 REDEMPTION_STRESS_ADV_SCALAR: float = 0.60
 
+# Maximum number of days within which a redemption must be satisfied for it to count
+# as "met". ESMA's Guidelines on liquidity stress testing (and AIFMD II Art.16(1))
+# require liquidity to be assessed against the fund's *contractual* redemption /
+# settlement cycle — a redemption is only met if enough cash can be raised within
+# that window, NOT "eventually given unlimited time". A waterfall that takes 110
+# days to fund a redemption does NOT meet it for a fund with a 7-day settlement
+# cycle. Set this to the fund's redemption notice + settlement period (in calendar
+# trading days). Default T+7 reflects a standard open-ended dealing cycle.
+REDEMPTION_SETTLEMENT_DAYS: int = 7
+
 
 # ---------------------------------------------------------------------------
 # AIFMD II (Directive (EU) 2024/927) — effective 16 April 2026
@@ -180,6 +191,24 @@ REDEMPTION_STRESS_ADV_SCALAR: float = 0.60
 # Liquidity Management Tools: fund must pre-select at least 2
 AIFMD2_PRESELECTED_LMTS: List[str] = ["gate", "suspension", "swing_pricing"]
 AIFMD2_MIN_LMT_COUNT: int = 2
+
+# AIFMD II LMT taxonomy. Suspension and side pockets are "always available" to every
+# manager (Art. 16(2b) — they need not be pre-selected and do not count toward the
+# AIFMD2_MIN_LMT_COUNT requirement). The remaining tools are the ones a fund must
+# actively pre-select; the ≥2 rule is counted against SELECTABLE_TOOLS only.
+ALWAYS_AVAILABLE_LMTS: List[str] = ["suspension", "side_pockets"]
+SELECTABLE_TOOLS: List[str] = [
+    "gate",
+    "notice_period_extension",
+    "redemption_in_kind",
+    "redemption_fee",
+    "swing_pricing",
+    "dual_pricing",
+    "adl",
+]
+
+# Allowed share-class redemption frequencies (validated in validators.py).
+REDEMPTION_FREQUENCIES: List[str] = ["daily", "weekly", "fortnightly", "monthly", "quarterly"]
 
 # Leverage caps — Art. 15 and Art. 26a
 AIFMD2_LEVERAGE_CAP_OPEN_ENDED: float  = 1.75   # 175% gross exposure / NAV (open-ended loan AIFs)
@@ -194,6 +223,22 @@ AIFMD2_RISK_RETENTION_MINIMUM: float = 0.05
 # Borrower concentration: no single borrower > 20% NAV (ESMA guidance)
 AIFMD2_BORROWER_CONCENTRATION_LIMIT: float = 0.20
 
+# Geographical concentration — AIFMD Annex IV / ESMA34-39-897 Section 4.2
+GEO_CONCENTRATION_WARNING_SINGLE: float = 0.35   # single country > 35% NAV → Warning
+GEO_CONCENTRATION_BREACH_NON_EU: float = 0.50    # non-EU aggregate > 50% NAV → Breach
+EU_COUNTRIES: frozenset = frozenset({
+    "DE", "FR", "NL", "BE", "AT", "ES", "IT", "FI", "IE", "LU", "SE", "DK",
+    "PT", "PL", "CZ", "HU", "RO", "SK", "SI", "BG", "HR", "LT", "LV", "EE",
+    "CY", "MT", "GR",
+})
+
+# UCITS 5/10/40 issuer concentration rule (UCITS Directive Art. 52)
+# No single transferable security issuer may exceed 5% NAV; up to 40% may be held
+# in issuers where the individual weight is between 5% and 10%.
+UCITS_SINGLE_ISSUER_LIMIT: float = 0.05       # hard limit per issuer
+UCITS_AGGREGATE_BUCKET_LIMIT: float = 0.40    # max aggregate of positions 5-10%
+UCITS_AGGREGATE_BUCKET_SINGLE_CAP: float = 0.10  # upper bound of the bucket
+
 # Swing pricing — activates when net redemptions exceed the threshold
 SWING_PRICING_THRESHOLD: float = 0.02   # 2% NAV
 SWING_FACTOR_MAX: float = 0.02          # cap swing adjustment at 200 bps (2%)
@@ -205,6 +250,69 @@ ADL_LEVY_RATE: float = 0.005   # 50 bps default levy on redeeming investors
 # Gate / suspension thresholds (also used by RedemptionSimulator as class defaults)
 GATE_THRESHOLD: float       = 0.10   # UCITS/AIFMD common practice
 SUSPENSION_THRESHOLD: float = 0.25
+
+
+# ---------------------------------------------------------------------------
+# AIFM-level identification (required for ESMA Annex IV Header)
+# Values default to placeholders so the pipeline runs out of the box; production
+# deployments should override via environment variables. Missing/placeholder
+# values are flagged by the Annex IV validation checks rather than blocking
+# the export — regulators still receive a structurally valid file.
+# ---------------------------------------------------------------------------
+AIFM_LEI: str = os.environ.get("AIFM_LEI", "")
+AIFM_NATIONAL_CODE: str = os.environ.get("AIFM_NATIONAL_CODE", "")
+AIFM_REPORTING_MEMBER_STATE: str = os.environ.get("AIFM_REPORTING_MEMBER_STATE", "LU")
+AIFM_NAME: str = os.environ.get("AIFM_NAME", "")
+AIF_LEI: str = os.environ.get("AIF_LEI", "")
+AIF_NATIONAL_CODE: str = os.environ.get("AIF_NATIONAL_CODE", "")
+ANNEX_IV_SCHEMA_VERSION: str = "1.2"
+ANNEX_IV_REGULATORY_BASIS: str = (
+    "AIFMD II (Directive (EU) 2024/927), Annex IV reporting, effective 16 April 2026"
+)
+
+
+REVOLUTION_SCENARIOS: List[StressScenario] = [
+    StressScenario(
+        name="Normal",
+        equity_shock=0.00, credit_spread_shock_bps=0,
+        liquidity_haircut_multiplier=1.0, redemption_rate=0.05,
+        adv_stress_scalar=1.00, rate_shock_bps=0,
+        version="1.0",
+        description="Current market conditions with modest redemption pressure.",
+        regulatory_basis="Revolution Framework — baseline calibration",
+        is_worst_case=False, last_reviewed="2026-01-01",
+    ),
+    StressScenario(
+        name="Stressed (H1 2008)",
+        equity_shock=-0.15, credit_spread_shock_bps=150,
+        liquidity_haircut_multiplier=1.4, redemption_rate=0.15,
+        adv_stress_scalar=0.75, rate_shock_bps=50,
+        version="1.0",
+        description="Sub-prime deterioration: equity -15%, spreads +150bps, ADV at 75% of normal.",
+        regulatory_basis="Revolution Framework — historically calibrated (H1 2008)",
+        is_worst_case=False, last_reviewed="2026-01-01",
+    ),
+    StressScenario(
+        name="Highly Stressed (Sep 2008–Mar 2009)",
+        equity_shock=-0.35, credit_spread_shock_bps=400,
+        liquidity_haircut_multiplier=2.0, redemption_rate=0.30,
+        adv_stress_scalar=0.45, rate_shock_bps=100,
+        version="1.0",
+        description="Lehman collapse: equity -35%, spreads +400bps, severe ADV compression to 45%.",
+        regulatory_basis="Revolution Framework — historically calibrated (Lehman, Sep 2008–Mar 2009)",
+        is_worst_case=False, last_reviewed="2026-01-01",
+    ),
+    StressScenario(
+        name="Extreme (Covid-19)",
+        equity_shock=-0.30, credit_spread_shock_bps=250,
+        liquidity_haircut_multiplier=2.2, redemption_rate=0.40,
+        adv_stress_scalar=0.40, rate_shock_bps=-75,
+        version="1.0",
+        description="Pandemic liquidity freeze: equity -30%, spreads +250bps, rate rally -75bps, ADV at 40%.",
+        regulatory_basis="Revolution Framework — historically calibrated (Covid-19, Mar 2020)",
+        is_worst_case=True, last_reviewed="2026-01-01",
+    ),
+]
 
 
 def validate_scenario_severity_monotonic(scenarios: List[StressScenario] = None) -> bool:

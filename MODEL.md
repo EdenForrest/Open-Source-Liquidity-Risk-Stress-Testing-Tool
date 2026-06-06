@@ -1,7 +1,7 @@
 # Liquidity Risk & Stress Testing Tool — Model Documentation
 
-**Version:** 1.2  
-**Last reviewed:** 2026-05-20  
+**Version:** 1.4  
+**Last reviewed:** 2026-06-06  
 **Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV / AIFMD II (Directive (EU) 2024/927)  
 **Purpose:** Complete audit trail for every metric displayed in the GUI, its mathematical definition, and the theoretical framework used to derive it.
 
@@ -27,6 +27,7 @@
 16. [Asset-Class Parameter Table](#16-asset-class-parameter-table)
 17. [Scenario Parameter Table](#17-scenario-parameter-table)
 18. [AIFMD II — Directive (EU) 2024/927](#18-aifmd-ii--directive-eu-2024927)
+19. [Geographical Concentration Risk](#19-geographical-concentration-risk)
 
 ---
 
@@ -289,7 +290,22 @@ The waterfall engine is run within each stress scenario to estimate how many cal
 
 ### 8.6 Can meet redemption
 
-$$\mathrm{CanMeet} = \mathbf{1}\!\left[\sum_i \mathrm{netProceeds}_i \geq R\right] \qquad \text{where} \quad R = NAV^* \cdot \mathrm{redemptionRate}$$
+A redemption is only "met" if the required cash can be raised **within the fund's
+contractual settlement / notice cycle** — not merely "eventually". Under the ESMA
+Guidelines on liquidity stress testing and AIFMD II, the test is time-bounded: cash
+that arrives after the settlement horizon $H$ does not discharge an in-cycle
+redemption obligation. We therefore count only proceeds from positions whose
+liquidation completes by day $H$:
+
+$$\mathrm{CanMeet} = \mathbf{1}\!\left[\sum_{i \,:\, \mathrm{day}_i \leq H} \mathrm{netProceeds}_i \geq R\right] \qquad R = NAV^* \cdot \mathrm{redemptionRate}$$
+
+where $H = \texttt{REDEMPTION\_SETTLEMENT\_DAYS} = 7$ (settable in `settings.py`).
+`ScenarioResult.can_meet_redemption` reads `WaterfallResult.target_met`, which is
+itself horizon-aware (see §10.2), so the constraint propagates automatically. This
+fixes the prior behaviour where `CanMeet` was effectively always `true` once enough
+proceeds accrued over an unbounded horizon (e.g. a 30% redemption "met" only after
+110 days). The unbounded notion is preserved separately as `met_eventually` for
+diagnostic purposes.
 
 ---
 
@@ -334,6 +350,16 @@ Where $\mathrm{effectiveADV}_i = \sigma \cdot ADV_i$ and $\sigma$ is the ADV str
 
 **Code:** `RedemptionSimulator._estimate_days_to_cover()` reads `pos["effective_adv"]` (stored by `LiquidityProfiler._apply_adv_cap()`). The stressed profile is built with `LiquidityProfiler(portfolio, stress=True, adv_stress_scalar=REDEMPTION_STRESS_ADV_SCALAR)`.
 
+### 9.7 Horizon Label Display
+
+The redemption table displays which settlement horizon is achievable for each scenario. The `CoverageBar` component in the Redemption tab evaluates the three coverage tests (`can_meet_t1`, `can_meet_t3`, `can_meet_t7`) and displays the best-case horizon met:
+
+$$\mathrm{horizon} = \begin{cases} \mathrm{T+1} & \text{if } \mathrm{can\_meet\_t1} = \mathrm{true} \\ \mathrm{T+3} & \text{else if } \mathrm{can\_meet\_t3} = \mathrm{true} \\ \mathrm{T+7} & \text{else if } \mathrm{can\_meet\_t7} = \mathrm{true} \\ \mathrm{null} & \text{otherwise} \end{cases}$$
+
+When displayed, the horizon label appears as a gray badge next to the coverage symbol (✓ or ✕). This enables side-by-side comparison of coverage horizons between the "Without LMT" and "With LMT" columns, making clear how tools like Notice Period Extension or Redemptions in Kind shift the achievable horizon from T+7 to T+3 or T+1.
+
+**Code:** `frontend/src/pages/Redemption.jsx` — `CoverageBar()` function (line 19) and `getHorizonLabel()` helper (lines 32–37). The horizon parameter flows through both comparison columns (lines 261, 272).
+
 ---
 
 ## 10. Liquidation Waterfall
@@ -369,11 +395,27 @@ $$R_{\text{remaining}} \leftarrow R_{\text{remaining}} - \mathrm{netProceeds}_i$
 
 ### 10.2 Waterfall summary metrics
 
-$$\mathrm{TotalProceeds} = \sum_i \mathrm{netProceeds}_i \qquad \mathrm{TargetMet} = \mathbf{1}\!\left[\mathrm{TotalProceeds} \geq T\right]$$
+Total proceeds are split into those realised **within the settlement horizon**
+$H = \texttt{REDEMPTION\_SETTLEMENT\_DAYS} = 7$ and the full (unbounded) total:
 
-$$\mathrm{ResidualShortfall} = \max(0,\ T - \mathrm{TotalProceeds})$$
+$$\mathrm{ProceedsWithinHorizon} = \sum_{i \,:\, \mathrm{day}_i \leq H} \mathrm{netProceeds}_i \qquad \mathrm{TotalProceeds} = \sum_i \mathrm{netProceeds}_i$$
+
+The headline `target_met` flag is **horizon-bounded** — a redemption is met only if
+enough cash is raised by day $H$ — while `met_eventually` preserves the legacy
+unbounded notion for diagnostics:
+
+$$\mathrm{TargetMet} = \mathbf{1}\!\left[\mathrm{ProceedsWithinHorizon} \geq T\right] \qquad \mathrm{MetEventually} = \mathbf{1}\!\left[\mathrm{TotalProceeds} \geq T\right]$$
+
+$$\mathrm{ResidualShortfall} = \max(0,\ T - \mathrm{ProceedsWithinHorizon})$$
 
 $$\mathrm{DaysToTarget} = \max_i \text{days}_i \qquad NAV_{\text{after}} = NAV_{\text{before}} - \sum_i \mathrm{sellGross}_i$$
+
+`WaterfallResult` exposes `settlement_days` ($H$), `proceeds_within_horizon_eur`,
+`target_met` (within horizon), `met_eventually`, and `residual_shortfall_eur`
+(measured against the within-horizon proceeds). These fields flow through
+`pipeline_service.py` → `waterfall_meta` and into the Excel/XML exports; the
+Validation panel checks `target_met` for consistency against
+`proceeds_within_horizon_eur ≥ target` rather than total proceeds.
 
 $$\mathrm{NAVImpact}_{\%} = \frac{NAV_{\text{before}} - NAV_{\text{after}}}{NAV_{\text{before}}}$$
 
@@ -444,18 +486,108 @@ Triggered when less than 5% of NAV is in T+0/T+1 assets. At this level the fund 
 
 ## 14. Reverse Stress Testing
 
-**Code:** `StressEngine.run_reverse_stress()` — `stress_engine.py`  
-**Not displayed in GUI directly — available via API**
+**Code:** `ReverseStressEngine` — `liquidity_risk_tool/engines/reverse_stress_engine.py`  
+**Wired in:** `POST /run/{run_id}/reverse-stress` — `backend/routers/analysis.py`; triggered from the **Run reverse stress** button on the Stress Tests page (`frontend/src/pages/StressTests.jsx`)
 
-Binary search for the minimum shock magnitude $\varepsilon^*$ that drives T+0/T+1 liquidity below the breach threshold:
+Where forward stress tests ask *"what is the impact of scenario X?"*, reverse stress
+tests invert the question — *"what combination of shocks would breach our liquidity
+constraint?"* — as required by the **ESMA Guidelines on liquidity stress testing
+(Guideline 17)** and **AIFMD II Art.16(1)**. Rather than sweeping a single
+parameter, this engine searches **jointly** over the five risk drivers a manager is
+actually exposed to.
 
-$$\varepsilon^* = \min \varepsilon \quad \text{such that} \quad L_{\text{after}}(\varepsilon) \leq L_{\text{breach}} = 0.05$$
+**Execution model — on demand only.** Reverse stress is an expensive multi-start
+optimisation (hundreds of full portfolio re-pricings), so it is **never run as part
+of the standard pipeline**. It executes only when the user explicitly clicks the
+**Run reverse stress** button for a selected portfolio. The endpoint re-loads that
+single portfolio from its persisted CSV paths, solves, and returns the cleaned
+result; the outcome is scoped and displayed per portfolio (tagged with `_portfolio`),
+so switching the selected portfolio shows only that book's reverse-stress result.
 
-The search uses bisection with tolerance $0.005$ and maximum 40 iterations:
+### 14.1 Decision variables
 
-$$\varepsilon_{n+1} = \begin{cases} \frac{\varepsilon_{\text{lo}} + \varepsilon_n}{2} & \text{if } L_{\text{after}}(\varepsilon_n) > L_{\text{breach}} \\ \frac{\varepsilon_n + \varepsilon_{\text{hi}}}{2} & \text{otherwise} \end{cases}$$
+Each axis is a `ParameterAxis` with a *severity fraction* $s_i \in [0,1]$ mapped
+linearly onto a severe-but-plausible range, $\mathrm{value}_i(s_i) = c_i + s_i\,(\sigma_i - c_i)$,
+where $c_i$ is the calm (no-stress) endpoint and $\sigma_i$ the extreme-but-bounded
+endpoint:
 
-**Theoretical basis:** Reverse stress testing is mandated by EBA/GL/2018/04 and ESMA guidance as a complement to forward stress testing. Where forward tests ask "what is the impact of scenario X?", reverse tests ask "what scenario breaks the fund?" — providing a direct measure of margin of safety.
+| Axis | Calm $c_i$ | Severe $\sigma_i$ | Weight $w_i$ |
+|------|-----------|-------------------|--------------|
+| `equity_shock` | 0% | −60% | 1.0 |
+| `rate_shock_bps` | 0 | +400 bps | 1.0 |
+| `adv_stress_scalar` | 1.0 | 0.20 (ADV → 20% of normal) | 0.8 |
+| `liquidity_haircut_multiplier` | ×1.0 | ×5.0 | 0.8 |
+| `redemption_rate` | 0% | 50% | 1.2 |
+
+The credit-spread shock is intentionally **not** a free variable so the five
+requested drivers are isolated; an axis can be appended to `axes` if desired.
+
+### 14.2 Optimisation problem
+
+Let $\mathbf{s} = (s_1,\dots,s_5) \in [0,1]^5$. We seek the **most plausible
+(least-severe) joint shock that still breaches** — the "closest scenario to the calm
+state on the breach boundary":
+
+$$\min_{\mathbf{s}} \ D(\mathbf{s}) = \sqrt{\textstyle\sum_i w_i\, s_i^2} \quad \text{s.t.} \quad L_{\text{after}}(\mathbf{s}) \leq L_{\text{breach}}, \quad 0 \leq s_i \leq 1$$
+
+$D(\mathbf{s})$ is a plausibility-weighted (Mahalanobis-style) distance from calm;
+larger $w_i$ marks an axis as more implausible to move, so the optimiser prefers to
+leave it near $c_i$. The breach threshold defaults to `LIQUIDITY_BREACH_THRESHOLD`.
+$L_{\text{after}}(\mathbf{s})$ is evaluated by **re-pricing the real portfolio**
+through the host `StressEngine._apply_scenario` — the engine never re-implements the
+pricing logic, and evaluations are cached because the optimiser revisits points.
+
+### 14.3 Solver
+
+The breach surface is non-convex (liquidity responds discontinuously as buckets
+cross horizons), so the solve uses a **multi-start SLSQP** search with a grid
+fallback:
+
+0. **Calm-corner check** — evaluate the calm state $\mathbf{s}=\mathbf{0}$ *first*.
+   If the unstressed portfolio already breaches ($L_{\text{after}}(\mathbf{0}) \leq
+   L_{\text{breach}}$), reverse stress is *not applicable*: there is no positive
+   joint shock to find because the fund breaches before any stress is applied. The
+   result returns `found=False`, `breached_at_baseline=True`,
+   `baseline_liquid_pct = L_{\text{after}}(\mathbf{0})$`, `severity_distance=0.0`, and
+   `method="baseline-breach"`. This replaces the earlier behaviour, where the
+   optimiser would converge to $\mathbf{s}^*\approx\mathbf{0}$ and report a
+   misleading *"breach found (plausibility distance 0.000)"* with a zero-shock row.
+1. **Feasibility check** — evaluate the severe corner $\mathbf{s}=\mathbf{1}$. If
+   even that does not breach, the book is robust across the whole plausible box and
+   the result is `found=False` (a meaningful resilience result).
+2. **Coarse grid** — sample a small per-axis grid to seed starting points and to
+   give the fallback something to refine.
+3. **Multi-start SLSQP** (`scipy.optimize.minimize`) — from the severe corner plus
+   the most-breaching grid seeds, minimise $D(\mathbf{s})$ subject to
+   $L_{\text{breach}} - L_{\text{after}}(\mathbf{s}) \geq 0$; keep the feasible
+   optimum with the smallest $D$.
+4. **Fallback** — if scipy is unavailable or SLSQP finds nothing feasible, return
+   the best breaching grid point (or the severe corner).
+
+`solve()` returns a `ReverseStressResult` carrying `found`, `severity_distance`
+($D(\mathbf{s}^*)$), the per-axis `severity_fractions` and mapped
+`breach_parameters`, `liquid_pct_at_breach`, `margin_to_breach`, `n_evaluations`,
+`breached_at_baseline`, `baseline_liquid_pct`, and `method`
+(`"SLSQP+multistart"`, `"grid"`, `"infeasible"`, or `"baseline-breach"`).
+
+### 14.4 Materialisation
+
+`build_breach_scenario()` turns a found breach into a named, regulatory-tagged
+`StressScenario` (name *"Reverse stress (multi-factor breach)"*, `regulatory_basis`
+citing AIFMD II Art.16(1) and ESMA Guideline 17). `run()` solves, materialises, and
+re-applies the scenario through the host engine, returning
+`(scenario, scenario_result, reverse_result)` — so a genuine breach slots into the
+same `stress_results` and `scenario_metadata` tables as the forward scenarios.
+
+Two cases produce no table row, and `build_breach_scenario()` returns `None`:
+
+- **Robust book** (`found=False`, severe corner does not breach) — `run()` returns
+  `(None, None, reverse_result)`; the UI shows a green resilience banner.
+- **Baseline breach** (`found=False`, `breached_at_baseline=True`) — `run()` returns
+  `(None, None, reverse_result)`; the UI shows a distinct red banner stating that the
+  fund is already in breach at rest (baseline T0-T1 liquidity below the threshold)
+  and that reverse stress is therefore not applicable. No misleading zero-shock row
+  is materialised.
 
 ---
 
@@ -671,6 +803,377 @@ An explicit levy on redeeming investors as an alternative/complement to swing pr
 $$\text{ADL} = \text{ADL\_LEVY\_RATE} \times \text{RedemptionAmount}$$
 
 Default rate: `ADL_LEVY_RATE = 0.005` (50 bps). The ADL is shown in basis points on the Redemption page alongside the swing factor.
+
+---
+
+## 19. Geographical Concentration Risk
+
+**Regulatory basis:** AIFMD Annex IV / ESMA LST Guidelines (ESMA34-39-897, Section 4.2) / AIFMD II Art.16  
+**Code:** `LiquidityProfiler.regulatory_flags()` — `liquidity_profiler.py`; `LiquidityMetrics` — `risk_metrics.py`  
+**Displayed:** Dashboard → Geographical Concentration panel; AllPortfolios → Geo rows
+
+### 19.1 Country Derivation from ISIN
+
+Country of risk is derived from the first two characters of the ISIN, which encode the ISO 3166-1 alpha-2 country code per ISO 6166:
+
+$$\text{country}_i = \text{ISIN}_i[0:2] \quad \text{if } |\text{ISIN}_i| = 12 \text{ and } \text{ISIN}_i[0:2] \in \text{alpha}$$
+
+Non-standard identifiers (cash placeholders `CASH-EUR`, TRS positions `TRS-SYN`, synthetic loan keys) have length ≠ 12 or non-alphabetic prefixes and return `country = None`. These positions are excluded from geographical concentration calculations.
+
+### 19.2 EU Country Set
+
+The tool applies AIFMD Annex IV geographical reporting to all 27 EU member states per ISO 3166-1:
+
+```
+EU_COUNTRIES = {
+  DE, FR, NL, BE, AT, ES, IT, FI, IE, LU, SE, DK,
+  PT, PL, CZ, HU, RO, SK, SI, BG, HR, LT, LV, EE, CY, MT, GR
+}
+```
+
+Countries not in this set are treated as non-EU for the purposes of the non-EU aggregate concentration breach threshold.
+
+### 19.3 Geographical Concentration Metric
+
+For each country $c$, the NAV fraction is:
+
+$$w_c = \frac{\sum_{i:\,\text{country}_i = c} MV_i}{\sum_j MV_j}$$
+
+where the sum in the denominator runs over all positions with non-null country. The top-10 countries by $w_c$ are reported in the `top_countries` dict.
+
+### 19.4 Regulatory Thresholds
+
+**Warning — Single-country concentration:**
+
+$$\text{GeoWarning} = \mathbf{1}\!\left[\max_c\, w_c > 0.35\right]$$
+
+Triggered when any single country represents more than 35% of NAV. Calibrated to ESMA's guidance on significant geographic concentration for LST purposes.
+
+**Breach — Non-EU aggregate concentration:**
+
+$$\text{GeoBreach} = \mathbf{1}\!\left[\sum_{c \notin \text{EU}} w_c > 0.50\right]$$
+
+Triggered when the aggregate non-EU exposure exceeds 50% of NAV. This threshold reflects AIFMD Annex IV reporting requirements for AIFs with material non-EU exposure and is consistent with the ESMA34-39-897 guidance on third-country market stress scenarios.
+
+### 19.5 Output Fields (LiquidityMetrics)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `top_countries` | `Dict[str, float]` | Top-10 countries → NAV fraction |
+| `eu_pct` | `float` | Aggregate EU exposure as fraction of NAV |
+| `non_eu_pct` | `float` | Aggregate non-EU exposure as fraction of NAV |
+| `geo_top_country` | `str` | ISO alpha-2 code of the largest country |
+| `geo_top_country_pct` | `float` | NAV fraction of the largest country |
+| `geo_warning_flag` | `bool` | True if any single country > 35% NAV |
+| `geo_breach_flag` | `bool` | True if non-EU aggregate > 50% NAV |
+
+The portfolio-level `warning_flag` and `breach_flag` OR in the geo flags:
+
+$$\text{warning\_flag} = \text{LiqWarning} \lor \text{GeoWarning}$$
+$$\text{breach\_flag} = \text{LiqBreach} \lor \text{GeoBreach}$$
+
+### 19.6 Synthetic Trigger Portfolios
+
+Two portfolios are configured to reliably trigger geo flags via `PORTFOLIO_GEO_OVERRIDES` in `generate_synthetic_data.py`:
+
+| Portfolio | Override | Expected Flag |
+|-----------|----------|--------------|
+| `SYN-GOVBOND` | DE ISINs at 45% probability across bond positions | `geo_warning_flag = True` (DE ≈ 40–50% NAV) |
+| `SYN-ILLIQ` | US ISINs at 65% probability across bond positions | `geo_breach_flag = True` (non-EU ≈ 60–75% NAV) |
+
+All other portfolios draw from a diversified ISIN country pool (≤15 countries, no single country above 25% NAV) and produce `geo_warning_flag = geo_breach_flag = False`.
+
+### 19.7 Visualisations
+
+**GeoWorldMap** — interactive SVG world map rendered with `react-simple-maps`. Countries are filled using a three-tier gradient:
+
+| NAV fraction | Fill | Status |
+|---|---|---|
+| 0% | `#2a3550` (neutral) | No exposure |
+| 0–15% | `#fde68a` (light amber) | Normal |
+| 15–35% | `#f59e0b` (amber) | Elevated |
+| >35% | `#ef4444` (red) | Warning/Breach zone |
+
+Hover shows a floating tooltip with country name, NAV%, and a status badge (BREACH / WARNING / OK). `ZoomableGroup` enables zoom and pan.
+
+**GeoBarChart** — horizontal recharts `BarChart` of top-10 countries. EU countries coloured blue (`#3b82f6`), non-EU amber/red. An "Other" bar collects the remainder.
+
+**GeoDonut** — recharts `PieChart` donut with two slices: EU (blue if non-EU < 50%; dimmed otherwise) and Non-EU (amber if < 50%; red if ≥ 50%).
+
+**GeoLegend** — horizontal gradient bar (light amber → amber → red) with threshold markers at 35% and 50%.
+
+---
+
+## 20. AIFMD II Liquidity Management Tools (LMT) Simulator
+
+**Code:** `RedemptionSimulator._evaluate_scenario()` — `redemption_simulator.py`; `POST /api/run/{run_id}/lmt-simulate` — `backend/routers/analysis.py`; `LMTSimulator.jsx` — `frontend/src/pages/LMTSimulator.jsx`
+
+**Regulatory basis:** AIFMD II Article 16 & Annex V (Directive (EU) 2024/927)
+
+### 20.1 LMT Taxonomy
+
+AIFMD II requires AIFs to pre-select and maintain ≥2 liquidity management tools from a prescribed list of nine. The tool classifier them into three groups:
+
+**Always Available (threshold-based, non-configurable):**
+1. Temporary Suspension — triggered at ≥25% NAV redemption
+2. Side Pockets — segregates illiquid holdings (currently informational)
+
+**Quantitative Tools (reduce effective cash demand):**
+3. Gate — defer redemptions at ≥10% NAV
+4. Notice Period Extension — extend payment timeline by N days (3/7/14/30)
+5. Redemptions in Kind — satisfy M% of redemption with assets instead of cash
+
+**Anti-Dilution Tools (reduce effective redemption pressure via pricing or fees):**
+6. Redemption Fee — charge X bps to redeeming investors
+7. Swing Pricing — adjust NAV by ± factor on days with net redemptions > threshold
+8. Dual Pricing — always apply redemption spread (unlike swing pricing which has a threshold)
+9. Anti-Dilution Levy (ADL) — charge Y bps to redeeming investors
+
+### 20.2 Mechanics
+
+Each tool modifies the effective cash demand or liquidity available within the `_evaluate_scenario()` method:
+
+#### Gate
+```python
+if redemption_eur >= gate_threshold_pct * nav:
+    gate_triggered = True
+    # Redemption is deferred; coverage at T+1/T+3/T+7 reflects delayed availability
+```
+
+#### Notice Period Extension
+```python
+effective_days_to_clear = max(0, days_to_clear - notice_extension_days)
+# Fund gains extra time to liquidate; effective shortfall shrinks
+```
+
+#### Redemptions in Kind
+```python
+cash_demand = redemption_eur * (1 - in_kind_pct)
+# M% of redemption is satisfied via asset transfer; cash shortfall shrinks proportionally
+```
+
+#### Redemption Fee
+```python
+# fee_rate is a FRACTION (e.g. 0.005 = 50 bps), active only when "redemption_fee" selected and rate > 0
+if fee_active:
+    effective_cash_demand *= (1 - fee_rate)
+# Fee retained in the fund directly reduces the net cash outflow; shortfall shrinks
+```
+
+#### Swing Pricing
+```python
+# Activates only at/above the threshold; the swing factor is derived from the
+# realised haircut and redemption size, capped at swing_factor_max (a fraction).
+if "swing_pricing" in active_tools and redemption_pct >= swing_threshold:
+    avg_haircut  = 1 - realisable_value / market_value
+    swing_factor = min(avg_haircut * redemption_pct, swing_factor_max)
+    effective_cash_demand *= (1 - swing_factor)
+# Redeeming investors bear the dilution cost; the fund's effective cash demand shrinks
+```
+
+#### Dual Pricing
+```python
+# dual_spread_frac is a FRACTION (e.g. 0.003 = 30 bps). dual_spread_bps is accepted
+# as a legacy alias that ALSO carries a fraction on the wire.
+if "dual_pricing" in active_tools and dual_spread_frac > 0:
+    effective_cash_demand *= (1 - dual_spread_frac)
+# Redemptions priced at bid (NAV × (1 − spread)); always applied when active (no threshold); shortfall shrinks
+```
+
+#### Anti-Dilution Levy
+```python
+# adl_rate is a FRACTION; ADL activates at/above swing_threshold (same gate as swing).
+if "adl" in active_tools and redemption_pct >= swing_threshold:
+    effective_cash_demand *= (1 - adl_rate)
+# Levy collected from the redeeming investor reduces the net fund cash outflow; shortfall shrinks
+```
+
+### 20.3 Coverage Ratio with LMTs
+
+The baseline coverage ratio (without LMTs) is:
+$$\mathrm{coverage\_baseline}(h) = \frac{\mathrm{liquidity\_available}(h)}{\mathrm{redemption\_eur}}$$
+
+With LMTs applied, effective cash demand $R_{\text{eff}}$ is the baseline redemption $R$ scaled by the product of each active tool's fractional reduction (all factors are fractions in $[0,1]$, applied multiplicatively):
+$$R_{\text{eff}} = R \cdot (1 - \mathrm{swing\_factor}) \cdot (1 - \mathrm{adl\_rate}) \cdot (1 - \mathrm{fee\_rate}) \cdot (1 - \mathrm{dual\_spread\_frac}) \cdot (1 - \mathrm{in\_kind\_pct})$$
+
+Each factor collapses to $1$ when its tool is inactive (or below its activation threshold), so only active tools reduce demand. No $/10000$ divisors are applied — every parameter is already a fraction. Notice-period extension is handled separately: rather than scaling $R_{\text{eff}}$ it lifts the usable-liquidity horizon from T+7 to T+(7+extension_days).
+
+The adjusted coverage ratio is:
+$$\mathrm{coverage\_lmt}(h) = \frac{\mathrm{liquidity\_available}(h)}{R_{\text{eff}}}$$
+
+A ratio ≥ 1.0 indicates the fund can fully meet the (adjusted) redemption within horizon $h$.
+
+### 20.4 AIFMD II Compliance Validation
+
+The LMT Simulator enforces two rules **server-side**. The `lmt_config` request body is bound to a typed Pydantic model (`LmtConfig` in `backend/routers/analysis.py`) whose `@model_validator(mode="after")` raises on violation; FastAPI converts the failure into an **HTTP 422 Unprocessable Entity** response (no custom exception type). The frontend `ComplianceStrip` mirrors these as soft warnings, but the backend is now the hard gate.
+
+**Tool taxonomy** (defined in `liquidity_risk_tool/config/settings.py`). Suspension and side pockets are *always available* under AIFMD II Art. 16(2b) — they need not be pre-selected and **do not count** toward the minimum. Only the pre-selectable tools count:
+
+```python
+ALWAYS_AVAILABLE_LMTS = ["suspension", "side_pockets"]
+SELECTABLE_TOOLS = [
+    "gate", "notice_period_extension", "redemption_in_kind",
+    "redemption_fee", "swing_pricing", "dual_pricing", "adl",
+]
+AIFMD2_MIN_LMT_COUNT = 2
+```
+
+1. **Minimum tool count:** at least `AIFMD2_MIN_LMT_COUNT` (=2) *selectable* tools must be active.
+   ```python
+   selectable = {t for t in active_tools if t in SELECTABLE_TOOLS}
+   if len(selectable) < AIFMD2_MIN_LMT_COUNT:
+       raise ValueError("AIFMD II requires ≥2 selectable LMTs")  # → HTTP 422
+   ```
+
+2. **Prohibited combination:** Swing Pricing + Dual Pricing cannot both be active (both adjust NAV on redemptions; using both creates regulatory ambiguity).
+   ```python
+   if "swing_pricing" in active_tools and "dual_pricing" in active_tools:
+       raise ValueError("Swing pricing and dual pricing are mutually exclusive")  # → HTTP 422
+   ```
+
+### 20.5 API Endpoint — POST /api/run/{run_id}/lmt-simulate
+
+**Request body.** All cost parameters are **fractions** in `[0, 1]`; day parameters are integers `>= 0`. The body is validated against the typed `LmtConfig` model (§20.4) — an out-of-range value or a §20.4 rule violation returns **HTTP 422**.
+```json
+{
+  "lmt_config": {
+    "active_tools": ["gate", "swing_pricing", "adl"],
+    "gate_threshold": 0.10,
+    "suspension_threshold": 0.25,
+    "swing_threshold": 0.02,
+    "swing_factor_max": 0.02,
+    "adl_rate": 0.01,
+    "fee_rate": 0.005,
+    "dual_spread_frac": 0.0,
+    "notice_extension_days": 0,
+    "in_kind_pct": 0.0
+  }
+}
+```
+> `dual_spread_frac` is the canonical bid-spread key; `dual_spread_bps` is accepted as a **backward-compatible alias** that also carries a fraction on the wire. Stale keys `swing_factor_bps`, `adl_bps`, `fee_bps`, and `gate_pct` are no longer used.
+
+**Response:**
+```json
+{
+  "normal": [
+    {
+      "redemption_rate": 0.05,
+      "can_meet_t1": true,
+      "can_meet_t3": true,
+      "can_meet_t7": true,
+      "shortfall_eur": 0.0,
+      "days_to_clear": 1,
+      "lmt_activated": true,
+      "lmt_tools_used": ["gate", "swing_pricing", "adl"],
+      "swing_factor": 0.012,
+      "adl_bps": 100,
+      "fee_bps": 50,
+      "dual_spread_bps": 0,
+      "notice_extension_days": 0,
+      "in_kind_pct_used": 0.0
+    },
+    ...
+  ],
+  "stress": [...],
+  "lmt_config_applied": { ... }
+}
+```
+> **Input vs output units.** Request cost params (`swing_factor_max`, `adl_rate`, `fee_rate`, `dual_spread_frac`) are **fractions**. The corresponding response fields report differently for readability: `swing_factor` is the realised swing **fraction**, while `adl_bps`, `fee_bps`, and `dual_spread_bps` are genuine **basis points** (= fraction × 10,000). This asymmetry is intentional — `dual_spread_bps` on output is a true-bps reporting field, distinct from the fraction-carrying input key of the same legacy name.
+
+**Characteristics:**
+- Executes in milliseconds (no full pipeline re-run)
+- Reuses `position_buckets` and `stress_buckets` cached from the original run
+- Returns results for both normal regime and Severe Combined stress scenario
+- Each scenario tests 4 redemption sizes: 5%, 10%, 20%, 30% of NAV
+
+### 20.6 Frontend Simulator UI
+
+**LMTSimulator.jsx** provides an interactive two-panel layout:
+
+**Left Panel — Tool Configurator:**
+- Grouped toggles and sliders for each LMT
+- AIFMD II compliance strip (tool count, prohibition warning, Run Simulation button)
+- Parameter validation (e.g., gate_pct ∈ [5%, 25%])
+
+**Right Panel — Impact Dashboard:**
+- **Coverage Table:** Per-scenario side-by-side comparison (baseline vs configured shortfall, delta %, colour-coded)
+- **Investor Cost Summary:** Total bps charged across all active pricing/fee tools
+- **Recommendation Card:** Auto-generated guidance (e.g., "Adding Notice Extension would close remaining 2.5% shortfall")
+
+When Run Simulation completes, `simResults` are stored in global `AnalysisContext` and the Redemption page automatically switches to comparison view.
+
+### 20.7 Validation Checks for LMT Composition
+
+Two automated validation checks enforce correct LMT mechanics in the backend:
+
+#### Check 1: LMT Demand Reduction Composes Multiplicatively
+
+When multiple demand-reducing tools are active (ADL, redemption fee, in-kind, dual pricing), their effects must compose multiplicatively on `effective_cash_demand`. The check verifies this by computing:
+
+$$R_{\text{eff}} = R \prod_{i \in \text{active\_demand\_reducers}} (1 - r_i)$$
+
+where $r_i$ is the reduction factor for tool $i$ (e.g., `adl_bps / 10000`, `fee_bps / 10000`, `in_kind_pct`, `dual_spread_bps / 10000`).
+
+When ≥2 demand reducers are active, the validation check runs for each scenario and asserts that the resulting shortfall (after all tools applied) is less than 0.1% of NAV. A failure indicates incorrect composition (e.g., tools overwriting rather than multiplying) or an unrealistic configuration that still leaves high shortfall despite multiple tools.
+
+**Code:** `backend/services/validation_service.py`, check name `"LMT demand reduction composes multiplicatively"` (lines 230–269).
+
+#### Check 2: LMT Activation Carries Non-Zero Cost
+
+When `lmt_activated` is `true`, at least one of the four pricing/fee tools must carry measurable cost: `adl_bps > 0`, `fee_bps > 0`, `swing_factor * 10000 > 0`, or `dual_spread_bps > 0`. This prevents misconfiguration where a tool is marked active but carries zero charge.
+
+**Code:** `backend/services/validation_service.py`, check name `"LMT activation carries non-zero cost"` (lines 271–283).
+
+Both checks appear in the Validation sidebar under the "LMT Composition" category and are automatically re-run whenever simulation results are displayed.
+
+---
+
+### 20.8 Known Limitations
+
+| Limitation | Effect |
+|-----------|--------|
+| Side Pockets not yet operational | Currently informational only; asset segregation not modelled |
+| ADV stress scalar fixed at 0.5 | Cannot customize per-tool stress assumptions |
+| No cascading tool effects | Tools are applied independently; no interaction modelling |
+| Single currency (EUR) | FX rates held constant; no multi-currency LMT scenarios |
+
+---
+
+## 21. AIFMD II Annex IV — Upload-Gated Regulatory Export
+
+The Annex IV Part 2 ESMA filing (XML namespace `urn:eu.europa.esma:aifmd:annex-iv:v1.2`, plus the Excel mirror) is a **regulatory submission**, so it must never be produced from fabricated defaults. Export is therefore **gated on a dedicated Annex IV metadata upload** and is **not auto-activated** by a completed run.
+
+### 21.1 Metadata upload
+
+`POST /api/upload` accepts an optional `annex_iv_meta_json` form field carrying AIFM/AIF identification and share-class data:
+
+```json
+{
+  "aifm_lei": "...", "aifm_national_code": "...", "aifm_name": "...",
+  "reporting_member_state": "LU",
+  "aif_lei": "...", "aif_national_code": "...",
+  "share_classes": [
+    { "notice_period_days": 30, "redemption_frequency": "monthly", "total_nav": 1.0e8 }
+  ]
+}
+```
+
+It is parsed defensively (mirroring `lmt_config_json`) and persisted on the run's `RunRecord.annex_iv_meta`. It is **reporting metadata, not an analytics input** — it does not flow through the pipeline. When omitted, the run still completes; only regulatory export is withheld.
+
+### 21.2 The `annex_iv_ready` gate
+
+A single predicate `annex_iv_ready(meta)` is the source of truth. It returns `True` only when **all** required identifiers are present and non-empty — `aifm_lei`, `aif_lei`, `reporting_member_state` — **and** at least one `share_class` is supplied. Uploaded metadata is wired into the mapper's `aifm_metadata`/`share_classes` so no fabricated AIFM/AIF LEIs or default 90-day/monthly investor profiles are used when real data exists.
+
+### 21.3 Preview vs export contract
+
+| Route | When not ready | When ready |
+|-------|----------------|-----------|
+| `GET /run/{id}/annex-iv` (preview) | **200** — preview renders with gap flags; payload carries `"annex_iv_ready": false` | **200** with `"annex_iv_ready": true` |
+| `GET /run/{id}/export/xml` | **409** — `"Annex IV metadata not uploaded …"` | **200** — XML filing |
+| `GET /run/{id}/export/annex-iv-excel` | **409** | **200** — Excel mirror |
+| `GET /run/{id}/export/all?format=xml` | **409** (xml branch only; excel/pdf unaffected) | **200** — zip of XML filings |
+
+The frontend (`AnnexIV.jsx`) always renders the gap-flagged preview but **disables the XML/Excel download buttons** and shows an inline notice when `annex_iv_ready === false`, directing the user to upload AIFM/AIF identification and share-class data.
 
 ---
 

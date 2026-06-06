@@ -5,7 +5,11 @@ Runs lightweight domain-constraint checks before any analysis.
 from __future__ import annotations
 from typing import TYPE_CHECKING, List
 
-from ..config.settings import CREDIT_SPREAD_BPS_RANGE, EQUITY_BETA_RANGE
+from ..config.settings import (
+    CREDIT_SPREAD_BPS_RANGE,
+    EQUITY_BETA_RANGE,
+    REDEMPTION_FREQUENCIES,
+)
 
 if TYPE_CHECKING:
     from ..models.position import Position, Portfolio
@@ -45,6 +49,9 @@ def validate_position(pos: "Position") -> List[str]:
     if pos.fx_rate <= 0:
         errors.append(f"{pos.isin}: fx_rate must be > 0 (got {pos.fx_rate})")
 
+    if pos.settlement_days is not None and pos.settlement_days < 0:
+        errors.append(f"{pos.isin}: settlement_days must be >= 0 (got {pos.settlement_days})")
+
     return errors
 
 
@@ -57,6 +64,14 @@ def validate_portfolio(portfolio: "Portfolio", strict: bool = True) -> List[str]
     all_errors: List[str] = []
     for pos in portfolio.positions:
         all_errors.extend(validate_position(pos))
+
+    for sc in getattr(portfolio, "share_classes", []) or []:
+        freq = getattr(sc, "redemption_frequency", None)
+        if freq is not None and freq not in REDEMPTION_FREQUENCIES:
+            all_errors.append(
+                f"ShareClass '{getattr(sc, 'name', '?')}': redemption_frequency "
+                f"'{freq}' not in {REDEMPTION_FREQUENCIES}"
+            )
 
     if strict and all_errors:
         raise ValidationError(

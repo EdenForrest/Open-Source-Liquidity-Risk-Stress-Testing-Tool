@@ -11,6 +11,15 @@ class RunRecord:
     status: str  # "pending" | "running" | "complete" | "error"
     results: Optional[dict] = field(default=None)
     error: Optional[str] = field(default=None)
+    # Optional AIFM/AIF/share-class identification uploaded for Annex IV.
+    # When absent, Annex IV preview is allowed but regulatory export is blocked.
+    annex_iv_meta: Optional[dict] = field(default=None)
+    # Source file paths used for this run, retained so on-demand re-runs (e.g. a
+    # user-defined custom stress scenario) can re-load the exact same portfolio
+    # positions without a full pipeline re-run. Stored as strings.
+    holdings_path: Optional[str] = field(default=None)
+    nav_path: Optional[str] = field(default=None)
+    market_data_path: Optional[str] = field(default=None)
 
 
 def create(run_id: str) -> RunRecord:

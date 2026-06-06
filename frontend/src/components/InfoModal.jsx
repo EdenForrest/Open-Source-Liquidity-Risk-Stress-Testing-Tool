@@ -1,17 +1,18 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 const FILES = [
   {
-    label: 'Holdings CSV',
+    tabKey: 'infoModal.tabs.holdings',
     required: true,
     naming: 'Any name ending in .csv — e.g. HOLDINGS_20260101120000.csv',
     delimiter: 'Semicolon ( ; )',
     decimal: 'European format — comma as decimal, period as thousands separator (e.g. 1.234.567,89)',
     columns: [
-      { name: 'Portfolio Code', required: true,  example: 'AL-A',            notes: 'Identifies which portfolio the row belongs to' },
+      { name: 'Portfolio Code', required: true,  example: 'SYN-EQUITY',       notes: 'Identifies which portfolio the row belongs to' },
       { name: 'Date',           required: true,  example: '01/05/2026',       notes: 'Reporting date — day-first format (DD/MM/YYYY)' },
-      { name: 'ISIN',           required: false, example: 'DE0001102549',     notes: 'Security identifier; use CASH-EUR for cash rows' },
-      { name: 'Security Name',  required: false, example: 'BUND 2030',        notes: 'Used to infer asset class and bond maturity' },
+      { name: 'ISIN',           required: false, example: 'DE0543229039',     notes: 'Security identifier; use CASH-EUR for cash rows' },
+      { name: 'Security Name',  required: false, example: 'Synth Bundesanleihe 0.880% v38', notes: 'Used to infer asset class and bond maturity' },
       { name: 'Currency',       required: false, example: 'EUR',              notes: 'Position currency; defaults to EUR if missing' },
       { name: 'Market Value in Base Currency', required: true, example: '1.234.567,00', notes: 'EUR market value — European decimal format' },
       { name: 'PriceFactor',    required: false, example: '0,01',             notes: '0.01 = bond (quoted as % of par), 1.0 = equity/ETF' },
@@ -22,26 +23,26 @@ const FILES = [
     ],
   },
   {
-    label: 'NAV CSV',
+    tabKey: 'infoModal.tabs.nav',
     required: true,
     naming: 'Any name ending in .csv — e.g. NAV_20260101120000.csv',
     delimiter: 'Semicolon ( ; )',
     decimal: 'European format',
     columns: [
-      { name: 'PortfolioCode  (or "Portfolio Code" / "Fund Code")', required: true,  example: 'AL-A',           notes: 'Must match the codes in the Holdings file' },
+      { name: 'PortfolioCode  (or "Portfolio Code" / "Fund Code")', required: true,  example: 'SYN-EQUITY',     notes: 'Must match the codes in the Holdings file' },
       { name: 'TotalAssets  (or "NAV" / "Total NAV" / "Amount")',   required: true,  example: '125.000.000,00', notes: 'Total fund NAV — used to compute position weights' },
     ],
-    notes: 'Column names are matched case-insensitively. Any recognised synonym is accepted.',
+    notesKey: 'infoModal.footer',
   },
   {
-    label: 'Market Data CSV (optional)',
+    tabKey: 'infoModal.tabs.marketData',
     required: false,
     naming: 'Any name ending in .csv',
     delimiter: 'Comma ( , )',
     decimal: 'Standard (period as decimal)',
     columns: [
-      { name: 'isin',               required: true,  example: 'DE0001102549', notes: 'Must match ISINs in the Holdings file' },
-      { name: 'portfolio',          required: false, example: 'AL-A',         notes: 'If present, rows are matched to the correct fund' },
+      { name: 'isin',               required: true,  example: 'DE0543229039', notes: 'Must match ISINs in the Holdings file' },
+      { name: 'portfolio',          required: false, example: 'SYN-EQUITY',   notes: 'If present, rows are matched to the correct fund' },
       { name: 'asset_class_hint',   required: false, example: 'government_bond', notes: 'Overrides the inferred asset class' },
       { name: 'adv_30d_eur',        required: false, example: '30000000',     notes: '30-day average daily volume in EUR' },
       { name: 'bid_ask_spread_bps', required: false, example: '4',            notes: 'Bid-ask spread in basis points' },
@@ -50,8 +51,25 @@ const FILES = [
       { name: 'beta',               required: false, example: '0.9',          notes: 'Equity beta (equities only)' },
       { name: 'fx_rate_to_eur',     required: false, example: '1.0823',       notes: 'FX rate to EUR' },
     ],
-    notes: 'All columns except isin are optional. Missing values fall back to asset-class defaults.',
+    notesKey: 'infoModal.marketNote',
   },
+]
+
+const ANNEX_IV_FIELDS = [
+  { name: 'aifm_lei',                required: true,  example: '222100XXXXXXXXXX',  notes: 'AIFM Legal Entity Identifier (20-char ISO 17442)' },
+  { name: 'aifm_name',               required: false, example: 'Synth ManCo S.A.',  notes: 'AIFM legal name' },
+  { name: 'aifm_national_code',      required: false, example: 'SYN000000',         notes: 'National registration code of the AIFM' },
+  { name: 'reporting_member_state',  required: true,  example: 'LU',                notes: 'ISO 3166-1 alpha-2 country code of the reporting AIFM' },
+  { name: 'aif_lei',                 required: true,  example: '549300XXXXXXXXXX',  notes: 'AIF Legal Entity Identifier (20-char ISO 17442)' },
+  { name: 'aif_national_code',       required: false, example: 'SYN12345678',       notes: 'National registration code of the AIF' },
+  { name: 'share_classes',           required: true,  example: '[{...}]',           notes: 'Array — at least one share class required (see below)' },
+]
+
+const SHARE_CLASS_FIELDS = [
+  { name: 'isin',                   required: false, example: 'LU0000000001',    notes: 'Share class ISIN' },
+  { name: 'name',                   required: false, example: 'Class A EUR',     notes: 'Share class name' },
+  { name: 'notice_period_days',     required: false, example: '30',             notes: 'Investor notice period in days (default 90)' },
+  { name: 'redemption_frequency',   required: false, example: 'monthly',        notes: 'Redemption frequency (daily / weekly / monthly / quarterly / other)' },
 ]
 
 const ASSET_CLASSES = [
@@ -72,12 +90,15 @@ const ASSET_CLASSES = [
 export default function InfoModal() {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState(0)
+  const { t } = useTranslation()
+
+  const tabLabels = [...FILES.map(f => t(f.tabKey)), t('infoModal.tabs.assetDefaults'), t('infoModal.tabs.annexIvMeta')]
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        title="File format reference"
+        title={t('infoModal.title')}
         style={{ color: 'var(--text-secondary)', border: '1px solid var(--border)', background: 'var(--bg-panel)' }}
         className="rounded-full w-7 h-7 text-sm font-bold flex items-center justify-center hover:opacity-80 transition-opacity shrink-0"
       >
@@ -92,35 +113,34 @@ export default function InfoModal() {
           <div className="rounded-xl shadow-2xl flex flex-col w-full max-w-4xl max-h-[85vh]"
             style={{ background: 'var(--bg-panel)', color: 'var(--text-primary)', border: '1px solid var(--border)' }}
           >
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 shrink-0"
               style={{ borderBottom: '1px solid var(--border)' }}>
-              <h2 className="font-semibold text-base">File Format Reference</h2>
+              <h2 className="font-semibold text-base">{t('infoModal.title')}</h2>
               <button onClick={() => setOpen(false)}
                 style={{ color: 'var(--text-secondary)' }}
                 className="text-xl leading-none hover:opacity-70 cursor-pointer">×</button>
             </div>
 
-            {/* Tabs */}
             <div className="flex gap-1 px-6 pt-3 shrink-0">
-              {[...FILES.map(f => f.label), 'Asset Class Defaults'].map((t, i) => (
+              {tabLabels.map((label, i) => (
                 <button key={i} onClick={() => setTab(i)}
                   style={tab === i
                     ? { background: 'var(--text-accent)', color: '#fff' }
                     : { background: 'var(--bg-surface)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }
                   }
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap">
-                  {t}
+                  {label}
                 </button>
               ))}
             </div>
 
-            {/* Body */}
             <div className="overflow-auto flex-1 px-6 py-4">
               {tab < FILES.length ? (
                 <FileTab file={FILES[tab]} />
-              ) : (
+              ) : tab === FILES.length ? (
                 <AssetDefaultsTab />
+              ) : (
+                <AnnexIvMetaTab />
               )}
             </div>
           </div>
@@ -131,29 +151,30 @@ export default function InfoModal() {
 }
 
 function FileTab({ file }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <Meta label="Required" value={file.required ? 'Yes' : 'No (optional)'} />
-        <Meta label="Delimiter" value={file.delimiter} />
-        <Meta label="Decimal format" value={file.decimal} />
-        <Meta label="Naming" value={file.naming} />
+        <Meta label={t('infoModal.meta.required')} value={file.required ? t('infoModal.values.yes') : t('infoModal.values.no')} />
+        <Meta label={t('infoModal.meta.delimiter')} value={file.delimiter} />
+        <Meta label={t('infoModal.meta.decimalFormat')} value={file.decimal} />
+        <Meta label={t('infoModal.meta.naming')} value={file.naming} />
       </div>
 
-      {file.notes && (
+      {file.notesKey && (
         <p className="text-xs rounded-lg px-3 py-2"
           style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
-          {file.notes}
+          {t(file.notesKey)}
         </p>
       )}
 
       <table className="w-full text-xs border-collapse">
         <thead>
           <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-            <th className="text-left py-2 pr-4 font-semibold w-56">Column name</th>
-            <th className="text-left py-2 pr-4 font-semibold w-20">Required</th>
-            <th className="text-left py-2 pr-4 font-semibold w-32">Example</th>
-            <th className="text-left py-2 font-semibold">Notes</th>
+            <th className="text-left py-2 pr-4 font-semibold w-56">{t('infoModal.table.columnName')}</th>
+            <th className="text-left py-2 pr-4 font-semibold w-20">{t('infoModal.table.required')}</th>
+            <th className="text-left py-2 pr-4 font-semibold w-32">{t('infoModal.table.example')}</th>
+            <th className="text-left py-2 font-semibold">{t('infoModal.table.notes')}</th>
           </tr>
         </thead>
         <tbody>
@@ -161,7 +182,7 @@ function FileTab({ file }) {
             <tr key={col.name} style={{ borderBottom: '1px solid var(--border)' }}>
               <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-accent)' }}>{col.name}</td>
               <td className="py-2 pr-4" style={{ color: col.required ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                {col.required ? 'Yes' : 'No'}
+                {col.required ? t('infoModal.values.yes') : t('common.no')}
               </td>
               <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-secondary)' }}>{col.example}</td>
               <td className="py-2" style={{ color: 'var(--text-secondary)' }}>{col.notes}</td>
@@ -174,17 +195,18 @@ function FileTab({ file }) {
 }
 
 function AssetDefaultsTab() {
+  const { t } = useTranslation()
   return (
     <div className="space-y-3">
       <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-        When no Market Data CSV is provided, these defaults are used. Supply a Market Data CSV to override per-position.
+        {t('infoModal.noMarketDataNote')}
       </p>
       <table className="w-full text-xs border-collapse">
         <thead>
           <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
-            <th className="text-left py-2 pr-6 font-semibold">Asset class</th>
-            <th className="text-left py-2 pr-6 font-semibold">Default ADV (EUR)</th>
-            <th className="text-left py-2 font-semibold">Default bid-ask spread</th>
+            <th className="text-left py-2 pr-6 font-semibold">{t('infoModal.assetDefaults.assetClass')}</th>
+            <th className="text-left py-2 pr-6 font-semibold">{t('infoModal.assetDefaults.defaultAdv')}</th>
+            <th className="text-left py-2 font-semibold">{t('infoModal.assetDefaults.defaultBidAsk')}</th>
           </tr>
         </thead>
         <tbody>
@@ -197,6 +219,88 @@ function AssetDefaultsTab() {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function AnnexIvMetaTab() {
+  const { t } = useTranslation()
+  const colStyle = { borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)' }
+  return (
+    <div className="space-y-5">
+      <p className="text-xs rounded-lg px-3 py-2" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
+        {t('infoModal.annexIvMeta.note')}
+      </p>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{t('infoModal.annexIvMeta.topLevelFields')}</h3>
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr style={colStyle}>
+              <th className="text-left py-2 pr-4 font-semibold w-56">{t('infoModal.table.columnName')}</th>
+              <th className="text-left py-2 pr-4 font-semibold w-20">{t('infoModal.table.required')}</th>
+              <th className="text-left py-2 pr-4 font-semibold w-40">{t('infoModal.table.example')}</th>
+              <th className="text-left py-2 font-semibold">{t('infoModal.table.notes')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ANNEX_IV_FIELDS.map((f) => (
+              <tr key={f.name} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-accent)' }}>{f.name}</td>
+                <td className="py-2 pr-4" style={{ color: f.required ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                  {f.required ? t('infoModal.values.yes') : t('common.no')}
+                </td>
+                <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-secondary)' }}>{f.example}</td>
+                <td className="py-2" style={{ color: 'var(--text-secondary)' }}>{f.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>{t('infoModal.annexIvMeta.shareClassFields')}</h3>
+        <table className="w-full text-xs border-collapse">
+          <thead>
+            <tr style={colStyle}>
+              <th className="text-left py-2 pr-4 font-semibold w-56">{t('infoModal.table.columnName')}</th>
+              <th className="text-left py-2 pr-4 font-semibold w-20">{t('infoModal.table.required')}</th>
+              <th className="text-left py-2 pr-4 font-semibold w-40">{t('infoModal.table.example')}</th>
+              <th className="text-left py-2 font-semibold">{t('infoModal.table.notes')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {SHARE_CLASS_FIELDS.map((f) => (
+              <tr key={f.name} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-accent)' }}>{f.name}</td>
+                <td className="py-2 pr-4" style={{ color: 'var(--text-secondary)' }}>
+                  {t('common.no')}
+                </td>
+                <td className="py-2 pr-4 font-mono" style={{ color: 'var(--text-secondary)' }}>{f.example}</td>
+                <td className="py-2" style={{ color: 'var(--text-secondary)' }}>{f.notes}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div>
+        <h3 className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('infoModal.annexIvMeta.exampleLabel')}</h3>
+        <pre className="text-xs rounded-lg px-3 py-2 overflow-x-auto" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{`{
+  "aifm_lei": "222100XXXXXXXXXX",
+  "aifm_name": "Synth ManCo S.A.",
+  "reporting_member_state": "LU",
+  "aif_lei": "549300XXXXXXXXXX",
+  "share_classes": [
+    {
+      "isin": "LU0000000001",
+      "name": "Class A EUR",
+      "notice_period_days": 30,
+      "redemption_frequency": "monthly"
+    }
+  ]
+}`}</pre>
+      </div>
     </div>
   )
 }

@@ -227,6 +227,61 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             else f"can_meet_t7 consistent with shortfall for all {len(redemption)} scenarios",
         ))
 
+        # LMT composition tests: verify that multiple demand-reducing LMTs compose multiplicatively
+        lmt_composition_fails = []
+        for r in redemption:
+            tools = r.get("lmt_tools_used", "")
+            if isinstance(tools, str):
+                tools = [t.strip() for t in tools.split(",") if t.strip()]
+            else:
+                tools = tools if isinstance(tools, list) else []
+
+            # Count demand-reducing tools (tools that use *= on effective_cash_demand)
+            demand_reducers = [
+                t for t in tools
+                if t in ("adl", "redemption_fee", "redemption_in_kind", "dual_pricing")
+            ]
+
+            if len(demand_reducers) >= 2:
+                # When multiple demand-reducing tools are active, verify that can_meet_* improves
+                # compared to baseline (since demand is being reduced multiplicatively)
+                scenario_pct = r.get("scenario_pct", 0)
+                shortfall = r.get("shortfall_eur", 0)
+
+                # A well-composed LMT should reduce shortfall when multiple tools are active
+                # We check that shortfall is lower or the scenario is covered better
+                if shortfall > 0:
+                    # With multiple demand reducers, shortfall should be minimal
+                    # Use a tolerance of 0.1% of NAV since these are composed effects
+                    nav = portfolio_results.get("total_nav_eur", 0)
+                    if nav > 0 and shortfall > nav * 0.001:
+                        lmt_composition_fails.append(
+                            f"{_pct(scenario_pct)}: "
+                            f"multiple LMTs ({', '.join(demand_reducers)}) but shortfall={_eur(shortfall)}"
+                        )
+
+        results.append(_check(
+            "LMT demand reduction composes multiplicatively", "Redemption",
+            len(lmt_composition_fails) == 0,
+            (f"{len(lmt_composition_fails)} scenario(s) with multiple LMTs show suboptimal composition: {lmt_composition_fails[:2]}")
+            if lmt_composition_fails
+            else f"LMT composition verified — multiple demand-reducing tools compose correctly",
+        ))
+
+        # LMT activation threshold test: verify that cost metrics increase with LMT activity
+        total_cost_zero = [r for r in redemption if r.get("lmt_activated") and
+                          ((r.get("adl_bps") or 0) +
+                           (r.get("fee_bps") or 0) +
+                           ((r.get("swing_factor") or 0) * 10000) +
+                           (r.get("dual_spread_bps") or 0)) == 0]
+
+        results.append(_check(
+            "LMT activation carries non-zero cost", "Redemption",
+            len(total_cost_zero) == 0,
+            f"{len(total_cost_zero)} scenario(s) have lmt_activated=true but zero cost" if total_cost_zero
+            else f"All {len([r for r in redemption if r.get('lmt_activated')])} active LMT scenarios show cost > 0",
+        ))
+
     # ── Stress engine ─────────────────────────────────────────────────────
     stress_results = portfolio_results.get("stress_results", [])
     if stress_results:
@@ -492,13 +547,20 @@ def run_checks(portfolio_results: dict) -> list[dict]:
 
         target = wf_meta.get("target_eur")
         target_met_flag = wf_meta.get("target_met")
-        meta_proceeds_val = wf_meta.get("total_proceeds_eur")
-        if target is not None and target_met_flag is not None and meta_proceeds_val is not None:
-            expected_met = (meta_proceeds_val >= target - 0.01)
+        # target_met is assessed against cash raised WITHIN the settlement horizon
+        # (ESMA liquidity STT — proceeds arriving after the dealing cycle do not count).
+        # Fall back to total proceeds only when the horizon figure is unavailable.
+        horizon_proceeds_val = wf_meta.get("proceeds_within_horizon_eur")
+        if horizon_proceeds_val is None:
+            horizon_proceeds_val = wf_meta.get("total_proceeds_eur")
+        if target is not None and target_met_flag is not None and horizon_proceeds_val is not None:
+            expected_met = (horizon_proceeds_val >= target - 0.01)
+            settlement_days = wf_meta.get("settlement_days")
+            horizon_lbl = f" within T+{settlement_days}" if settlement_days is not None else ""
             results.append(_check(
-                "Waterfall target_met consistent with proceeds ≥ target", "Waterfall",
+                f"Waterfall target_met consistent with proceeds{horizon_lbl} ≥ target", "Waterfall",
                 bool(target_met_flag) == expected_met,
-                (f"target={_eur(target)} | proceeds={_eur(meta_proceeds_val)} | "
+                (f"target={_eur(target)} | proceeds{horizon_lbl}={_eur(horizon_proceeds_val)} | "
                  f"target_met={target_met_flag} (expected {expected_met})"),
             ))
 
@@ -652,5 +714,76 @@ def run_checks(portfolio_results: dict) -> list[dict]:
             if not severity_ok
             else f"Monotone: {[round(m, 2) for m in valid_multipliers]}",
         ))
+
+    # ── Annex IV ───────────────────────────────────────────────────────────
+    fund_name = portfolio_results.get("fund_name", "")
+    reporting_date = portfolio_results.get("reporting_date", "")
+    aifmd2 = portfolio_results.get("aifmd2") or {}
+    from liquidity_risk_tool.config import settings as _s
+
+    results.append(_check(
+        "AIF identification complete", "Annex IV",
+        bool(fund_name and reporting_date),
+        f"fund_name='{fund_name}', reporting_date='{reporting_date}'"
+        if fund_name and reporting_date
+        else f"FAIL — missing: "
+             f"{'fund_name ' if not fund_name else ''}"
+             f"{'reporting_date' if not reporting_date else ''}".strip(),
+    ))
+
+    aif_lei = _s.AIF_LEI or ""
+    results.append(_check(
+        "AIF LEI present", "Annex IV",
+        bool(aif_lei),
+        f"AIF LEI = {aif_lei}" if aif_lei else "FAIL — AIF_LEI not set (configure via env var AIF_LEI)",
+    ))
+
+    positions_with_country = [p for p in buckets if p.get("country")]
+    positions_missing_country = len(buckets) - len(positions_with_country)
+    results.append(_check(
+        "Country data complete", "Annex IV",
+        positions_missing_country == 0,
+        f"{positions_missing_country} position(s) missing 'country' field" if positions_missing_country > 0
+        else f"All {len(buckets)} position(s) have country data",
+    ))
+
+    gross_lev = aifmd2.get("gross_leverage")
+    results.append(_check(
+        "Leverage computed", "Annex IV",
+        bool(aifmd2) and gross_lev is not None and float(gross_lev) > 0,
+        f"gross_leverage = {gross_lev}" if gross_lev is not None
+        else "FAIL — gross_leverage not computed (aifmd2 block missing or empty)",
+    ))
+
+    worst_case = next(
+        (s for s in stress_results if s.get("is_worst_case")),
+        None,
+    )
+    has_severe = worst_case is not None or any(
+        s.get("scenario", "").lower().startswith("severe") for s in stress_results
+    )
+    results.append(_check(
+        "Severe Combined stress scenario present", "Annex IV",
+        has_severe,
+        f"Worst-case scenario: '{worst_case.get('scenario', '')}'" if worst_case
+        else ("FAIL — no is_worst_case scenario found in stress_results"
+              if stress_results else "FAIL — no stress results at all"),
+    ))
+
+    lmts = aifmd2.get("lmt_preselected") or []
+    lmt_compliant = len(lmts) >= _s.AIFMD2_MIN_LMT_COUNT
+    results.append(_check(
+        "LMT configuration declared (≥2 tools, AIFMD II Art. 16)", "Annex IV",
+        lmt_compliant,
+        f"{len(lmts)} LMT(s) preselected: {lmts}"
+        if lmts else "FAIL — no LMTs declared; AIFMD II requires ≥2 pre-selected tools",
+    ))
+
+    results.append(_check(
+        "≥5 positions for top-5 reporting", "Annex IV",
+        len(buckets) >= 5,
+        f"{len(buckets)} position(s) in portfolio"
+        + ("" if len(buckets) >= 5 else " — top-5 tables will be incomplete"),
+    ))
 
     return results

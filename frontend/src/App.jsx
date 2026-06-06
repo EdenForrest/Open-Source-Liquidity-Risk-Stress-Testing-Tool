@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { AnalysisProvider } from './AnalysisContext'
 import { useAnalysis } from './AnalysisContext'
 import { ThemeProvider, useTheme, THEMES } from './ThemeContext'
@@ -13,6 +14,7 @@ import RiskStory from './pages/RiskStory'
 import AllPortfolios from './pages/AllPortfolios'
 import Validation from './pages/Validation'
 import Leverage from './pages/Leverage'
+import AnnexIV from './pages/AnnexIV'
 
 // SVG icon components — 16×16, stroke-based, professional
 function IconPortfolios() {
@@ -42,33 +44,44 @@ function IconValidation() {
 function IconLeverage() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="1" y1="14" x2="15" y2="2"/><circle cx="4" cy="11" r="2"/><circle cx="12" cy="3" r="2"/></svg>
 }
+function IconAnnexIV() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="1" width="10" height="13" rx="1"/><line x1="5" y1="5" x2="9" y2="5"/><line x1="5" y1="8" x2="9" y2="8"/><line x1="5" y1="11" x2="7" y2="11"/><path d="M10 10l4 4"/><circle cx="11.5" cy="10.5" r="2.5"/></svg>
+}
 
 const NAV_ITEMS = [
-  { to: '/portfolios',  label: 'All Portfolios', Icon: IconPortfolios },
-  { to: '/dashboard',   label: 'Dashboard',      Icon: IconDashboard  },
-  { to: '/stress',      label: 'Stress Tests',   Icon: IconStress     },
-  { to: '/redemption',  label: 'Redemption',     Icon: IconRedemption },
-  { to: '/waterfall',   label: 'Waterfall',      Icon: IconWaterfall  },
-  { to: '/charts',      label: 'Charts',         Icon: IconCharts     },
-  { to: '/leverage',    label: 'Leverage',               Icon: IconLeverage   },
-  { to: '/risk-story',  label: 'Liquidity Risk Summary', Icon: IconRiskStory  },
-  { to: '/validation',  label: 'Validation',     Icon: IconValidation },
+  { to: '/portfolios',  labelKey: 'nav.allPortfolios', Icon: IconPortfolios },
+  { to: '/dashboard',   labelKey: 'nav.dashboard',     Icon: IconDashboard  },
+  { to: '/stress',      labelKey: 'nav.stressTests',   Icon: IconStress     },
+  { to: '/redemption',  labelKey: 'nav.redemption',    Icon: IconRedemption },
+  { to: '/waterfall',   labelKey: 'nav.waterfall',     Icon: IconWaterfall  },
+  { to: '/charts',      labelKey: 'nav.charts',        Icon: IconCharts     },
+  { to: '/leverage',    labelKey: 'nav.leverage',      Icon: IconLeverage   },
+  { to: '/annex-iv',   labelKey: 'nav.annexIv',       Icon: IconAnnexIV    },
+  { to: '/risk-story',  labelKey: 'nav.riskSummary',   Icon: IconRiskStory  },
+  { to: '/validation',  labelKey: 'nav.validation',    Icon: IconValidation },
+]
+
+const LANGUAGES = [
+  { code: 'en', label: 'EN' },
+  { code: 'fr', label: 'FR' },
+  { code: 'de', label: 'DE' },
 ]
 
 function Sidebar() {
+  const { t } = useTranslation()
   return (
     <aside style={{ background: 'var(--sidebar-bg)', borderRightColor: 'var(--sidebar-border)' }}
       className="w-44 min-h-screen flex flex-col shrink-0 border-r">
       <div style={{ borderBottomColor: 'var(--sidebar-border)' }} className="px-3 py-3 border-b">
         <div style={{ color: 'var(--sidebar-logo-text)' }} className="font-bold text-xs tracking-widest leading-tight uppercase">
-          Liquidity Risk
+          {t('sidebar.title')}
         </div>
         <div style={{ color: 'var(--sidebar-logo-sub)' }} className="text-xs mt-0.5">
-          Analytics Platform
+          {t('sidebar.subtitle')}
         </div>
       </div>
       <nav className="flex-1 py-2 space-y-0.5 px-1">
-        {NAV_ITEMS.map(({ to, label, Icon }) => (
+        {NAV_ITEMS.map(({ to, labelKey, Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -82,13 +95,13 @@ function Sidebar() {
             }
           >
             <Icon />
-            {label}
+            {t(labelKey)}
           </NavLink>
         ))}
       </nav>
       <div style={{ borderTopColor: 'var(--sidebar-border)', color: 'var(--sidebar-ver)' }}
         className="px-3 py-2 border-t text-xs">
-        v1.1 — ESMA/AIFMD
+        {t('sidebar.version')}
       </div>
     </aside>
   )
@@ -96,11 +109,12 @@ function Sidebar() {
 
 function PortfolioSelector() {
   const { portfolioCodes, selectedPortfolio, selectPortfolio, status } = useAnalysis()
+  const { t } = useTranslation()
   if (status !== 'complete' || portfolioCodes.length < 2) return null
 
   return (
     <div className="flex items-center gap-2 ml-4">
-      <label style={{ color: 'var(--text-secondary)' }} className="text-xs font-medium shrink-0">Portfolio</label>
+      <label style={{ color: 'var(--text-secondary)' }} className="text-xs font-medium shrink-0">{t('header.portfolio')}</label>
       <select
         value={selectedPortfolio || ''}
         onChange={(e) => selectPortfolio(e.target.value)}
@@ -137,6 +151,29 @@ function ThemeSwitcher() {
   )
 }
 
+function LanguageSwitcher() {
+  const { i18n } = useTranslation()
+  const current = i18n.language?.slice(0, 2)
+  return (
+    <div className="flex items-center gap-0 rounded overflow-hidden"
+      style={{ border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+      {LANGUAGES.map(({ code, label }) => (
+        <button
+          key={code}
+          onClick={() => i18n.changeLanguage(code)}
+          style={current === code
+            ? { background: 'var(--text-accent)', color: '#fff' }
+            : { background: 'transparent', color: 'var(--text-secondary)' }
+          }
+          className="px-2.5 py-1.5 text-xs font-semibold transition-colors cursor-pointer"
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -149,6 +186,7 @@ export default function App() {
                 className="border-b px-3 py-2 flex items-center gap-4 shrink-0 flex-wrap">
                 <Uploader />
                 <PortfolioSelector />
+                <LanguageSwitcher />
                 <ThemeSwitcher />
               </header>
               <StatusBanner />
@@ -162,6 +200,7 @@ export default function App() {
                   <Route path="/waterfall"   element={<Waterfall />} />
                   <Route path="/charts"      element={<Charts />} />
                   <Route path="/leverage"     element={<Leverage />} />
+                  <Route path="/annex-iv"    element={<AnnexIV />} />
                   <Route path="/risk-story"  element={<RiskStory />} />
                   <Route path="/validation"  element={<Validation />} />
                 </Routes>

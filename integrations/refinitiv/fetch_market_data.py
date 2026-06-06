@@ -10,12 +10,12 @@ Configuration — set the REFINITIV_APP_KEY environment variable before running:
     $env:REFINITIV_APP_KEY = "your_key_here"     # PowerShell
 
 As a script:
-    python fetch_market_data.py --mvhol MVHOL_ALT_20260507120000.csv
-    python fetch_market_data.py --mvhol MVHOL_ALT_*.csv --portfolio AL-A --out enriched.csv
+    python fetch_market_data.py --mvhol MVHOL_SYN_20260507120000.csv
+    python fetch_market_data.py --mvhol MVHOL_SYN_*.csv --portfolio SYN-EQUITY --out enriched.csv
 
 As a notebook cell (set these variables, then run fetch_and_save()):
-    MVHOL_PATH  = "MVHOL_ALT_20260507120000.csv"
-    PORTFOLIO   = None   # or "AL-A"
+    MVHOL_PATH  = "MVHOL_SYN_20260507120000.csv"
+    PORTFOLIO   = None   # or "SYN-EQUITY"
     OUT_PATH    = None   # or "enriched.csv"
     fetch_and_save(MVHOL_PATH, PORTFOLIO, OUT_PATH)
 

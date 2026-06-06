@@ -1,24 +1,29 @@
 """
-POST /api/upload   — accept holdings + NAV CSV files, kick off pipeline async
-GET  /api/portfolios — list portfolio codes available in the data/ folder
-GET  /api/scenarios  — return STRESS_SCENARIOS metadata from settings
+POST /api/upload      — accept holdings + NAV CSV files, kick off pipeline async
+GET  /api/portfolios  — list portfolio codes available in the data/ folder
+GET  /api/scenarios   — return STRESS_SCENARIOS metadata from settings
+GET  /api/sample-data — download all bundled synthetic demo files as a zip
 """
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import re
 import tempfile
 import traceback
 import uuid
+import zipfile
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
-from fastapi.responses import JSONResponse
+import json as _json
+
+from fastapi import APIRouter, Form, HTTPException, UploadFile, File
+from fastapi.responses import JSONResponse, Response
 
 from backend import store
 from backend.services.pipeline_service import run_all_portfolios
-from liquidity_risk_tool.config.settings import STRESS_SCENARIOS
+from liquidity_risk_tool.config.settings import STRESS_SCENARIOS, REVOLUTION_SCENARIOS
 
 router = APIRouter(tags=["portfolio"])
 logger = logging.getLogger(__name__)
@@ -50,21 +55,35 @@ async def _run_pipeline_bg(
     holdings_path: Path,
     nav_path: Path,
     market_data_path: Path | None,
+    scenario_library: str = "esma",
+    lmt_config: dict | None = None,
 ) -> None:
     store.update(run_id, status="running")
+    # Persist the source paths so on-demand re-runs (e.g. a user-defined custom
+    # stress scenario) can re-load the *exact* same portfolio positions. The
+    # StressEngine reprices real positions, so a stub cannot stand in for the
+    # portfolio — we must be able to re-load it from these CSVs.
+    store.update(
+        run_id,
+        holdings_path=str(holdings_path),
+        nav_path=str(nav_path),
+        market_data_path=str(market_data_path) if market_data_path else None,
+    )
     try:
         loop = asyncio.get_running_loop()
         results = await loop.run_in_executor(
             None,
-            lambda: run_all_portfolios(holdings_path, nav_path, market_data_path),
+            lambda: run_all_portfolios(holdings_path, nav_path, market_data_path, scenario_library=scenario_library, lmt_config=lmt_config),
         )
         store.update(run_id, status="complete", results=results)
     except Exception as exc:
         tb = traceback.format_exc()
         logger.error("Pipeline failed for run %s\n%s", run_id, tb)
         store.update(run_id, status="error", error=f"{type(exc).__name__}: {exc}")
-    finally:
-        # Only delete files that are NOT in the bundled data directory
+        # Only failed runs clean up their uploaded temp files immediately — there
+        # is no successful run to re-load from. Files in the bundled data dir are
+        # never deleted. Successful uploaded runs retain their temp files for the
+        # process lifetime so custom-scenario re-runs can re-load the portfolio.
         for p in [holdings_path, nav_path, market_data_path]:
             if p and p.exists() and DATA_DIR not in p.parents:
                 p.unlink(missing_ok=True)
@@ -79,8 +98,27 @@ async def upload_portfolio(
     holdings_file: UploadFile = File(...),
     nav_file: UploadFile = File(...),
     market_data_file: UploadFile | None = File(default=None),
+    scenario_library: str = Form(default="esma"),
+    lmt_config_json: str = Form(default="{}"),
+    annex_iv_meta_json: str = Form(default=""),
 ):
-    """Upload MVHOL + NAV CSV files and trigger the full pipeline run."""
+    """Upload MVHOL + NAV CSV files and trigger the full pipeline run.
+
+    Optional ``annex_iv_meta_json`` carries AIFM/AIF/share-class identification
+    used to enable Annex IV regulatory export (JSON: aifm_lei, aifm_national_code,
+    aifm_name, reporting_member_state, aif_lei, aif_national_code, share_classes).
+    When omitted, Annex IV preview still works but XML/Excel export is blocked.
+    """
+    try:
+        lmt_config = _json.loads(lmt_config_json) if lmt_config_json else {}
+    except _json.JSONDecodeError:
+        lmt_config = {}
+    try:
+        annex_iv_meta = _json.loads(annex_iv_meta_json) if annex_iv_meta_json else None
+        if not isinstance(annex_iv_meta, dict):
+            annex_iv_meta = None
+    except _json.JSONDecodeError:
+        annex_iv_meta = None
     try:
         tmp_dir = Path(tempfile.mkdtemp())
 
@@ -100,9 +138,11 @@ async def upload_portfolio(
 
         run_id = str(uuid.uuid4())
         store.create(run_id)
+        if annex_iv_meta is not None:
+            store.update(run_id, annex_iv_meta=annex_iv_meta)
 
         asyncio.create_task(
-            _run_pipeline_bg(run_id, holdings_path, nav_path, market_data_path)
+            _run_pipeline_bg(run_id, holdings_path, nav_path, market_data_path, scenario_library=scenario_library, lmt_config=lmt_config)
         )
 
         return {"run_id": run_id, "status": "pending"}
@@ -141,7 +181,7 @@ async def run_demo():
     Result is cached — subsequent calls return the same run_id instantly.
     Pairs HOLDINGS and NAV files by matching timestamp prefix to prevent mismatches.
     """
-    global _DEMO_RUN_ID
+    global _DEMO_RUN_ID, _DEMO_HOLDINGS_MTIME
 
     # Find best matched HOLDINGS+NAV pair by shared timestamp prefix
     holdings_files = sorted(DATA_DIR.glob("HOLDINGS_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -186,9 +226,17 @@ async def run_demo():
 
 
 @router.get("/scenarios")
-def list_scenarios():
-    """Return all stress scenario definitions from config/settings.py."""
+def list_scenarios(library: str = "esma"):
+    """Return stress scenario definitions. library: esma | revolution | all"""
+    from fastapi import Query as _Q
+    if library == "revolution":
+        source = REVOLUTION_SCENARIOS
+    elif library == "all":
+        source = STRESS_SCENARIOS + REVOLUTION_SCENARIOS
+    else:
+        source = STRESS_SCENARIOS
     return {
+        "library": library,
         "scenarios": [
             {
                 "name": sc.name,
@@ -203,6 +251,56 @@ def list_scenarios():
                 "is_worst_case": getattr(sc, "is_worst_case", False),
                 "version": getattr(sc, "version", ""),
             }
-            for sc in STRESS_SCENARIOS
+            for sc in source
         ]
     }
+
+
+@router.get("/sample-data")
+def download_sample_data():
+    """Bundle the synthetic demo dataset into a single zip download.
+
+    Includes the latest Holdings + matching NAV pair, the consolidated market
+    data, and a synthetic Annex IV metadata file. All files are synthetic —
+    safe to share publicly.
+    """
+    if not DATA_DIR.exists():
+        raise HTTPException(status_code=404, detail="No synthetic demo data found")
+
+    # Latest HOLDINGS file, then the NAV that shares its timestamp suffix
+    holdings_files = sorted(
+        DATA_DIR.glob("HOLDINGS_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
+    if not holdings_files:
+        raise HTTPException(status_code=404, detail="No synthetic holdings data found")
+
+    holdings_file = holdings_files[0]
+    timestamp = holdings_file.stem.replace("HOLDINGS_", "")
+    nav_file = DATA_DIR / f"NAV_{timestamp}.csv"
+    if not nav_file.exists():
+        nav_files = sorted(
+            DATA_DIR.glob("NAV_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
+        nav_file = nav_files[0] if nav_files else None
+
+    # (source path, name inside the zip) — skip any that are missing
+    candidates = [
+        (holdings_file, holdings_file.name),
+        (nav_file, nav_file.name if nav_file else None),
+        (DATA_DIR / "market_data_ALL.csv", "market_data_ALL.csv"),
+        (DATA_DIR / "annex_iv_meta.json", "annex_iv_meta.json"),
+    ]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for src, arcname in candidates:
+            if src is None or arcname is None or not src.exists():
+                continue
+            zf.writestr(arcname, src.read_bytes())
+
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="sample_data.zip"'},
+    )

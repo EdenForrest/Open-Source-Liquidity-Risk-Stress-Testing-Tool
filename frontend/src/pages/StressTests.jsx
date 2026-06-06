@@ -1,8 +1,11 @@
+import { useState, useEffect } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, ReferenceLine, CartesianGrid,
 } from 'recharts'
+import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import { useTheme } from '../ThemeContext'
+import client from '../api/client'
 import KPICard from '../components/KPICard'
 import EmptyState from '../components/EmptyState'
 import StatusBanner from '../components/StatusBanner'
@@ -16,42 +19,292 @@ const headingStyle = { color: 'var(--text-secondary)' }
 const rowEven = { background: 'var(--bg-panel)' }
 const rowOdd  = { background: 'var(--bg-surface)' }
 
+const inputStyle = {
+  background: 'var(--bg-surface)',
+  borderColor: 'var(--border)',
+  color: 'var(--text-primary)',
+}
+
+// Form defaults mirror the backend CustomScenarioRequest defaults. Percentage
+// fields are expressed as whole percent in the UI and converted on submit.
+const EMPTY_FORM = {
+  name: 'My Custom Scenario',
+  equity_shock_pct: -20,
+  credit_spread_shock_bps: 150,
+  rate_shock_bps: 0,
+  liquidity_haircut_multiplier: 2,
+  redemption_rate_pct: 10,
+  adv_stress_scalar: 1,
+}
+
 export default function StressTests() {
-  const { data, error } = useAnalysis()
+  const { t } = useTranslation()
+  const { data, error, runId, selectedPortfolio } = useAnalysis()
   const { theme } = useTheme()
   const ct = chartTheme(theme)
   const stress = data?.stress
+
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [customResults, setCustomResults] = useState([])
+  const [customMeta, setCustomMeta] = useState([])
+  const [running, setRunning] = useState(false)
+  const [formError, setFormError] = useState(null)
+
+  // Reverse stress is run on demand only (expensive multi-start optimisation),
+  // never inside the pipeline. It appends into the same result/param tables.
+  const [reverseRunning, setReverseRunning] = useState(false)
+  const [reverseError, setReverseError] = useState(null)
+  const [reverseInfo, setReverseInfo] = useState(null)
+
+  // The reverse-stress banner reflects the last run for the *currently selected*
+  // portfolio. Clear it when the user switches portfolios so a stale "robust" /
+  // "breach found" message from another portfolio is never shown.
+  useEffect(() => {
+    setReverseInfo(null)
+    setReverseError(null)
+    setFormError(null)
+  }, [selectedPortfolio])
+
   if (error) return <StatusBanner />
   if (!stress) return <EmptyState />
 
-  const results = stress.stress_results || []
-  const meta = stress.scenario_metadata || []
+  // Custom + reverse results are tagged with the portfolio they were run for so
+  // switching the selected portfolio shows only that portfolio's on-demand runs
+  // (the pipeline `stress.stress_results` are already scoped to the selection).
+  const scopedCustom = customResults.filter(
+    (r) => !selectedPortfolio || !r._portfolio || r._portfolio === selectedPortfolio,
+  )
+  const scopedMeta = customMeta.filter(
+    (m) => !selectedPortfolio || !m._portfolio || m._portfolio === selectedPortfolio,
+  )
+  const results = [...(stress.stress_results || []), ...scopedCustom]
+  const meta = [...(stress.scenario_metadata || []), ...scopedMeta]
+
+  const setField = (key) => (e) => {
+    const v = e.target.value
+    setForm((f) => ({ ...f, [key]: v }))
+  }
+
+  const num = (v, fallback = 0) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : fallback
+  }
+
+  const runCustom = async () => {
+    if (!runId) return
+    setRunning(true)
+    setFormError(null)
+    try {
+      const payload = {
+        name: (form.name || '').trim() || 'Custom Scenario',
+        equity_shock: num(form.equity_shock_pct) / 100,
+        credit_spread_shock_bps: Math.round(num(form.credit_spread_shock_bps)),
+        rate_shock_bps: Math.round(num(form.rate_shock_bps)),
+        liquidity_haircut_multiplier: num(form.liquidity_haircut_multiplier, 1),
+        redemption_rate: num(form.redemption_rate_pct) / 100,
+        adv_stress_scalar: num(form.adv_stress_scalar, 1),
+        portfolio: selectedPortfolio,
+      }
+      const res = await client.post(`/run/${runId}/custom-scenario`, payload)
+      setCustomResults((rs) => [...rs, { ...res.data.stress_result, _custom: true, _portfolio: selectedPortfolio }])
+      setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _custom: true, _portfolio: selectedPortfolio }])
+    } catch (err) {
+      // The api client interceptor flattens the server detail into err.message.
+      setFormError(err?.message || t('stress.creator.error'))
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const runReverse = async () => {
+    if (!runId) return
+    setReverseRunning(true)
+    setReverseError(null)
+    setReverseInfo(null)
+    try {
+      const res = await client.post(`/run/${runId}/reverse-stress`, { portfolio: selectedPortfolio })
+      const rev = res.data?.reverse_result || {}
+      if (res.data?.found && res.data?.stress_result) {
+        setCustomResults((rs) => [...rs, { ...res.data.stress_result, _reverse: true, _portfolio: selectedPortfolio }])
+        setCustomMeta((ms) => [...ms, { ...res.data.scenario_metadata, _reverse: true, _portfolio: selectedPortfolio }])
+        setReverseInfo({ found: true, distance: rev.severity_distance })
+      } else if (rev.breached_at_baseline) {
+        // Already in breach with no shock — reverse stress is ill-posed. Surface
+        // this distinctly; do NOT show the "robust" banner.
+        setReverseInfo({ found: false, baseline: true, liquid: rev.baseline_liquid_pct, target: rev.target_liquid_pct })
+      } else {
+        // Robust across the plausible box — no breach reachable.
+        setReverseInfo({ found: false })
+      }
+    } catch (err) {
+      setReverseError(err?.message || t('stress.reverse.error'))
+    } finally {
+      setReverseRunning(false)
+    }
+  }
+
+  const clearCustom = () => {
+    // Clear only the on-demand runs for the currently selected portfolio so other
+    // portfolios' results are preserved.
+    const keep = (r) => selectedPortfolio && r._portfolio && r._portfolio !== selectedPortfolio
+    setCustomResults((rs) => rs.filter(keep))
+    setCustomMeta((ms) => ms.filter(keep))
+    setFormError(null)
+    setReverseError(null)
+    setReverseInfo(null)
+  }
 
   const worstNav = results.reduce((a, b) => (b.nav_impact_pct < a.nav_impact_pct ? b : a), results[0])
   const worstLiq = results.reduce((a, b) => (b.liquid_pct_after < a.liquid_pct_after ? b : a), results[0])
   const worstDays = results.reduce((a, b) => (b.time_to_liquidate_days > a.time_to_liquidate_days ? b : a), results[0])
   const metCount = results.filter((r) => r.can_meet_redemption).length
 
+  const navDeltaKey = t('charts.legend.navDelta')
   const chartData = results.map((r) => ({
     name: r.scenario_name?.replace(' Combined', '').replace('Stress ', '') ?? r.scenario_name,
-    'NAV Δ%': +((r.nav_impact_pct || 0) * 100).toFixed(2),
+    [navDeltaKey]: +((r.nav_impact_pct || 0) * 100).toFixed(2),
   }))
+
+  const resultsCols = [
+    [t('stress.columns.scenario'), null],
+    [t('stress.columns.navBefore'), null],
+    [t('stress.columns.navAfter'), null],
+    [t('stress.columns.navImpact'), 'nav_delta_pct'],
+    [t('stress.columns.equityLoss'), 'equity_loss'],
+    [t('stress.columns.creditLoss'), 'credit_loss'],
+    [t('stress.columns.liquidBefore'), 'liq_before'],
+    [t('stress.columns.liquidAfter'), 'liq_after'],
+    [t('stress.columns.ttl'), 'days_to_liq'],
+    [t('stress.columns.canMeet'), 'meets_redemption'],
+  ]
+
+  const paramsCols = [
+    t('stress.columns.name'),
+    t('stress.columns.equityShock'),
+    t('stress.columns.spreadShock'),
+    t('stress.columns.rateShock'),
+    t('stress.columns.advScalar'),
+    t('stress.columns.haircutMult'),
+    t('stress.columns.redemptionRate'),
+    t('stress.columns.regulatoryBasis'),
+    t('stress.columns.worstCase'),
+  ]
 
   return (
     <div className="p-3 space-y-3">
-      <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Stress Tests</h1>
+      <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('stress.title')}</h1>
+
+      <div className="rounded shadow-sm border p-3 space-y-2" style={panelStyle}>
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide bb-head" style={headingStyle}>
+            {t('stress.creator.title')}
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+            {t('stress.creator.subtitle')}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+          {[
+            ['name', t('stress.creator.name'), 'text', undefined],
+            ['equity_shock_pct', t('stress.creator.equityShock'), 'number', '1'],
+            ['credit_spread_shock_bps', t('stress.creator.spreadShock'), 'number', '1'],
+            ['rate_shock_bps', t('stress.creator.rateShock'), 'number', '1'],
+            ['liquidity_haircut_multiplier', t('stress.creator.haircutMult'), 'number', '0.1'],
+            ['redemption_rate_pct', t('stress.creator.redemptionRate'), 'number', '1'],
+            ['adv_stress_scalar', t('stress.creator.advScalar'), 'number', '0.1'],
+          ].map(([key, label, type, step]) => (
+            <label key={key} className="flex flex-col gap-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
+              <span className="whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>
+              <input
+                type={type}
+                step={step}
+                value={form[key]}
+                onChange={setField(key)}
+                className="rounded border px-2 py-1 text-sm w-full"
+                style={inputStyle}
+              />
+            </label>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={runCustom}
+            disabled={running || !runId}
+            className="rounded px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
+            style={{ background: 'var(--text-accent)', color: '#fff' }}
+          >
+            {running ? t('stress.creator.running') : t('stress.creator.run')}
+          </button>
+          {scopedCustom.length > 0 && (
+            <button
+              onClick={clearCustom}
+              className="rounded px-3 py-1.5 text-sm font-medium border"
+              style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)' }}
+            >
+              {t('stress.creator.clear')}
+            </button>
+          )}
+          {formError && (
+            <span className="text-xs font-medium" style={{ color: '#ff3b3b' }}>{formError}</span>
+          )}
+        </div>
+      </div>
+
+      <div className="rounded shadow-sm border p-3 space-y-2" style={panelStyle}>
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide bb-head" style={headingStyle}>
+            {t('stress.reverse.title')}
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+            {t('stress.reverse.subtitle')}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={runReverse}
+            disabled={reverseRunning || !runId}
+            className="rounded px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
+            style={{ background: 'var(--text-accent)', color: '#fff' }}
+          >
+            {reverseRunning ? t('stress.reverse.running') : t('stress.reverse.run')}
+          </button>
+          {reverseInfo?.found && (
+            <span className="text-xs font-medium" style={{ color: 'var(--kpi-amber-text)' }}>
+              {t('stress.reverse.foundBanner', {
+                distance: reverseInfo.distance != null ? reverseInfo.distance.toFixed(3) : '—',
+              })}
+            </span>
+          )}
+          {reverseInfo && !reverseInfo.found && reverseInfo.baseline && (
+            <span className="text-xs font-medium" style={{ color: '#ff3b3b' }}>
+              {t('stress.reverse.baselineBanner', {
+                liquid: reverseInfo.liquid != null ? (reverseInfo.liquid * 100).toFixed(1) : '—',
+                target: reverseInfo.target != null ? (reverseInfo.target * 100).toFixed(1) : '—',
+              })}
+            </span>
+          )}
+          {reverseInfo && !reverseInfo.found && !reverseInfo.baseline && (
+            <span className="text-xs font-medium" style={{ color: 'var(--kpi-green-text)' }}>
+              {t('stress.reverse.robustBanner')}
+            </span>
+          )}
+          {reverseError && (
+            <span className="text-xs font-medium" style={{ color: '#ff3b3b' }}>{reverseError}</span>
+          )}
+        </div>
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        <KPICard label={<MetricTooltip id="worst_nav_impact">Worst NAV Impact</MetricTooltip>} value={pct(worstNav?.nav_impact_pct)} sub={worstNav?.scenario_name} color="red" />
-        <KPICard label={<MetricTooltip id="worst_liq_after">Worst Liquidity After</MetricTooltip>} value={pct(worstLiq?.liquid_pct_after)} sub={worstLiq?.scenario_name} color="amber" />
-        <KPICard label={<MetricTooltip id="max_days_to_liq">Max Days to Liquidate</MetricTooltip>} value={worstDays?.time_to_liquidate_days?.toFixed(1) ?? '—'} sub={worstDays?.scenario_name} color="amber" />
-        <KPICard label={<MetricTooltip id="redemptions_met">Redemptions Met</MetricTooltip>} value={`${metCount} / ${results.length}`}
+        <KPICard label={<MetricTooltip id="worst_nav_impact">{t('stress.kpi.worstNavImpact')}</MetricTooltip>} value={pct(worstNav?.nav_impact_pct)} sub={worstNav?.scenario_name} color="red" />
+        <KPICard label={<MetricTooltip id="worst_liq_after">{t('stress.kpi.worstLiqAfter')}</MetricTooltip>} value={pct(worstLiq?.liquid_pct_after)} sub={worstLiq?.scenario_name} color="amber" />
+        <KPICard label={<MetricTooltip id="max_days_to_liq">{t('stress.kpi.maxDaysToLiq')}</MetricTooltip>} value={worstDays?.time_to_liquidate_days?.toFixed(1) ?? '—'} sub={worstDays?.scenario_name} color="amber" />
+        <KPICard label={<MetricTooltip id="redemptions_met">{t('stress.kpi.redemptionsMet')}</MetricTooltip>} value={`${metCount} / ${results.length}`}
           color={metCount === results.length ? 'green' : metCount === 0 ? 'red' : 'amber'} />
       </div>
 
       <div className="rounded shadow-sm border p-3" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide bb-head mb-2" style={headingStyle}>
-          NAV Impact by Scenario
+          {t('stress.navImpactChart')}
         </h2>
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
@@ -63,9 +316,9 @@ export default function StressTests() {
               labelStyle={{ color: ct.tooltipText }}
               itemStyle={{ color: ct.tooltipText }} />
             <ReferenceLine y={0} stroke={ct.axisColor} />
-            <Bar dataKey="NAV Δ%" radius={[4, 4, 0, 0]}>
+            <Bar dataKey={navDeltaKey} radius={[4, 4, 0, 0]}>
               {chartData.map((d, i) => (
-                <Cell key={i} fill={stressImpactColor(d['NAV Δ%'])} />
+                <Cell key={i} fill={stressImpactColor(d[navDeltaKey])} />
               ))}
             </Bar>
           </BarChart>
@@ -74,18 +327,12 @@ export default function StressTests() {
 
       <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={headingStyle}>
-          Scenario Results
+          {t('stress.resultsTable')}
         </h2>
         <table className="w-full text-sm">
           <thead style={surfaceStyle}>
             <tr>
-              {[
-                ['Scenario', null], ['NAV Before', null], ['NAV After', null],
-                ['NAV Δ%', 'nav_delta_pct'], ['Equity Loss', 'equity_loss'],
-                ['Credit Loss', 'credit_loss'], ['Liq Before', 'liq_before'],
-                ['Liq After', 'liq_after'], ['Days to Liq.', 'days_to_liq'],
-                ['Meets Redemption', 'meets_redemption'],
-              ].map(([h, id]) => (
+              {resultsCols.map(([h, id]) => (
                 <th key={h} className="px-3 py-2 text-left whitespace-nowrap text-xs uppercase"
                   style={{ color: 'var(--text-secondary)' }}>
                   {id ? <MetricTooltip id={id}>{h}</MetricTooltip> : h}
@@ -96,7 +343,21 @@ export default function StressTests() {
           <tbody>
             {results.map((r, i) => (
               <tr key={i} style={i % 2 === 0 ? rowEven : rowOdd}>
-                <td className="px-3 py-2 font-medium">{r.scenario_name}</td>
+                <td className="px-3 py-2 font-medium">
+                  {r.scenario_name}
+                  {r._custom && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                      style={{ background: 'var(--text-accent)', color: '#fff' }}>
+                      {t('stress.creator.customBadge')}
+                    </span>
+                  )}
+                  {r._reverse && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                      style={{ background: 'var(--kpi-amber-bg)', color: 'var(--kpi-amber-text)' }}>
+                      {t('stress.reverse.badge')}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right">{eur(r.nav_before)}</td>
                 <td className="px-3 py-2 text-right">{eur(r.nav_after_shock)}</td>
                 <td className="px-3 py-2 text-right font-semibold"
@@ -113,7 +374,7 @@ export default function StressTests() {
                     style={r.can_meet_redemption
                       ? { background: 'var(--kpi-green-bg)', color: 'var(--kpi-green-text)' }
                       : { background: 'var(--kpi-red-bg)', color: 'var(--kpi-red-text)' }}>
-                    {r.can_meet_redemption ? 'Yes' : 'No'}
+                    {r.can_meet_redemption ? t('stress.yes') : t('stress.no')}
                   </span>
                 </td>
               </tr>
@@ -124,12 +385,12 @@ export default function StressTests() {
 
       <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
         <h2 className="text-sm font-semibold uppercase tracking-wide bb-head p-2 pb-1" style={headingStyle}>
-          Scenario Parameters
+          {t('stress.paramsTable')}
         </h2>
         <table className="w-full text-sm">
           <thead style={surfaceStyle}>
             <tr>
-              {['Name', 'Equity Shock', 'Credit Δbps', 'Rate Δbps', 'ADV Scalar', 'Haircut Mult.', 'Redemption %', 'Regulatory Basis', 'Worst-Case'].map((h) => (
+              {paramsCols.map((h) => (
                 <th key={h} className="px-3 py-2 text-left whitespace-nowrap text-xs uppercase"
                   style={{ color: 'var(--text-secondary)' }}>{h}</th>
               ))}
@@ -138,7 +399,21 @@ export default function StressTests() {
           <tbody>
             {meta.map((sc, i) => (
               <tr key={i} style={i % 2 === 0 ? rowEven : rowOdd}>
-                <td className="px-3 py-2 font-medium">{sc.name}</td>
+                <td className="px-3 py-2 font-medium">
+                  {sc.name}
+                  {sc._custom && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                      style={{ background: 'var(--text-accent)', color: '#fff' }}>
+                      {t('stress.creator.customBadge')}
+                    </span>
+                  )}
+                  {sc._reverse && (
+                    <span className="ml-2 rounded-full px-2 py-0.5 text-[10px] font-semibold align-middle"
+                      style={{ background: 'var(--kpi-amber-bg)', color: 'var(--kpi-amber-text)' }}>
+                      {t('stress.reverse.badge')}
+                    </span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right">{pct(sc.equity_shock)}</td>
                 <td className="px-3 py-2 text-right">{sc.credit_spread_shock_bps}</td>
                 <td className="px-3 py-2 text-right">{sc.rate_shock_bps}</td>

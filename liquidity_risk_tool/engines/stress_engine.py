@@ -26,6 +26,7 @@ import numpy as np
 
 from ..config.settings import (
     STRESS_SCENARIOS,
+    REVOLUTION_SCENARIOS,
     ASSET_CLASS_LIQUIDITY,
     BUCKET_ORDER,
     DURATION_BY_ASSET_CLASS,
@@ -91,9 +92,17 @@ class StressEngine:
         self,
         portfolio: Portfolio,
         scenarios: Optional[List[StressScenario]] = None,
+        scenario_library: str = "esma",
     ):
         self.portfolio = portfolio
-        self.scenarios = scenarios or STRESS_SCENARIOS
+        if scenarios is not None:
+            self.scenarios = scenarios
+        elif scenario_library == "revolution":
+            self.scenarios = REVOLUTION_SCENARIOS
+        elif scenario_library == "all":
+            self.scenarios = STRESS_SCENARIOS + REVOLUTION_SCENARIOS
+        else:
+            self.scenarios = STRESS_SCENARIOS
 
     # ------------------------------------------------------------------
     # Public API
@@ -302,7 +311,27 @@ class StressEngine:
         if target_liquid_pct is None:
             target_liquid_pct = LIQUIDITY_BREACH_THRESHOLD
 
-        base_scenario = copy.deepcopy(self.scenarios[-1])  # start from worst-case shape
+        # Start the search from a NEUTRAL (all-zero) scenario so the swept
+        # `shock_parameter` is the ONLY shock applied. Previously this deep-copied
+        # self.scenarios[-1] (the worst-case scenario), which contaminated the
+        # result: every trial already carried the worst-case equity crash, credit
+        # blow-out, haircut multiplier, redemption and ADV collapse, so the reported
+        # "breach shock level" was confounded by those baked-in shocks rather than
+        # isolating the single parameter being varied. It also coupled the answer to
+        # the ordering/contents of self.scenarios via the [-1] index.
+        base_scenario = StressScenario(
+            name=f"Reverse stress ({shock_parameter})",
+            equity_shock=0.0,
+            credit_spread_shock_bps=0,
+            liquidity_haircut_multiplier=1.0,
+            redemption_rate=0.0,
+            adv_stress_scalar=1.0,
+            rate_shock_bps=0,
+            description=(
+                f"Neutral base used to isolate the swept parameter "
+                f"'{shock_parameter}' during reverse stress."
+            ),
+        )
 
         found = False
         breach_shock = None
@@ -340,3 +369,73 @@ class StressEngine:
             "liquid_pct_at_breach": breach_liquid,
             "scenario_at_breach": base_scenario.name if found else None,
         }
+
+    def reverse_stress_scenario(
+        self,
+        target_liquid_pct: float = None,
+        shock_parameter: str = "equity_shock",
+        lo: float = 0.0,
+        hi: float = 0.60,
+        tolerance: float = 0.005,
+        max_iterations: int = 40,
+    ):
+        """Run reverse stress and materialise the breach as a forward scenario.
+
+        Returns ``(StressScenario, ScenarioResult, search)`` where ``search`` is the
+        raw dict from :meth:`run_reverse_stress`. When no breach is found within the
+        search bounds, returns ``(None, None, search)`` so callers can skip it.
+
+        This lets the reverse-stress outcome slot into the same ``stress_results`` /
+        ``scenario_metadata`` tables as the forward scenarios: the breach scenario is
+        a real, single-parameter shock re-applied through ``_apply_scenario``.
+        """
+        if target_liquid_pct is None:
+            target_liquid_pct = LIQUIDITY_BREACH_THRESHOLD
+
+        search = self.run_reverse_stress(
+            target_liquid_pct=target_liquid_pct,
+            shock_parameter=shock_parameter,
+            lo=lo,
+            hi=hi,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+        )
+        if not search.get("found") or search.get("breach_shock_level") is None:
+            return None, None, search
+
+        mag = search["breach_shock_level"]
+        if shock_parameter == "equity_shock":
+            shock_desc = f"equity {-mag:.1%}"
+        elif shock_parameter == "credit_spread_shock_bps":
+            shock_desc = f"credit spread +{int(mag * 10_000)}bps"
+        elif shock_parameter == "liquidity_haircut_multiplier":
+            shock_desc = f"liquidity haircut ×{mag:.2f}"
+        elif shock_parameter == "adv_stress_scalar":
+            shock_desc = f"ADV collapse to {mag:.0%} of normal"
+        else:
+            shock_desc = f"{shock_parameter} {mag:.3g}"
+
+        breach_scenario = StressScenario(
+            name=f"Reverse stress ({shock_parameter})",
+            equity_shock=0.0,
+            credit_spread_shock_bps=0,
+            liquidity_haircut_multiplier=1.0,
+            redemption_rate=0.0,
+            adv_stress_scalar=1.0,
+            rate_shock_bps=0,
+            description=(
+                f"Minimum single-parameter shock that drives T0-T1 liquidity below "
+                f"{target_liquid_pct:.0%}: {shock_desc}."
+            ),
+            regulatory_basis="Reverse stress - AIFMD II Art.16(1); ESMA Guidelines on stress testing",
+            is_worst_case=False,
+        )
+        if shock_parameter == "equity_shock":
+            breach_scenario.equity_shock = -mag
+        elif shock_parameter == "credit_spread_shock_bps":
+            breach_scenario.credit_spread_shock_bps = int(mag * 10_000)
+        else:
+            setattr(breach_scenario, shock_parameter, mag)
+
+        result = self._apply_scenario(breach_scenario)
+        return breach_scenario, result, search

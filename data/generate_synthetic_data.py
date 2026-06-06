@@ -17,6 +17,7 @@ Output files (written to the same directory as this script by default):
     market_data_ALL.csv             — market data (comma-delimited)
     market_data_ERRORS.csv          — fetch errors (comma-delimited)
     zero_coupon_yields.xlsx         — US zero-coupon yield curve (xlsx)
+    annex_iv_meta.json              — AIFMD Annex IV AIFM/AIF/share-class metadata
 
 Column schemas are taken from the real file headers only.
 """
@@ -189,11 +190,35 @@ ISIN_COUNTRIES = ["DE", "FR", "NL", "BE", "AT", "ES", "IT", "FI",
                   "IE", "LU", "GB", "US", "CH", "SE", "DK"]
 
 EQUITY_COUNTRIES = ["DE", "FR", "NL", "BE", "AT", "ES", "IT",
-                    "FI", "GB", "US", "CH", "SE", "DK"]
+                    "FI", "GB", "US", "CH", "SE", "IE", "LU", "PT"]
 
 BOND_COUNTRIES   = ["DE", "FR", "IT", "ES", "NL", "AT", "FI", "BE", "US", "GB"]
 
 ETF_COUNTRIES    = ["IE", "LU"]   # UCITS domicile for ETFs
+
+# Geo concentration overrides — force specific country ISINs at given probability
+# to trigger AIFMD Annex IV geo flags in two demo portfolios.
+# probability is per-position (applied independently to each bond/equity row).
+PORTFOLIO_GEO_OVERRIDES: dict[str, dict] = {
+    # SYN-GOVBOND: force ~75% of positions to DE → single country DE > 35% NAV → Warning
+    "SYN-GOVBOND": {"country": "DE", "probability": 0.75},
+    # SYN-ILLIQ: force ~38% of positions to US → single country US ~37-43% NAV → Warning (not breach)
+    "SYN-ILLIQ":   {"country": "US", "probability": 0.38},
+}
+
+# Per-portfolio equity position size caps (EUR MV). Prevents a single large-price equity
+# position from dominating a portfolio's geo distribution under an unlucky random seed.
+# SYN-EQUITY cap keeps all positions T+1 liquidatable within ADV limits.
+# All other equity-holding portfolios are capped at 30M to keep single-country exposure < 35% NAV.
+EQUITY_MAX_MV: dict[str, float] = {
+    "SYN-EQUITY":    8_000_000.0,
+    "SYN-GOVBOND":  30_000_000.0,
+    "SYN-FIXEDINC": 30_000_000.0,
+    "SYN-MIXED":    30_000_000.0,
+    "SYN-ILLIQ":    30_000_000.0,
+    "SYN-LOANFUND": 30_000_000.0,
+    "SYN-LEVERAGED":30_000_000.0,
+}
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +290,13 @@ def _gen_cash_row(portfolio: str, report_date: str) -> dict:
     }
 
 
-def _gen_equity_row(portfolio: str, report_date: str) -> dict:
-    country  = random.choice(EQUITY_COUNTRIES)
+def _gen_equity_row(
+    portfolio: str,
+    report_date: str,
+    forced_country: str | None = None,
+    max_mv_eur: float | None = None,
+) -> dict:
+    country  = forced_country if forced_country else random.choice(EQUITY_COUNTRIES)
     isin     = _isin(country)
     ccy      = "EUR" if country not in ("GB", "US", "CH", "SE", "DK") else (
                 "GBP" if country == "GB" else
@@ -275,11 +305,7 @@ def _gen_equity_row(portfolio: str, report_date: str) -> dict:
                 "SEK" if country == "SE" else "DKK")
     fx       = _FX_BASE[ccy] * random.uniform(0.97, 1.03)
     price    = random.uniform(5.0, 500.0)
-    # For SYN-EQUITY: cap position size so market value stays well within T+1 ADV
-    # capacity. With ADV floor of €200M and MAX_ADV_PARTICIPATION=0.20, daily
-    # capacity = €40M. Cap MV at €8M (20% of floor) to guarantee days_to_liq ≤ 1.
-    if portfolio == "SYN-EQUITY":
-        max_mv_eur = 8_000_000.0
+    if max_mv_eur is not None:
         max_qty = max(1, int(max_mv_eur * fx / price))
         qty = random.randint(100, max(100, min(max_qty, 50_000)))
     else:
@@ -304,8 +330,8 @@ def _gen_equity_row(portfolio: str, report_date: str) -> dict:
     }
 
 
-def _gen_bond_row(portfolio: str, report_date: str, asset_class: str) -> dict:
-    country      = random.choice(BOND_COUNTRIES)
+def _gen_bond_row(portfolio: str, report_date: str, asset_class: str, forced_country: str | None = None) -> dict:
+    country      = forced_country if forced_country is not None else random.choice(BOND_COUNTRIES)
     isin         = _isin(country)
     ccy          = "EUR" if country not in ("GB", "US") else ("GBP" if country == "GB" else "USD")
     fx           = _FX_BASE[ccy] * random.uniform(0.97, 1.03)
@@ -589,7 +615,9 @@ def generate_holdings(
         except (ValueError, AttributeError):
             return 0.0
 
-    for pcode in portfolios:
+    for p_idx, pcode in enumerate(portfolios):
+        # Re-seed per portfolio so changes to one portfolio don't shift others.
+        random.seed(42 + p_idx * 1000)
         n = random.randint(*positions_per_portfolio)
 
         # ── SYN-LOANFUND: two-pass to guarantee one borrower > 20% NAV ──────
@@ -629,7 +657,7 @@ def generate_holdings(
             base_rows: list[tuple[dict, str]] = []
             for ac in base_classes:
                 if ac == "listed_equity":
-                    r = _gen_equity_row(pcode, report_date)
+                    r = _gen_equity_row(pcode, report_date, max_mv_eur=EQUITY_MAX_MV.get(pcode))
                     base_rows.append((r, ac))
                 elif ac in ("government_bond", "ig_corporate_bond"):
                     r = _gen_bond_row(pcode, report_date, ac)
@@ -705,11 +733,19 @@ def generate_holdings(
         else:
             cash_row = _gen_cash_row(pcode, report_date)
         _add(cash_row, pcode, "cash")
+        _geo     = PORTFOLIO_GEO_OVERRIDES.get(pcode)
+        _eq_cap  = EQUITY_MAX_MV.get(pcode)
         for ac in _holdings_per_portfolio(n - 1, portfolio=pcode):
             if ac == "listed_equity":
-                _add(_gen_equity_row(pcode, report_date), pcode, ac)
+                _fc = None
+                if _geo and random.random() < _geo["probability"]:
+                    _fc = _geo["country"]
+                _add(_gen_equity_row(pcode, report_date, forced_country=_fc, max_mv_eur=_eq_cap), pcode, ac)
             elif ac in ("government_bond", "ig_corporate_bond", "hy_corporate_bond"):
-                _add(_gen_bond_row(pcode, report_date, ac), pcode, ac)
+                _fc = None
+                if _geo and random.random() < _geo["probability"]:
+                    _fc = _geo["country"]
+                _add(_gen_bond_row(pcode, report_date, ac, forced_country=_fc), pcode, ac)
             elif ac == "etf":
                 _add(_gen_etf_row(pcode, report_date), pcode, ac)
             elif ac == "option":
@@ -741,7 +777,30 @@ def generate_holdings(
 # NAV file
 # ---------------------------------------------------------------------------
 
-NAV_COLUMNS = ["PortfolioCode", "Date", "TotalAssets"]
+NAV_COLUMNS = [
+    "PortfolioCode", "Date", "TotalAssets",
+    "Subscriptions", "Redemptions", "NetCashFlows",
+]
+
+
+def _last_n_working_days(end: date, n: int) -> list[date]:
+    """Return n working days (Mon–Fri) ending on end (inclusive)."""
+    days: list[date] = []
+    cur = end
+    while len(days) < n:
+        if cur.weekday() < 5:
+            days.append(cur)
+        cur -= timedelta(days=1)
+    return list(reversed(days))
+
+
+def _random_walk_backward(final: float, steps: int, daily_vol: float = 0.005) -> list[float]:
+    """Produce `steps` values ending at `final` via a geometric random walk."""
+    vals = [final]
+    for _ in range(steps - 1):
+        shock = random.gauss(0, daily_vol)
+        vals.append(vals[-1] / (1 + shock))
+    return list(reversed(vals))
 
 
 def generate_nav(
@@ -750,25 +809,33 @@ def generate_nav(
     output_path: Path,
     nav_map: Optional[dict[str, float]] = None,
 ) -> dict[str, float]:
-    """Write a synthetic NAV CSV and return {portfolio: total_assets}.
+    """Write a synthetic NAV CSV (20 working days per portfolio) and return {portfolio: total_assets}.
 
     If nav_map is provided (computed from the MVHOL position sums) those values
-    are written directly so that NAV file and MVHOL always agree exactly.
-    Otherwise a random NAV is assigned per portfolio.
+    are used as the latest-date NAV so that NAV file and MVHOL always agree exactly.
     """
     if nav_map is None:
         nav_map = {pcode: random.uniform(20_000_000, 1_200_000_000) for pcode in portfolios}
 
-    rows: list[dict] = []
     dd, mm, yyyy = report_date.split(".")
-    iso_date = f"{yyyy}-{mm}-{dd}"
+    end_date = date(int(yyyy), int(mm), int(dd))
+    trading_days = _last_n_working_days(end_date, 20)
+
+    rows: list[dict] = []
     for pcode in portfolios:
-        nav = nav_map.get(pcode, random.uniform(20_000_000, 1_200_000_000))
-        rows.append({
-            "PortfolioCode": pcode,
-            "Date":          f'"{iso_date}"',
-            "TotalAssets":   _eu(nav, 2),
-        })
+        latest_nav = nav_map.get(pcode, random.uniform(20_000_000, 1_200_000_000))
+        navs = _random_walk_backward(latest_nav, steps=20)
+        for d, nav in zip(trading_days, navs):
+            subs  = round(random.uniform(0, nav * 0.002), 2)
+            redms = round(random.uniform(0, nav * 0.003), 2)
+            rows.append({
+                "PortfolioCode": pcode,
+                "Date":          d.strftime("%d.%m.%Y"),
+                "TotalAssets":   _eu(nav, 2),
+                "Subscriptions": _eu(subs, 2),
+                "Redemptions":   _eu(redms, 2),
+                "NetCashFlows":  _eu(subs - redms, 2),
+            })
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", newline="", encoding="utf-8-sig") as f:
@@ -776,7 +843,7 @@ def generate_nav(
                                 quoting=csv.QUOTE_NONE, escapechar="\\")
         writer.writeheader()
         writer.writerows(rows)
-    print(f"  NAV    -> {output_path}  ({len(rows)} rows)")
+    print(f"  NAV    -> {output_path}  ({len(rows)} rows, 20 days × {len(portfolios)} portfolios)")
     return nav_map
 
 
@@ -1202,6 +1269,99 @@ def generate_zero_coupon_yields(
 
 
 # ---------------------------------------------------------------------------
+# Annex IV (AIFMD) metadata
+# ---------------------------------------------------------------------------
+
+# Per-mandate investor-side share-class terms. The annex_iv_meta share classes
+# are fund share classes (investor identification), NOT holdings ISINs — they
+# carry the redemption terms a unit-holder is subject to. We align the notice
+# period / dealing frequency to each portfolio's liquidity mandate so the
+# metadata is concordant with the synthetic fund identity: liquid equity/bond
+# funds deal daily with short notice; the illiquid / loan / leveraged mandates
+# carry longer lock-ups, matching their slower asset liquidity.
+_ANNEX_IV_SHARE_CLASS_TERMS: dict[str, tuple[int, str]] = {
+    # portfolio_code      (notice_period_days, redemption_frequency)
+    "SYN-EQUITY":         (1,  "daily"),
+    "SYN-GOVBOND":        (1,  "daily"),
+    "SYN-FIXEDINC":       (5,  "weekly"),
+    "SYN-MIXED":          (15, "monthly"),
+    "SYN-ILLIQ":          (90, "quarterly"),
+    "SYN-LOANFUND":       (90, "quarterly"),
+    "SYN-LEVERAGED":      (30, "monthly"),
+}
+
+
+def _lu_isin(serial: int) -> str:
+    """Generate a synthetic Luxembourg fund-share-class ISIN with a valid
+    Luhn check digit (LU + 9-digit zero-padded serial + check digit)."""
+    body = f"LU{serial:09d}"
+    # Expand letters to numbers (A=10 .. Z=35) then run the Luhn algorithm on
+    # the resulting digit string, per the ISO 6166 check-digit rule.
+    digits = ""
+    for ch in body:
+        if ch.isalpha():
+            digits += str(ord(ch) - 55)
+        else:
+            digits += ch
+    total = 0
+    # Process from the rightmost digit; double every second digit.
+    for i, ch in enumerate(reversed(digits)):
+        d = int(ch)
+        if i % 2 == 0:
+            d *= 2
+            if d > 9:
+                d -= 9
+        total += d
+    check = (10 - (total % 10)) % 10
+    return f"{body}{check}"
+
+
+def generate_annex_iv_meta(
+    output_path: Path,
+    portfolios: list[str],
+) -> None:
+    """Write a synthetic AIFMD Annex IV metadata file (annex_iv_meta.json).
+
+    The AIFM/AIF identifiers and share-class ISINs are entirely synthetic but
+    internally consistent with the synthetic fund identity (Luxembourg-domiciled,
+    EUR, reporting member state LU). One investor-side share class is emitted per
+    generated portfolio, with notice period / dealing frequency matched to that
+    portfolio's liquidity mandate. This satisfies ``annex_iv_ready()`` (non-empty
+    aifm_lei / aif_lei / reporting_member_state and >=1 share class) so the
+    bundled demo can exercise the Annex IV XML/Excel export path end-to-end.
+    """
+    import json
+
+    share_classes = []
+    for idx, code in enumerate(portfolios, start=1):
+        notice, freq = _ANNEX_IV_SHARE_CLASS_TERMS.get(code, (30, "monthly"))
+        # Human-readable class name derived from the synthetic portfolio code.
+        label = code.replace("SYN-", "").title()
+        share_classes.append({
+            "isin": _lu_isin(idx),
+            "name": f"{label} Class EUR",
+            "notice_period_days": notice,
+            "redemption_frequency": freq,
+        })
+
+    meta = {
+        "aifm_lei": "222100SYNAIFM000000",
+        "aifm_name": "Synth ManCo S.A.",
+        "aifm_national_code": "SYN000000",
+        "reporting_member_state": "LU",
+        "aif_lei": "549300SYNAIF0000000",
+        "aif_national_code": "SYN12345678",
+        "share_classes": share_classes,
+    }
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    print(f"  ANNEX  -> {output_path}")
+
+
+# ---------------------------------------------------------------------------
 # CLI entry point
 # ---------------------------------------------------------------------------
 
@@ -1314,6 +1474,11 @@ def generate_all(
 
     generate_zero_coupon_yields(
         output_path=output_dir / "zero_coupon_yields.xlsx",
+    )
+
+    generate_annex_iv_meta(
+        output_path=output_dir / "annex_iv_meta.json",
+        portfolios=portfolios,
     )
 
     print(f"\nDone. All files written to: {output_dir.resolve()}")

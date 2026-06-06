@@ -4,9 +4,12 @@ and returns a single serialisable dict that the API routes hand back to the clie
 """
 from __future__ import annotations
 
+import logging
 import math
 from pathlib import Path
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from liquidity_risk_tool.models.csv_loader import (
     load_portfolio_from_csv,
@@ -20,7 +23,9 @@ from liquidity_risk_tool.engines.waterfall_engine import WaterfallEngine
 from liquidity_risk_tool.engines.leverage_engine import LeverageEngine
 from liquidity_risk_tool.reporting.risk_metrics import RiskMetricsBuilder
 from liquidity_risk_tool.reporting.report_builder import ReportBuilder
-from liquidity_risk_tool.config.settings import STRESS_SCENARIOS, AIFMD2_PRESELECTED_LMTS, AIFMD2_MIN_LMT_COUNT
+from liquidity_risk_tool.config.settings import (
+    STRESS_SCENARIOS, REVOLUTION_SCENARIOS, AIFMD2_PRESELECTED_LMTS, AIFMD2_MIN_LMT_COUNT,
+)
 
 
 def _safe(v):
@@ -59,6 +64,8 @@ def run_full_pipeline(
     nav_path: str | Path,
     market_data_path: Optional[str | Path] = None,
     portfolio_code: Optional[str] = None,
+    scenario_library: str = "esma",
+    lmt_config: Optional[dict] = None,
 ) -> dict:
     """Run the full analytics pipeline and return a serialisable results dict."""
 
@@ -73,12 +80,29 @@ def run_full_pipeline(
     normal_buckets = normal_profiler.position_buckets
     stress_buckets = stress_profiler.position_buckets
 
-    redemption_sim = RedemptionSimulator(portfolio, normal_buckets, stress_buckets)
+    # The pipeline's redemption tables serve as the "Without LMT" baseline that the
+    # Redemption tab compares against the on-demand /lmt-simulate ("With LMT") results.
+    # That baseline MUST be genuinely tool-free: if we passed lmt_config=None here the
+    # simulator would fall back to AIFMD2_PRESELECTED_LMTS (gate + suspension + swing
+    # pricing), so swing pricing would silently reduce the baseline's effective cash
+    # demand. A user who then applies a config WITHOUT swing pricing would see a higher
+    # effective demand than the contaminated baseline, making the T+1/T+3/T+7 horizons
+    # flip from met→failed — i.e. LMTs would appear to WORSEN liquidity. Forcing an empty
+    # active-tools set (only when no explicit config is supplied) keeps the baseline clean
+    # while still honouring a caller-provided lmt_config when one is passed.
+    baseline_lmt_config = lmt_config if lmt_config else {"active_tools": []}
+    redemption_sim = RedemptionSimulator(portfolio, normal_buckets, stress_buckets, lmt_config=baseline_lmt_config)
     redemption_normal = redemption_sim.run(stress=False)
     redemption_stress = redemption_sim.run(stress=True)
 
-    stress_engine = StressEngine(portfolio, STRESS_SCENARIOS)
+    stress_engine = StressEngine(portfolio, scenario_library=scenario_library)
     stress_detail = stress_engine.run_detail()
+
+    # NOTE: reverse stress testing is intentionally NOT run here. It is an
+    # expensive, multi-start optimisation that reprices the whole portfolio many
+    # times, so running it on every pipeline call (upload / demo) made the /run
+    # request hang past the client timeout. It is now invoked on demand only,
+    # behind an explicit button, via POST /run/{run_id}/reverse-stress.
 
     worst = max(stress_detail, key=lambda s: abs(s.nav_impact_pct))
     waterfall_target = portfolio.total_nav * worst.redemption_pct
@@ -106,9 +130,12 @@ def run_full_pipeline(
     _stressed_agg["nav_pct"] = _stressed_agg["market_value_eur"] / _stressed_nav if _stressed_nav > 0 else 0.0
     _stressed_agg["cumulative_nav_pct"] = _stressed_agg["nav_pct"].cumsum()
 
-    # Scenario metadata (name + governance fields) from settings
+    # Scenario metadata (name + governance fields) from the active scenario list.
+    # The reverse-stress breach scenario, when requested, is appended client-side
+    # from the on-demand /run/{run_id}/reverse-stress endpoint.
+    _active_scenarios = list(stress_engine.scenarios)
     scenario_meta = []
-    for sc in STRESS_SCENARIOS:
+    for sc in _active_scenarios:
         scenario_meta.append({
             "name": sc.name,
             "equity_shock": sc.equity_shock,
@@ -136,6 +163,8 @@ def run_full_pipeline(
             _stressed_agg.to_dict(orient="records")
         ),
         "position_buckets": _clean_records(normal_buckets.to_dict(orient="records")),
+        "stress_position_buckets": _clean_records(stress_buckets.to_dict(orient="records")),
+        "top_10_concentration": getattr(portfolio, "top_10_investor_concentration", 0.30),
         "stress_results": [_clean_dict(s.to_dict()) for s in stress_detail],
         "redemption_results": _clean_records(
             redemption_normal.to_dict(orient="records")
@@ -155,6 +184,9 @@ def run_full_pipeline(
             "target_met": waterfall.target_met,
             "days_to_target": waterfall.days_to_target,
             "residual_shortfall_eur": waterfall.residual_shortfall_eur,
+            "settlement_days": waterfall.settlement_days,
+            "proceeds_within_horizon_eur": waterfall.proceeds_within_horizon_eur,
+            "met_eventually": waterfall.met_eventually,
             "nav_before": waterfall.nav_before,
             "nav_after": waterfall.nav_after,
             "nav_impact_pct": waterfall.nav_impact_pct,
@@ -172,6 +204,7 @@ def run_full_pipeline(
             "lmt_preselected": AIFMD2_PRESELECTED_LMTS,
             "lmt_count": len(AIFMD2_PRESELECTED_LMTS),
             "lmt_compliant": len(AIFMD2_PRESELECTED_LMTS) >= AIFMD2_MIN_LMT_COUNT,
+            "lmt_config_applied": lmt_config or {},
             "warnings": "; ".join(leverage.warnings),
             "regulatory_basis": "AIFMD II (Directive (EU) 2024/927), effective 16 April 2026",
         }),
@@ -182,12 +215,17 @@ def run_all_portfolios(
     holdings_path: str | Path,
     nav_path: str | Path,
     market_data_path: Optional[str | Path] = None,
+    scenario_library: str = "esma",
+    lmt_config: Optional[dict] = None,
 ) -> dict:
     """Run the full pipeline for every portfolio code found in the holdings file."""
     codes = available_portfolio_codes(holdings_path)
     portfolios: dict[str, dict] = {}
     for code in codes:
-        portfolios[code] = run_full_pipeline(holdings_path, nav_path, market_data_path, portfolio_code=code)
+        portfolios[code] = run_full_pipeline(
+            holdings_path, nav_path, market_data_path,
+            portfolio_code=code, scenario_library=scenario_library, lmt_config=lmt_config,
+        )
     return {"portfolios": portfolios, "portfolio_codes": codes}
 
 

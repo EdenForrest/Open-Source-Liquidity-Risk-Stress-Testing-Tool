@@ -381,6 +381,43 @@ A ratio ≥ 1.0 means the fund can fully meet the redemption within that horizon
 | `gate_triggered` | True if redemption ≥ gate threshold |
 | `suspension_triggered` | True if redemption ≥ suspension threshold |
 | `days_to_clear` | Days needed to raise full redemption |
+| `notice_extension_days` | Days extended by notice period extension tool |
+| `in_kind_pct_used` | Fraction of redemption met via in-kind transfer (0–1) |
+| `dual_spread_bps` | Dual pricing spread applied in bps |
+| `swing_factor` | Swing pricing multiplier (1 + swing bps / 10000) |
+| `adl_bps` | Anti-dilution levy rate in basis points |
+| `fee_bps` | Redemption fee applied in basis points |
+| `lmt_activated` | True if any LMT was triggered |
+| `lmt_tools_used` | List of active LMT tool names |
+
+#### AIFMD II Liquidity Management Tools (LMTs)
+
+Nine tools are implemented in `_evaluate_scenario()`:
+
+1. **Gate** — If redemption ≥ 10% NAV, gate is triggered and redemption is deferred. Coverage ratios reflect delayed cash availability.
+2. **Suspension** — If redemption ≥ 25% NAV, fund temporarily suspends redemptions.
+3. **Notice Period Extension** — Extra N days (3/7/14/30) to liquidate before payment is due; effective_days_to_clear = max(0, days_to_clear − extension_days).
+4. **Redemptions in Kind** — M% of redemption demand met via asset transfer, reducing cash shortfall by M%. Professional investors only.
+5. **Redemption Fee** — Charge X bps to redeeming investors; reduces effective redemption demand.
+6. **Swing Pricing** — On days with net redemptions > threshold, adjust NAV by ± swing factor to pass costs to redeeming investors; reduces effective shortfall.
+7. **Dual Pricing** — Always apply spread to redemption price (unlike swing pricing which has a threshold); redemption NAV = NAV × (1 − dual_spread_bps / 10000).
+8. **Anti-Dilution Levy (ADL)** — Charge Y bps to redeeming investors; directly reduces cash demand.
+9. **Side Pockets** — Segment illiquid holdings (currently informational only; full implementation pending).
+
+**AIFMD II compliance:** Managers must pre-select ≥2 tools. Swing pricing + dual pricing is a prohibited combination (both adjust NAV on redemptions). The LMT Simulator enforces these rules via a compliance checker.
+
+#### Horizon Display in Redemption Table
+
+The redemption analysis table now displays which settlement horizon is achievable for each scenario. The **Without LMT** column shows the horizon under normal liquidity conditions, while the **With LMT** column shows how tools like Notice Period Extension or Redemptions in Kind improve achievable horizon. Horizons are labeled as T+1, T+3, T+7, or shown as absent (✕) if no coverage exists at any horizon. This enables direct visual comparison of tool impact on settlement speed.
+
+#### Validation Framework for LMT Configurations
+
+Two automated validation checks verify correct LMT mechanics:
+
+1. **Multiplicative composition**: When ≥2 demand-reducing tools (ADL, fees, in-kind, dual pricing) are active, they must compose multiplicatively. Validation confirms that shortfall after all tools applied is < 0.1% NAV.
+2. **Non-zero cost**: When a tool is activated, it must carry measurable cost (non-zero bps or percentage). Prevents misconfiguration where tools are marked active but inactive.
+
+Both checks run automatically and appear in the Validation sidebar under "LMT Composition." They help users validate that their tool configuration is both compliant and mechanically correct.
 
 ---
 
@@ -457,6 +494,7 @@ The primary interface is a browser-based application (FastAPI + React/Vite/Tailw
 | Stress Tests | Per-scenario NAV impact, liquidity before/after, scenario config expandable panel |
 | Waterfall | Forced sell-down KPIs (target, proceeds, residual shortfall, NAV impact), daily proceeds chart by bucket, sell-order table |
 | Charts | Liquidity ladder, portfolio composition pie, stress NAV impact, liquidity before/after, days-to-liquidate by position, waterfall cumulative proceeds line |
+| LMT Simulator | AIFMD II Liquidity Management Tools (LMTs) configuration and impact dashboard — select from gate, notice period extension, redemptions in kind, suspension, swing pricing, dual pricing, redemption fee, and anti-dilution levy; run instant simulation to compare coverage before and after tools applied; compliance checker warns if conflicting tools selected |
 
 Supports **light / dark / Bloomberg Terminal** theme toggle. All charts are theme-aware with consistent colour tokens. Tooltips are fully readable in both modes.
 
@@ -474,6 +512,58 @@ Tkinter desktop application with 6 tabs. The pipeline runs on a background threa
 | Risk Story | Auto-generated narrative risk summary with copy button |
 
 Key UX: "▶ Run Analysis" becomes "✓ Analysis Complete" (green) after a successful run; a "Re-run ↺" button replaces it for subsequent runs. All pipeline work runs in a `threading.Thread`; UI updates dispatch back to the main thread via `root.after(0, callback)`.
+
+#### 9c. LMT Simulator API Endpoint — `POST /api/run/{run_id}/lmt-simulate`
+
+**File:** `backend/routers/analysis.py`
+
+Lightweight endpoint for instant AIFMD II Liquidity Management Tool simulation without re-running the full pipeline. Accepts a tool configuration, applies it to cached position and stress data, and returns coverage comparison.
+
+**Request:**
+```json
+{
+  "lmt_config": {
+    "active_tools": ["gate", "swing_pricing", "adl"],
+    "gate_pct": 0.10,
+    "swing_threshold": 0.02,
+    "swing_factor": 0.01,
+    "adl_bps": 100,
+    "redemption_fee_bps": 0,
+    "dual_spread_bps": 0,
+    "notice_extension_days": 0,
+    "in_kind_pct": 0.0
+  },
+  "scenarios": null,
+  "portfolio": null
+}
+```
+
+**Response:**
+```json
+{
+  "normal": [
+    {
+      "redemption_rate": 0.05,
+      "can_meet_t1": true,
+      "can_meet_t3": true,
+      "can_meet_t7": true,
+      "shortfall_eur": 0.0,
+      "days_to_clear": 1,
+      "lmt_activated": true,
+      "lmt_tools_used": ["gate", "swing_pricing", "adl"],
+      ...
+    }
+  ],
+  "stress": [...],
+  "lmt_config_applied": { ... }
+}
+```
+
+**Key characteristics:**
+- No full pipeline re-run; reuses cached `position_buckets` and `stress_buckets` from the original run
+- Executes in milliseconds
+- Returns results for both normal and worst-case (Severe Combined) stress scenarios
+- Integrates seamlessly with the LMT Simulator web tab for interactive tool selection and comparison
 
 ---
 
@@ -564,7 +654,7 @@ Structured export with `run_id`, `scenario_metadata`, and all engine outputs. Su
 | ADV cap | 20% daily participation limit in `_apply_adv_cap()` |
 | Audit trail | SHA-256 run fingerprint on every report |
 | **AIFMD II Art.15** | Gross leverage computed via Gross Method (CDR 231/2013 Art.7); caps 175% open-ended / 300% closed-ended loan AIFs — `leverage_engine.py` |
-| **AIFMD II Art.16 + Annex V** | ≥2 LMTs pre-selected (gate, suspension, swing pricing); swing pricing formula and ADL computed in `redemption_simulator.py` |
+| **AIFMD II Art.16 + Annex V** | ≥2 LMTs pre-selected (gate, suspension, swing pricing); swing pricing formula and ADL computed in `redemption_simulator.py`; **LMT Simulator tab** allows dynamic selection and comparison of all nine AIFMD II LMTs: always-available (suspension, side pockets); quantitative (gate, notice period extension, redemptions in kind); anti-dilution (redemption fee, swing pricing, dual pricing, ADL). Interactive dashboard shows coverage impact, investor cost summary, and AIFMD II compliance validation. New endpoint `POST /api/run/{run_id}/lmt-simulate` executes instant simulations without re-running full pipeline. |
 | **AIFMD II loan origination** | Loan origination AIF detection (≥50% NAV in loans), 5% risk retention check, 20% borrower concentration limit — `leverage_engine.py` |
 
 ---

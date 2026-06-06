@@ -1,5 +1,8 @@
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAnalysis } from '../AnalysisContext'
 import EmptyState from '../components/EmptyState'
+import ExportModal from '../components/ExportModal'
 
 function fmt(n, digits = 1) {
   if (n == null) return '—'
@@ -17,9 +20,10 @@ function fmtDays(n) {
 }
 
 function StatusDot({ warning_flag, breach_flag }) {
-  if (breach_flag) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
-  if (warning_flag) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>Warning</span>
-  return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+  const { t } = useTranslation()
+  if (breach_flag) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>{t('allPortfolios.breach')}</span>
+  if (warning_flag) return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>{t('allPortfolios.warning')}</span>
+  return <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('allPortfolios.ok')}</span>
 }
 
 // higher = better (LCR, coverage ratios)
@@ -44,14 +48,16 @@ function RatioCell({ value }) {
 }
 
 export default function AllPortfolios() {
-  const { allData, portfolioCodes, status, selectedPortfolio, selectPortfolio } = useAnalysis()
+  const { allData, portfolioCodes, status, selectedPortfolio, selectPortfolio, runId } = useAnalysis()
+  const { t } = useTranslation()
+  const [exportOpen, setExportOpen] = useState(false)
 
   if (status === 'idle' || status === 'uploading' || status === 'running') {
-    return <EmptyState message="Upload files and run the analysis to see all portfolios." />
+    return <EmptyState />
   }
 
   if (!portfolioCodes || portfolioCodes.length === 0) {
-    return <EmptyState message="No portfolio data available." />
+    return <EmptyState />
   }
 
   const rows = portfolioCodes.map(code => {
@@ -63,11 +69,27 @@ export default function AllPortfolios() {
 
   return (
     <div className="p-3 space-y-3">
-      <div>
-        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>All Portfolios</h1>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-          {portfolioCodes.length} portfolio{portfolioCodes.length !== 1 ? 's' : ''} — click a row to drill into that portfolio
-        </p>
+      <ExportModal open={exportOpen} onClose={() => setExportOpen(false)} />
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('allPortfolios.title')}</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+            {t('allPortfolios.portfolioCount', { count: portfolioCodes.length })} — {t('allPortfolios.clickHint', 'click a row to drill into that portfolio')}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setExportOpen(true)}
+            className="flex items-center gap-1.5 rounded px-3 py-1.5 text-sm font-medium"
+            style={{ background: 'var(--bg-panel)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: 'pointer' }}
+            title={t('uploader.downloadReport')}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            {t('uploader.downloadReport')}
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
@@ -88,10 +110,10 @@ export default function AllPortfolios() {
             </div>
             <div className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{fmtEur(m?.total_nav_eur)}</div>
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              LCR T+1: <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{fmt(m?.lcr_t1)}</span>
+              {t('allPortfolios.metrics.lcrT1')}: <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{fmt(m?.lcr_t1)}</span>
             </div>
             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-              Illiquid: <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{fmt(m?.illiquid_pct)}</span>
+              {t('dashboard.kpi.illiquid')}: <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{fmt(m?.illiquid_pct)}</span>
             </div>
           </button>
         ))}
@@ -100,26 +122,26 @@ export default function AllPortfolios() {
       {/* Detail table */}
       <div className="rounded border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
         <div className="bb-head px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Metric Comparison</h2>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('allPortfolios.metricComparison')}</h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="text-xs uppercase tracking-wide" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
               <tr>
-                <th className="px-3 py-2 text-left" style={{ background: 'var(--bg-surface)' }}>Metric</th>
+                <th className="px-3 py-2 text-left" style={{ background: 'var(--bg-surface)' }}>{t('allPortfolios.metric')}</th>
                 {portfolioCodes.map(code => (
                   <th key={code} className="px-3 py-2 text-right whitespace-nowrap">{code}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              <MetricRow label="NAV (EUR)" codes={portfolioCodes} allData={allData} getter={m => fmtEur(m?.total_nav_eur)} />
+              <MetricRow label={t('allPortfolios.metrics.totalNav')} codes={portfolioCodes} allData={allData} getter={m => fmtEur(m?.total_nav_eur)} />
               <MetricRow label="Reporting Date" codes={portfolioCodes} allData={allData} getter={m => m?.reporting_date ?? '—'} />
               <BreachRow codes={portfolioCodes} allData={allData} />
-              <MetricRow label="LCR T+1" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t1} />} />
-              <MetricRow label="LCR T+3" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t3} />} />
-              <MetricRow label="LCR T+7" codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t7} />} />
-              <MetricRow label="Illiquid (>T+7)" codes={portfolioCodes} allData={allData} getter={m => (
+              <MetricRow label={t('allPortfolios.metrics.lcrT1')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t1} />} />
+              <MetricRow label={t('allPortfolios.metrics.lcrT3')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t3} />} />
+              <MetricRow label={t('allPortfolios.metrics.lcrT7')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t7} />} />
+              <MetricRow label={t('allPortfolios.metrics.illiquidPct')} codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.illiquid_pct} warnAt={0.1} redAt={0.2} display={fmt(m?.illiquid_pct)} />
               )} />
               <MetricRow label="Top-10 Concentration" codes={portfolioCodes} allData={allData} getter={m => (
@@ -137,17 +159,46 @@ export default function AllPortfolios() {
               <MetricRow label="Days to 90% liquidated" codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.days_to_90pct} warnAt={14} redAt={30} display={fmtDays(m?.days_to_90pct)} />
               )} />
-              <LeverageMetricRow label="Gross Leverage" codes={portfolioCodes} allData={allData} getter={a => (
+              <MetricRow label={t('allPortfolios.metrics.geoTopCountry')} codes={portfolioCodes} allData={allData} getter={m => (
+                m?.geo_top_country ? `${m.geo_top_country} ${fmt(m.geo_top_country_pct)}` : '—'
+              )} />
+              <MetricRow label={t('allPortfolios.metrics.nonEuExposure')} codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.non_eu_pct} warnAt={0.35} redAt={0.50} display={fmt(m?.non_eu_pct)} />
+              )} />
+              <MetricRow label={t('allPortfolios.metrics.geoStatus')} codes={portfolioCodes} allData={allData} getter={m => {
+                if (m?.geo_breach_flag) return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>{t('allPortfolios.breach')}</span>
+                if (m?.geo_warning_flag) return <span className="font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>{t('allPortfolios.warning')}</span>
+                return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('allPortfolios.ok')}</span>
+              }} />
+              <MetricRow label="UCITS Status" codes={portfolioCodes} allData={allData} getter={m => {
+                if (m?.ucits_single_breach || m?.ucits_aggregate_breach)
+                  return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+                return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+              }} />
+              <MetricRow label="UCITS 5–10% Bucket" codes={portfolioCodes} allData={allData} getter={m => (
+                <RiskCell value={m?.ucits_aggregate_5_10} warnAt={0.30} redAt={0.40} display={m?.ucits_aggregate_5_10 != null ? (m.ucits_aggregate_5_10 * 100).toFixed(1) + '%' : null} />
+              )} />
+              <MetricRow label="UCITS Breaching Issuers" codes={portfolioCodes} allData={allData} getter={m => {
+                const count = m?.ucits_breaching_issuers ? Object.keys(m.ucits_breaching_issuers).length : 0
+                return <span style={{ color: count > 0 ? 'var(--kpi-red-text)' : 'var(--text-primary)' }} className={count > 0 ? 'font-semibold' : ''}>{count}</span>
+              }} />
+              <LeverageMetricRow label={t('dashboard.aifmd.status')} codes={portfolioCodes} allData={allData} getter={a => {
+                if (!a) return <span style={{ color: 'var(--text-muted)' }}>—</span>
+                if (a.leverage_breach) return <span className="font-semibold" style={{ color: 'var(--kpi-red-text)' }}>{t('allPortfolios.breach')}</span>
+                if (!a.lmt_compliant) return <span className="font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>INCOMPLETE</span>
+                return <span className="font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('allPortfolios.ok')}</span>
+              }} />
+              <LeverageMetricRow label={t('allPortfolios.metrics.grossLev')} codes={portfolioCodes} allData={allData} getter={a => (
                 <RiskCell value={a?.gross_leverage} warnAt={1.5} redAt={1.75} display={a?.gross_leverage != null ? (a.gross_leverage * 100).toFixed(1) + '%' : null} />
               )} />
-              <LeverageMetricRow label="Commitment Leverage" codes={portfolioCodes} allData={allData} getter={a => (
+              <LeverageMetricRow label={t('allPortfolios.metrics.commitLev')} codes={portfolioCodes} allData={allData} getter={a => (
                 <RiskCell value={a?.commitment_leverage} warnAt={1.5} redAt={1.75} display={a?.commitment_leverage != null ? (a.commitment_leverage * 100).toFixed(1) + '%' : null} />
               )} />
-              <LeverageMetricRow label="Leverage Cap" codes={portfolioCodes} allData={allData} getter={a => a?.leverage_cap != null ? (a.leverage_cap * 100).toFixed(0) + '%' : '—'} />
-              <LeverageMetricRow label="LMTs Pre-selected" codes={portfolioCodes} allData={allData} getter={a => {
+              <LeverageMetricRow label={t('allPortfolios.metrics.leverageCap')} codes={portfolioCodes} allData={allData} getter={a => a?.leverage_cap != null ? (a.leverage_cap * 100).toFixed(0) + '%' : '—'} />
+              <LeverageMetricRow label={t('allPortfolios.metrics.lmtCount')} codes={portfolioCodes} allData={allData} getter={a => {
                 if (a?.lmt_count == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
                 const color = a.lmt_compliant ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
-                return <span className="font-semibold" style={{ color }}>{a.lmt_count} ({a.lmt_compliant ? 'compliant' : 'insufficient'})</span>
+                return <span className="font-semibold" style={{ color }}>{a.lmt_count} ({a.lmt_compliant ? t('allPortfolios.compliant') : t('allPortfolios.insufficient')})</span>
               }} />
             </tbody>
           </table>
@@ -158,9 +209,12 @@ export default function AllPortfolios() {
 }
 
 function BreachRow({ codes, allData }) {
+  const { t } = useTranslation()
   return (
     <tr style={{ borderBottom: '1px solid var(--border)' }} className="transition-colors hover:opacity-80">
-      <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>Breach / Warning</td>
+      <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>
+        {t('allPortfolios.breach')} / {t('allPortfolios.warning')}
+      </td>
       {codes.map(code => {
         const m = allData[code]?.liquidity?.liquidity_metrics
         const a = allData[code]?.aifmd2
@@ -169,10 +223,10 @@ function BreachRow({ codes, allData }) {
         return (
           <td key={code} className="px-3 py-1.5 text-right">
             {isBreach
-              ? <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>BREACH</span>
+              ? <span className="text-xs font-semibold" style={{ color: 'var(--kpi-red-text)' }}>{t('allPortfolios.breach')}</span>
               : isWarning
-              ? <span className="text-xs font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>Warning</span>
-              : <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>OK</span>
+              ? <span className="text-xs font-semibold" style={{ color: 'var(--kpi-amber-text)' }}>{t('allPortfolios.warning')}</span>
+              : <span className="text-xs font-semibold" style={{ color: 'var(--kpi-green-text)' }}>{t('allPortfolios.ok')}</span>
             }
           </td>
         )

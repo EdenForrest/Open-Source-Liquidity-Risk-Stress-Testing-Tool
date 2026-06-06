@@ -25,11 +25,32 @@ from ..config.settings import (
     MAX_HAIRCUT,
     LIQUIDITY_WARNING_THRESHOLD,
     LIQUIDITY_BREACH_THRESHOLD,
+    GEO_CONCENTRATION_WARNING_SINGLE,
+    GEO_CONCENTRATION_BREACH_NON_EU,
+    EU_COUNTRIES,
+    UCITS_SINGLE_ISSUER_LIMIT,
+    UCITS_AGGREGATE_BUCKET_LIMIT,
+    UCITS_AGGREGATE_BUCKET_SINGLE_CAP,
 )
 from ..models.position import Portfolio
 
 
 _BUCKET_RANK = {"T+0": 0, "T+1": 1, "T+3": 2, "T+7": 3, ">T+7": 4}
+
+
+def _is_settled_not_traded(asset_class: str) -> bool:
+    """True for assets that are *not* liquidated by trading volume and so are
+    immune to ADV-participation caps — i.e. they settle same-day (T+0) by their
+    asset-class profile. Cash is the canonical case: it is already money, it does
+    not have to be *sold* into a market, so an ADV of 0 means "does not trade",
+    NOT "cannot be liquidated".
+
+    Without this carve-out, cash (adv_30d == 0) would get days_to_liquidate = inf
+    and be bucketed >T+7, making even a cash-rich fund appear unable to meet
+    redemptions under stress — a false breach.
+    """
+    profile = ASSET_CLASS_LIQUIDITY.get(asset_class, {})
+    return profile.get("bucket") == "T+0"
 
 
 class LiquidityProfiler:
@@ -109,6 +130,55 @@ class LiquidityProfiler:
             "warning":  liquid_1d < LIQUIDITY_WARNING_THRESHOLD,
             "breach":   liquid_1d < LIQUIDITY_BREACH_THRESHOLD,
         }
+
+        # Geographical concentration (AIFMD Annex IV / ESMA34-39-897 Section 4.2)
+        if "country" in self._result.columns:
+            geo_df = self._result.dropna(subset=["country"])
+            if not geo_df.empty:
+                total_nav = self._result["market_value_eur"].sum()
+                if total_nav > 0:
+                    geo_groups = geo_df.groupby("country")["market_value_eur"].sum() / total_nav
+                    top_countries = geo_groups.sort_values(ascending=False).head(10).to_dict()
+                    non_eu_pct = float(geo_groups[~geo_groups.index.isin(EU_COUNTRIES)].sum())
+                    max_single = float(geo_groups.max())
+                    geo_top_country = str(geo_groups.idxmax())
+                    flags.update({
+                        "top_countries":      top_countries,
+                        "eu_pct":             1.0 - non_eu_pct,
+                        "non_eu_pct":         non_eu_pct,
+                        "geo_top_country":    geo_top_country,
+                        "geo_top_country_pct": max_single,
+                        "geo_warning_flag":   max_single > GEO_CONCENTRATION_WARNING_SINGLE,
+                        "geo_breach_flag":    non_eu_pct > GEO_CONCENTRATION_BREACH_NON_EU,
+                    })
+
+        # UCITS 5/10/40 issuer concentration rule (Art. 52 UCITS Directive)
+        # Cash positions (ISIN starting with "CASH") are excluded — cash is not
+        # a transferable security and falls outside the Art. 52 issuer limits.
+        total_nav = self._result["market_value_eur"].sum()
+        if total_nav > 0:
+            non_cash = self._result[~self._result["isin"].str.startswith("CASH", na=False)]
+            issuer_weights = (
+                non_cash.groupby("isin")["market_value_eur"].sum() / total_nav
+            ).sort_values(ascending=False)
+
+            breaching = issuer_weights[issuer_weights > UCITS_SINGLE_ISSUER_LIMIT]
+            bucket_5_10 = issuer_weights[
+                (issuer_weights > UCITS_SINGLE_ISSUER_LIMIT) &
+                (issuer_weights <= UCITS_AGGREGATE_BUCKET_SINGLE_CAP)
+            ]
+            aggregate_5_10 = float(bucket_5_10.sum())
+            top_issuers = issuer_weights.head(10).to_dict()
+
+            flags.update({
+                "ucits_issuer_weights":       top_issuers,
+                "ucits_breaching_issuers":    breaching.to_dict(),
+                "ucits_aggregate_5_10":       aggregate_5_10,
+                "ucits_single_breach":        bool(len(breaching) > 0),
+                "ucits_aggregate_breach":     aggregate_5_10 > UCITS_AGGREGATE_BUCKET_LIMIT,
+                "ucits_compliant":            len(breaching) == 0 and aggregate_5_10 <= UCITS_AGGREGATE_BUCKET_LIMIT,
+            })
+
         return flags
 
     # ------------------------------------------------------------------
@@ -131,10 +201,17 @@ class LiquidityProfiler:
         """
         effective_adv = df["adv_30d"] * self.adv_stress_scalar
         daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
+        # Cash-like positions settle same-day regardless of trading volume, so the
+        # ADV-implied bucket must not drag them below T+0 (see _is_settled_not_traded).
+        settled = df["asset_class"].map(_is_settled_not_traded)
         days_to_liq = np.where(
-            daily_capacity > 0,
-            np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
-            np.inf,
+            settled,
+            0.0,
+            np.where(
+                daily_capacity > 0,
+                np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
+                np.inf,
+            ),
         )
         df["_days_to_liq_pre"] = days_to_liq
 
@@ -200,12 +277,20 @@ class LiquidityProfiler:
         effective_adv = df["adv_30d"] * self.adv_stress_scalar
         daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
         df["effective_adv"] = effective_adv
-        df["adv_capped"] = daily_capacity > 0
-        # Days needed to fully exit the position
+        # Cash-like, settled-not-traded positions are never ADV-capped: they do
+        # not have to be sold into a market, so adv_30d == 0 must NOT mean
+        # "cannot liquidate". They are fully realisable same-day.
+        settled = df["asset_class"].map(_is_settled_not_traded)
+        df["adv_capped"] = (daily_capacity > 0) & ~settled
+        # Days needed to fully exit the position (0 for cash-like positions).
         df["days_to_liquidate"] = np.where(
-            daily_capacity > 0,
-            np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
-            np.inf,
+            settled,
+            0.0,
+            np.where(
+                daily_capacity > 0,
+                np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
+                np.inf,
+            ),
         )
         return df
 

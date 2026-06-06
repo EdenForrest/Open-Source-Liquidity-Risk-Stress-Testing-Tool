@@ -88,17 +88,30 @@ export function AnalysisProvider({ children }) {
     let cancelled = false
     let pollTimer = null
 
-    async function waitForBackend(retries = 20, delayMs = 3000) {
+    async function waitForBackend(retries = 40, delayMs = 3000) {
       for (let i = 0; i < retries; i++) {
         if (cancelled) return false
         try {
-          await client.get('/health')
+          await client.get('/health', { timeout: 5000 })
           return true
         } catch {
           await new Promise(r => setTimeout(r, delayMs))
         }
       }
       return false
+    }
+
+    async function postDemo(retries = 5, delayMs = 3000) {
+      for (let i = 0; i < retries; i++) {
+        if (cancelled) return null
+        try {
+          const res = await client.post('/demo')
+          return res.data.run_id
+        } catch {
+          if (i < retries - 1) await new Promise(r => setTimeout(r, delayMs))
+        }
+      }
+      return null
     }
 
     async function loadDemo() {
@@ -108,15 +121,17 @@ export function AnalysisProvider({ children }) {
         if (cancelled) return
         if (!alive) { markError('Backend is not responding. Please try again in a moment.'); return }
 
-        const res = await client.post('/demo')
-        const id = res.data.run_id
+        const id = await postDemo()
         if (cancelled) return
+        if (!id) { markError('Could not start demo run. Please try refreshing the page.'); return }
         setRunId(id)
 
+        let pollErrors = 0
         pollTimer = setInterval(async () => {
           try {
             const s = await client.get(`/run/${id}/status`)
             if (cancelled) return
+            pollErrors = 0
             if (s.data.status === 'complete') {
               clearInterval(pollTimer)
               await fetchPortfolios(id)
@@ -125,8 +140,11 @@ export function AnalysisProvider({ children }) {
               markError(s.data.error ?? 'Demo run failed')
             }
           } catch (e) {
-            clearInterval(pollTimer)
-            if (!cancelled) markError(e.message)
+            pollErrors++
+            if (pollErrors >= 5) {
+              clearInterval(pollTimer)
+              if (!cancelled) markError(e.message)
+            }
           }
         }, 1500)
       } catch (e) {
