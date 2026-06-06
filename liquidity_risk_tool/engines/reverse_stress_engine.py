@@ -202,11 +202,17 @@ class ReverseStressEngine:
             rate_shock_bps=int(params.get("rate_shock_bps", 0)),
         )
 
-    def _evaluate(self, s: np.ndarray) -> Tuple[float, bool]:
+    def _evaluate(self, s: np.ndarray, force: bool = False) -> Tuple[float, bool]:
         """Return (liquid_pct_after, can_meet_redemption) for severity vector ``s``.
 
         Cached and clipped to the unit box. This is the single expensive call —
         it reprices the whole portfolio via the host StressEngine.
+
+        ``force=True`` bypasses the evaluation-budget guard. Use it only for the
+        final materialisation of the chosen breach point: the result that is
+        reported to the user (and drives the ``Can Meet`` cell) must be the real
+        repricing, never the budget sentinel — otherwise an exhausted budget could
+        mislabel a genuine breach as ``Can Meet = YES``.
         """
         key = tuple(round(float(x), 4) for x in np.clip(s, 0.0, 1.0))
         if key in self._cache:
@@ -215,7 +221,7 @@ class ReverseStressEngine:
         # Returning a non-breaching sentinel makes the constraint look unsatisfied,
         # so SLSQP stops exploring and the search settles on the best point already
         # found (or the severe corner). This bounds wall-clock time hard.
-        if self._eval_budget is not None and self._n_eval >= self._eval_budget:
+        if not force and self._eval_budget is not None and self._n_eval >= self._eval_budget:
             return (1.0, True)
         scenario = self._scenario_from_fractions(np.asarray(key), name="__reverse_probe__")
         result = self.stress_engine._apply_scenario(scenario)
@@ -226,6 +232,37 @@ class ReverseStressEngine:
 
     def _liquid_after(self, s: np.ndarray) -> float:
         return self._evaluate(s)[0]
+
+    def _is_breach(self, s: np.ndarray) -> bool:
+        """A reverse-stress *breach* is — by definition — a scenario the fund
+        **cannot survive**: it fails to meet redemptions within the settlement
+        horizon (``can_meet_redemption is False``).
+
+        This is the exact regulatory constraint reverse stress must invert (AIFMD
+        II Art.16(1) / ESMA Guideline 17): the combination of shocks under which
+        the fund can no longer honour redemptions. Constraining instead on the raw
+        T0-T1 liquidity floor would return scenarios that dip below the floor yet
+        still raise enough cash to meet (small) redemptions — reported as
+        ``Can Meet = YES`` — which is not an actual failure and contradicts the
+        definition. By making the redemption-coverage failure *the* breach test,
+        every materialised reverse-stress scenario is, by construction,
+        ``Can Meet = NO``. The liquidity floor is used only as a smooth search
+        guide (see :meth:`_breach_margin`), never as the acceptance test."""
+        _liquid, can_meet = self._evaluate(s)
+        return not can_meet
+
+    def _breach_margin(self, s: np.ndarray) -> float:
+        """Continuous severity signal used to *guide* the gradient solver toward
+        the breach region (``≥ 0`` once liquidity is at/below the floor).
+
+        The true breach test (:meth:`_is_breach`) is the boolean redemption
+        failure, which is non-smooth and useless for SLSQP. As a smooth proxy we
+        reuse the liquidity-floor margin ``target - liquid_after``: driving
+        liquidity down is strongly correlated with eventually failing redemptions,
+        so this pulls SLSQP toward the breach region. Final acceptance of any
+        optimum is always re-checked with :meth:`_is_breach`, so the proxy only
+        affects the *search path*, never which scenarios count as breaches."""
+        return self.target_liquid_pct - self._liquid_after(s)
 
     def _distance(self, s: np.ndarray) -> float:
         """Plausibility-weighted severity norm D(s) = sqrt(Σ w_i s_i²)."""
@@ -271,7 +308,7 @@ class ReverseStressEngine:
         # zero-shock "breach scenario", which is misleading.
         s_zero = np.zeros(dim)
         liquid_zero, can_meet_zero = self._evaluate(s_zero)
-        if liquid_zero <= self.target_liquid_pct:
+        if self._is_breach(s_zero):
             return ReverseStressResult(
                 found=False,
                 target_liquid_pct=self.target_liquid_pct,
@@ -287,9 +324,10 @@ class ReverseStressEngine:
 
         # ---- 1. Feasibility at the severe corner -------------------------------
         s_max = np.ones(dim)
-        liquid_max, _ = self._evaluate(s_max)
-        if liquid_max > self.target_liquid_pct:
-            # No breach is reachable within the plausible box → robust.
+        if not self._is_breach(s_max):
+            # No breach (redemption failure) is reachable within the plausible
+            # box → the fund is robust across all severe-but-plausible shocks.
+            liquid_max, _ = self._evaluate(s_max)
             return ReverseStressResult(
                 found=False,
                 target_liquid_pct=self.target_liquid_pct,
@@ -320,9 +358,12 @@ class ReverseStressEngine:
         for c in coords:
             s = np.array(c, dtype=float)
             liquid = self._liquid_after(s)
-            margin = liquid - self.target_liquid_pct  # ≤ 0 → breach
+            margin = liquid - self.target_liquid_pct  # smooth guide: ≤ 0 → near breach
             all_seeds.append((margin, s))
-            if margin <= 0.0:
+            # Feasibility is the *true* breach test (redemption failure), not the
+            # liquidity-floor proxy used for ordering — so only genuine failures
+            # seed the refinement and can become the materialised scenario.
+            if self._is_breach(s):
                 feasible_seeds.append((self._distance(s), s))
 
         feasible_seeds.sort(key=lambda t: t[0])
@@ -349,8 +390,10 @@ class ReverseStressEngine:
                 return (w * s) / d
 
             def breach_constraint(s):
-                # ≥ 0 when liquidity is at/below target (breach satisfied)
-                return self.target_liquid_pct - self._liquid_after(s)
+                # Smooth guide: ≥ 0 when liquidity is at/below target. Pulls SLSQP
+                # toward the breach region; true acceptance is re-checked below
+                # with _is_breach (redemption failure), which is non-smooth.
+                return self._breach_margin(s)
 
             constraints = {"type": "ineq", "fun": breach_constraint}
             bounds = [(0.0, 1.0)] * dim
@@ -376,9 +419,9 @@ class ReverseStressEngine:
                     logger.debug("SLSQP start failed", exc_info=True)
                     continue
                 s_star = np.clip(res.x, 0.0, 1.0)
-                liquid = self._liquid_after(s_star)
-                # Accept only genuinely-breaching optima (small numeric tolerance).
-                if liquid <= self.target_liquid_pct + 1e-4:
+                # Accept only genuine breaches — the fund actually fails to meet
+                # redemptions (or hits the floor) here, per _is_breach.
+                if self._is_breach(s_star):
                     d = self._distance(s_star)
                     if best is None or d < best[0]:
                         best = (d, s_star)
@@ -393,8 +436,18 @@ class ReverseStressEngine:
             method = method or "grid"
 
         # ---- 4. Materialise the winning breach point --------------------------
+        # Force a real repricing of the winner (bypassing the budget guard): the
+        # reported result must be truthful, never the budget sentinel. Then enforce
+        # the invariant — a reverse-stress scenario must, by definition, fail to
+        # meet redemptions. If the chosen point somehow does not (e.g. budget
+        # exhaustion let a sentinel-seeded point through), fall back to the severe
+        # corner, which step 1 proved is a genuine breach.
         s_star = best[1]
-        liquid_star, can_meet_star = self._evaluate(s_star)
+        liquid_star, can_meet_star = self._evaluate(s_star, force=True)
+        if can_meet_star:
+            s_star = s_max
+            liquid_star, can_meet_star = self._evaluate(s_star, force=True)
+            method = method or "grid"
         breach_params = {
             axis.name: axis.value(float(s_star[i])) for i, axis in enumerate(self.axes)
         }

@@ -1,6 +1,6 @@
 # Liquidity Risk & Stress Testing Tool — Model Documentation
 
-**Version:** 1.3  
+**Version:** 1.4  
 **Last reviewed:** 2026-06-06  
 **Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV / AIFMD II (Directive (EU) 2024/927)  
 **Purpose:** Complete audit trail for every metric displayed in the GUI, its mathematical definition, and the theoretical framework used to derive it.
@@ -487,7 +487,7 @@ Triggered when less than 5% of NAV is in T+0/T+1 assets. At this level the fund 
 ## 14. Reverse Stress Testing
 
 **Code:** `ReverseStressEngine` — `liquidity_risk_tool/engines/reverse_stress_engine.py`  
-**Wired in:** `pipeline_service.py` (the breach is materialised as a scenario row in `stress_results` / `scenario_metadata`)
+**Wired in:** `POST /run/{run_id}/reverse-stress` — `backend/routers/analysis.py`; triggered from the **Run reverse stress** button on the Stress Tests page (`frontend/src/pages/StressTests.jsx`)
 
 Where forward stress tests ask *"what is the impact of scenario X?"*, reverse stress
 tests invert the question — *"what combination of shocks would breach our liquidity
@@ -495,6 +495,14 @@ constraint?"* — as required by the **ESMA Guidelines on liquidity stress testi
 (Guideline 17)** and **AIFMD II Art.16(1)**. Rather than sweeping a single
 parameter, this engine searches **jointly** over the five risk drivers a manager is
 actually exposed to.
+
+**Execution model — on demand only.** Reverse stress is an expensive multi-start
+optimisation (hundreds of full portfolio re-pricings), so it is **never run as part
+of the standard pipeline**. It executes only when the user explicitly clicks the
+**Run reverse stress** button for a selected portfolio. The endpoint re-loads that
+single portfolio from its persisted CSV paths, solves, and returns the cleaned
+result; the outcome is scoped and displayed per portfolio (tagged with `_portfolio`),
+so switching the selected portfolio shows only that book's reverse-stress result.
 
 ### 14.1 Decision variables
 
@@ -535,6 +543,15 @@ The breach surface is non-convex (liquidity responds discontinuously as buckets
 cross horizons), so the solve uses a **multi-start SLSQP** search with a grid
 fallback:
 
+0. **Calm-corner check** — evaluate the calm state $\mathbf{s}=\mathbf{0}$ *first*.
+   If the unstressed portfolio already breaches ($L_{\text{after}}(\mathbf{0}) \leq
+   L_{\text{breach}}$), reverse stress is *not applicable*: there is no positive
+   joint shock to find because the fund breaches before any stress is applied. The
+   result returns `found=False`, `breached_at_baseline=True`,
+   `baseline_liquid_pct = L_{\text{after}}(\mathbf{0})$`, `severity_distance=0.0`, and
+   `method="baseline-breach"`. This replaces the earlier behaviour, where the
+   optimiser would converge to $\mathbf{s}^*\approx\mathbf{0}$ and report a
+   misleading *"breach found (plausibility distance 0.000)"* with a zero-shock row.
 1. **Feasibility check** — evaluate the severe corner $\mathbf{s}=\mathbf{1}$. If
    even that does not breach, the book is robust across the whole plausible box and
    the result is `found=False` (a meaningful resilience result).
@@ -550,7 +567,8 @@ fallback:
 `solve()` returns a `ReverseStressResult` carrying `found`, `severity_distance`
 ($D(\mathbf{s}^*)$), the per-axis `severity_fractions` and mapped
 `breach_parameters`, `liquid_pct_at_breach`, `margin_to_breach`, `n_evaluations`,
-and `method` (`"SLSQP+multistart"`, `"grid"`, or `"infeasible"`).
+`breached_at_baseline`, `baseline_liquid_pct`, and `method`
+(`"SLSQP+multistart"`, `"grid"`, `"infeasible"`, or `"baseline-breach"`).
 
 ### 14.4 Materialisation
 
@@ -558,10 +576,18 @@ and `method` (`"SLSQP+multistart"`, `"grid"`, or `"infeasible"`).
 `StressScenario` (name *"Reverse stress (multi-factor breach)"*, `regulatory_basis`
 citing AIFMD II Art.16(1) and ESMA Guideline 17). `run()` solves, materialises, and
 re-applies the scenario through the host engine, returning
-`(scenario, scenario_result, reverse_result)` — so the breach slots into the same
-`stress_results` and `scenario_metadata` tables as the forward scenarios. When the
-book is robust it returns `(None, None, reverse_result)` and the pipeline simply
-omits the row.
+`(scenario, scenario_result, reverse_result)` — so a genuine breach slots into the
+same `stress_results` and `scenario_metadata` tables as the forward scenarios.
+
+Two cases produce no table row, and `build_breach_scenario()` returns `None`:
+
+- **Robust book** (`found=False`, severe corner does not breach) — `run()` returns
+  `(None, None, reverse_result)`; the UI shows a green resilience banner.
+- **Baseline breach** (`found=False`, `breached_at_baseline=True`) — `run()` returns
+  `(None, None, reverse_result)`; the UI shows a distinct red banner stating that the
+  fund is already in breach at rest (baseline T0-T1 liquidity below the threshold)
+  and that reverse stress is therefore not applicable. No misleading zero-shock row
+  is materialised.
 
 ---
 

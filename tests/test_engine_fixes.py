@@ -21,6 +21,7 @@ from liquidity_risk_tool.models.position import Position, Portfolio
 from liquidity_risk_tool.engines.stress_engine import StressEngine
 from liquidity_risk_tool.engines.liquidity_profiler import LiquidityProfiler
 from liquidity_risk_tool.engines.waterfall_engine import WaterfallEngine
+from liquidity_risk_tool.engines.reverse_stress_engine import ReverseStressEngine
 from liquidity_risk_tool.config.settings import (
     StressScenario,
     MIN_CASH_BUFFER_PCT,
@@ -70,6 +71,28 @@ def _single_liquid_portfolio():
         adv_30d=100_000_000.0, beta=1.0, bid_ask_spread_bps=0.0, weight=1.0,
     )
     return _make_portfolio([equity])
+
+
+def _cash_heavy_robust_portfolio():
+    """60% cash (T+0, zero haircut even under stress) + 40% liquid equity.
+
+    Cash alone (60% of NAV, no haircut, settles T+0) covers the worst-case 50%
+    redemption with headroom, so the fund can meet redemptions across the ENTIRE
+    plausible shock box — including the severe corner (deep equity crash, ADV
+    collapse, 5x haircut, 50% redemptions). There is therefore no Can-Meet=NO
+    scenario to find, and reverse stress must report ``found=False``.
+    """
+    cash = Position(
+        isin="CASH01", name="EUR Cash", asset_class="cash",
+        market_value=6_000_000.0, currency="EUR", fx_rate=1.0,
+        adv_30d=1e12, bid_ask_spread_bps=0.0, weight=0.6,
+    )
+    equity = Position(
+        isin="EQ100", name="Big Liquid Equity", asset_class="listed_equity",
+        market_value=4_000_000.0, currency="EUR", fx_rate=1.0,
+        adv_30d=100_000_000.0, beta=1.0, bid_ask_spread_bps=0.0, weight=0.4,
+    )
+    return _make_portfolio([cash, equity])
 
 
 # ---------------------------------------------------------------------------
@@ -177,3 +200,77 @@ class TestWaterfallBuffer:
         assert result.total_proceeds_eur > self.TARGET + buffer * 0.5
         assert result.target_met is True
         assert result.residual_shortfall_eur == pytest.approx(0.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Finding #3 — reverse stress is, BY DEFINITION, a Can-Meet = NO scenario
+# ---------------------------------------------------------------------------
+
+class TestReverseStressIsRedemptionFailure:
+    """A reverse-stress breach must, by definition, be a scenario the fund
+    cannot survive: it fails to meet redemptions within the settlement horizon.
+
+    The bug: the optimiser constrained on the T0-T1 liquidity floor alone, so it
+    could return a scenario that dipped below the floor yet still raised enough
+    cash to meet (small) redemptions — surfacing ``Can Meet = YES`` on the
+    scenario-results table. That is not an actual failure. The breach test is now
+    ``can_meet_redemption is False``, so every materialised reverse-stress
+    scenario is, by construction, ``Can Meet = NO``.
+    """
+
+    def _breachable_portfolio(self):
+        """700k liquid equity (T+1) + 300k locked illiquid ballast (>T+7).
+
+        Under the severe corner (deep equity crash, ADV collapse, haircut
+        blow-out, 50% redemptions) the fund cannot raise the redemption within
+        the 7-day horizon — a genuine redemption failure exists in the box, so a
+        breach IS findable and must be Can Meet = NO.
+        """
+        return _equity_plus_illiquid_portfolio()
+
+    def test_breach_scenario_cannot_meet_redemption(self):
+        port = self._breachable_portfolio()
+        engine = StressEngine(port, scenarios=[
+            StressScenario(
+                name="dummy", equity_shock=0.0, credit_spread_shock_bps=0,
+                liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
+            )
+        ])
+        rev = ReverseStressEngine(engine)
+
+        scenario, scenario_result, reverse_result = rev.run(
+            n_starts=4, grid_per_axis=3, max_evaluations=120,
+        )
+
+        # A breach must be found in this deliberately-breachable book.
+        assert reverse_result.found is True
+        assert scenario is not None
+        assert scenario_result is not None
+
+        # BY DEFINITION: the materialised reverse-stress scenario is a scenario
+        # the fund cannot survive — it must report Can Meet = NO.
+        # (use truthiness, not `is False`, to tolerate numpy bool types)
+        assert not scenario_result.can_meet_redemption
+        # The solver's own record of the breach must agree.
+        assert not reverse_result.can_meet_redemption_at_breach
+
+    def test_robust_book_reports_no_breach(self):
+        """A fund that can always meet redemptions across the whole plausible box
+        must report found=False (no Can-Meet=NO scenario exists) rather than
+        materialising a misleading breach row."""
+        port = _cash_heavy_robust_portfolio()  # 60% cash covers any 50% redemption
+        engine = StressEngine(port, scenarios=[
+            StressScenario(
+                name="dummy", equity_shock=0.0, credit_spread_shock_bps=0,
+                liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
+            )
+        ])
+        rev = ReverseStressEngine(engine)
+
+        scenario, scenario_result, reverse_result = rev.run(
+            n_starts=4, grid_per_axis=3, max_evaluations=120,
+        )
+
+        assert reverse_result.found is False
+        assert scenario is None
+        assert scenario_result is None
