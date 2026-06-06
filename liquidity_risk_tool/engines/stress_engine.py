@@ -311,7 +311,27 @@ class StressEngine:
         if target_liquid_pct is None:
             target_liquid_pct = LIQUIDITY_BREACH_THRESHOLD
 
-        base_scenario = copy.deepcopy(self.scenarios[-1])  # start from worst-case shape
+        # Start the search from a NEUTRAL (all-zero) scenario so the swept
+        # `shock_parameter` is the ONLY shock applied. Previously this deep-copied
+        # self.scenarios[-1] (the worst-case scenario), which contaminated the
+        # result: every trial already carried the worst-case equity crash, credit
+        # blow-out, haircut multiplier, redemption and ADV collapse, so the reported
+        # "breach shock level" was confounded by those baked-in shocks rather than
+        # isolating the single parameter being varied. It also coupled the answer to
+        # the ordering/contents of self.scenarios via the [-1] index.
+        base_scenario = StressScenario(
+            name=f"Reverse stress ({shock_parameter})",
+            equity_shock=0.0,
+            credit_spread_shock_bps=0,
+            liquidity_haircut_multiplier=1.0,
+            redemption_rate=0.0,
+            adv_stress_scalar=1.0,
+            rate_shock_bps=0,
+            description=(
+                f"Neutral base used to isolate the swept parameter "
+                f"'{shock_parameter}' during reverse stress."
+            ),
+        )
 
         found = False
         breach_shock = None

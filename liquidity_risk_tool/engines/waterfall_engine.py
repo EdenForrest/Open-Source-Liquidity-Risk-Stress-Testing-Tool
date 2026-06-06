@@ -124,7 +124,11 @@ class WaterfallEngine:
     def run(self, target_eur: float) -> WaterfallResult:
         nav = self.portfolio.total_nav
         buffer = nav * MIN_CASH_BUFFER_PCT
-        effective_target = target_eur  # we aim to raise this net of buffer
+        # Raise enough to meet the redemption AND retain the minimum cash buffer.
+        # Selling exactly `target_eur` would leave nothing for the buffer, so the
+        # buffer is added to the amount we must liquidate (mirrors the redemption
+        # simulator's `usable_t1 = max(0, liq_t1 - buffer)`).
+        effective_target = target_eur + buffer
 
         result = WaterfallResult(
             target_eur  = target_eur,
@@ -196,6 +200,11 @@ class WaterfallEngine:
         if sellable.empty:
             return self.run(target_eur)
 
+        # Raise enough to meet the redemption AND retain the minimum cash buffer,
+        # consistent with the greedy run() path.
+        buffer = self.portfolio.total_nav * MIN_CASH_BUFFER_PCT
+        effective_target = target_eur + buffer
+
         n = len(sellable)
         isins      = sellable["isin"].tolist()
         mv         = sellable["market_value_eur"].values.astype(float)
@@ -214,7 +223,7 @@ class WaterfallEngine:
 
         c         = np.where(daily_cap > 0, 1.0 / daily_cap, 1e6)   # minimise time
         A_ub      = (-net_rate).reshape(1, n)                         # -Σ x*r <= -target
-        b_ub      = np.array([-target_eur])
+        b_ub      = np.array([-effective_target])
         bounds    = [(0.0, float(m)) for m in mv]
 
         res = linprog(c, A_ub=A_ub, b_ub=b_ub, bounds=bounds, method="highs")
@@ -245,17 +254,18 @@ class WaterfallEngine:
                 is_partial=sell_gross < pos["market_value_eur"],
             ))
 
-        total_proceeds = sum(o.net_proceeds for o in orders)
+        total_proceeds = float(sum(o.net_proceeds for o in orders))
+        gross_sold = float(sum(o.gross_value for o in orders))
         return WaterfallResult(
             target_eur=target_eur,
             total_proceeds_eur=total_proceeds,
-            target_met=(target_eur - total_proceeds) <= 0.01,
+            target_met=bool((effective_target - total_proceeds) <= 0.01),
             days_to_target=float(self._sequential_days(orders)),
             sell_orders=orders,
-            residual_shortfall_eur=max(0.0, target_eur - total_proceeds),
+            residual_shortfall_eur=max(0.0, effective_target - total_proceeds),
             nav_before=nav,
-            nav_after=nav - sum(o.gross_value for o in orders),
-            nav_impact_pct=(sum(o.gross_value for o in orders) / nav) if nav > 0 else 0.0,
+            nav_after=nav - gross_sold,
+            nav_impact_pct=(gross_sold / nav) if nav > 0 else 0.0,
         )
 
     # ------------------------------------------------------------------
