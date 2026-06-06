@@ -38,6 +38,21 @@ from ..models.position import Portfolio
 _BUCKET_RANK = {"T+0": 0, "T+1": 1, "T+3": 2, "T+7": 3, ">T+7": 4}
 
 
+def _is_settled_not_traded(asset_class: str) -> bool:
+    """True for assets that are *not* liquidated by trading volume and so are
+    immune to ADV-participation caps — i.e. they settle same-day (T+0) by their
+    asset-class profile. Cash is the canonical case: it is already money, it does
+    not have to be *sold* into a market, so an ADV of 0 means "does not trade",
+    NOT "cannot be liquidated".
+
+    Without this carve-out, cash (adv_30d == 0) would get days_to_liquidate = inf
+    and be bucketed >T+7, making even a cash-rich fund appear unable to meet
+    redemptions under stress — a false breach.
+    """
+    profile = ASSET_CLASS_LIQUIDITY.get(asset_class, {})
+    return profile.get("bucket") == "T+0"
+
+
 class LiquidityProfiler:
 
     def __init__(self, portfolio: Portfolio, stress: bool = False, adv_stress_scalar: float = 1.0):
@@ -186,10 +201,17 @@ class LiquidityProfiler:
         """
         effective_adv = df["adv_30d"] * self.adv_stress_scalar
         daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
+        # Cash-like positions settle same-day regardless of trading volume, so the
+        # ADV-implied bucket must not drag them below T+0 (see _is_settled_not_traded).
+        settled = df["asset_class"].map(_is_settled_not_traded)
         days_to_liq = np.where(
-            daily_capacity > 0,
-            np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
-            np.inf,
+            settled,
+            0.0,
+            np.where(
+                daily_capacity > 0,
+                np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
+                np.inf,
+            ),
         )
         df["_days_to_liq_pre"] = days_to_liq
 
@@ -255,12 +277,20 @@ class LiquidityProfiler:
         effective_adv = df["adv_30d"] * self.adv_stress_scalar
         daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
         df["effective_adv"] = effective_adv
-        df["adv_capped"] = daily_capacity > 0
-        # Days needed to fully exit the position
+        # Cash-like, settled-not-traded positions are never ADV-capped: they do
+        # not have to be sold into a market, so adv_30d == 0 must NOT mean
+        # "cannot liquidate". They are fully realisable same-day.
+        settled = df["asset_class"].map(_is_settled_not_traded)
+        df["adv_capped"] = (daily_capacity > 0) & ~settled
+        # Days needed to fully exit the position (0 for cash-like positions).
         df["days_to_liquidate"] = np.where(
-            daily_capacity > 0,
-            np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
-            np.inf,
+            settled,
+            0.0,
+            np.where(
+                daily_capacity > 0,
+                np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
+                np.inf,
+            ),
         )
         return df
 

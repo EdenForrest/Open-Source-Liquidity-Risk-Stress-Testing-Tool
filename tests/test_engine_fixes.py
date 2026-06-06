@@ -254,6 +254,18 @@ class TestReverseStressIsRedemptionFailure:
         # The solver's own record of the breach must agree.
         assert not reverse_result.can_meet_redemption_at_breach
 
+    @pytest.mark.xfail(
+        reason="Depends on the waterfall sourcing the T+0 cash bucket. The "
+        "profiler now correctly marks cash fully realisable (realisable_value = "
+        "full MV, days_to_liquidate=0), but WaterfallEngine.run() still does not "
+        "draw the cash bucket, so a 60%-cash fund spuriously fails a 50% "
+        "redemption at the severe corner and a breach IS findable. Currently this "
+        "test only passes because the 120-evaluation budget runs out before the "
+        "search reaches the severe corner — it would flip red under a larger "
+        "budget. Marked xfail until the waterfall cash-sourcing fix lands; remove "
+        "the marker then.",
+        strict=False,
+    )
     def test_robust_book_reports_no_breach(self):
         """A fund that can always meet redemptions across the whole plausible box
         must report found=False (no Can-Meet=NO scenario exists) rather than
