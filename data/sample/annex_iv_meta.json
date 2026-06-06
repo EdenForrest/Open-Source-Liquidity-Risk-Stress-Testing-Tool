@@ -1,0 +1,22 @@
+{
+  "aifm_lei": "222100SYNAIFM000000",
+  "aifm_name": "Synth ManCo S.A.",
+  "aifm_national_code": "SYN000000",
+  "reporting_member_state": "LU",
+  "aif_lei": "549300SYNAIF0000000",
+  "aif_national_code": "SYN12345678",
+  "share_classes": [
+    {
+      "isin": "LU0000000001",
+      "name": "Class A EUR",
+      "notice_period_days": 30,
+      "redemption_frequency": "monthly"
+    },
+    {
+      "isin": "LU0000000002",
+      "name": "Class I EUR",
+      "notice_period_days": 90,
+      "redemption_frequency": "quarterly"
+    }
+  ]
+}

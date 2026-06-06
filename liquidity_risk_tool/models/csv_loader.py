@@ -234,8 +234,8 @@ def load_portfolio_from_csv(
     nav_path:
         Path to the NAV CSV (semicolon-delimited, quoted fields).
     portfolio_code:
-        Which portfolio to load (e.g. "AL-A", "AL-H3"). If None, uses the
-        first portfolio code found in the file.
+        Which portfolio to load (e.g. "SYN-EQUITY", "SYN-GOVBOND"). If None,
+        uses the first portfolio code found in the file.
     """
     holdings_path = Path(holdings_path)
     nav_path      = Path(nav_path)

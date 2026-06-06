@@ -9,10 +9,10 @@ const FILES = [
     delimiter: 'Semicolon ( ; )',
     decimal: 'European format — comma as decimal, period as thousands separator (e.g. 1.234.567,89)',
     columns: [
-      { name: 'Portfolio Code', required: true,  example: 'AL-A',            notes: 'Identifies which portfolio the row belongs to' },
+      { name: 'Portfolio Code', required: true,  example: 'SYN-EQUITY',       notes: 'Identifies which portfolio the row belongs to' },
       { name: 'Date',           required: true,  example: '01/05/2026',       notes: 'Reporting date — day-first format (DD/MM/YYYY)' },
-      { name: 'ISIN',           required: false, example: 'DE0001102549',     notes: 'Security identifier; use CASH-EUR for cash rows' },
-      { name: 'Security Name',  required: false, example: 'BUND 2030',        notes: 'Used to infer asset class and bond maturity' },
+      { name: 'ISIN',           required: false, example: 'DE0543229039',     notes: 'Security identifier; use CASH-EUR for cash rows' },
+      { name: 'Security Name',  required: false, example: 'Synth Bundesanleihe 0.880% v38', notes: 'Used to infer asset class and bond maturity' },
       { name: 'Currency',       required: false, example: 'EUR',              notes: 'Position currency; defaults to EUR if missing' },
       { name: 'Market Value in Base Currency', required: true, example: '1.234.567,00', notes: 'EUR market value — European decimal format' },
       { name: 'PriceFactor',    required: false, example: '0,01',             notes: '0.01 = bond (quoted as % of par), 1.0 = equity/ETF' },
@@ -29,7 +29,7 @@ const FILES = [
     delimiter: 'Semicolon ( ; )',
     decimal: 'European format',
     columns: [
-      { name: 'PortfolioCode  (or "Portfolio Code" / "Fund Code")', required: true,  example: 'AL-A',           notes: 'Must match the codes in the Holdings file' },
+      { name: 'PortfolioCode  (or "Portfolio Code" / "Fund Code")', required: true,  example: 'SYN-EQUITY',     notes: 'Must match the codes in the Holdings file' },
       { name: 'TotalAssets  (or "NAV" / "Total NAV" / "Amount")',   required: true,  example: '125.000.000,00', notes: 'Total fund NAV — used to compute position weights' },
     ],
     notesKey: 'infoModal.footer',
@@ -41,8 +41,8 @@ const FILES = [
     delimiter: 'Comma ( , )',
     decimal: 'Standard (period as decimal)',
     columns: [
-      { name: 'isin',               required: true,  example: 'DE0001102549', notes: 'Must match ISINs in the Holdings file' },
-      { name: 'portfolio',          required: false, example: 'AL-A',         notes: 'If present, rows are matched to the correct fund' },
+      { name: 'isin',               required: true,  example: 'DE0543229039', notes: 'Must match ISINs in the Holdings file' },
+      { name: 'portfolio',          required: false, example: 'SYN-EQUITY',   notes: 'If present, rows are matched to the correct fund' },
       { name: 'asset_class_hint',   required: false, example: 'government_bond', notes: 'Overrides the inferred asset class' },
       { name: 'adv_30d_eur',        required: false, example: '30000000',     notes: '30-day average daily volume in EUR' },
       { name: 'bid_ask_spread_bps', required: false, example: '4',            notes: 'Bid-ask spread in basis points' },
@@ -57,11 +57,11 @@ const FILES = [
 
 const ANNEX_IV_FIELDS = [
   { name: 'aifm_lei',                required: true,  example: '222100XXXXXXXXXX',  notes: 'AIFM Legal Entity Identifier (20-char ISO 17442)' },
-  { name: 'aifm_name',               required: false, example: 'Lux ManCo S.A.',    notes: 'AIFM legal name' },
-  { name: 'aifm_national_code',      required: false, example: 'B123456',           notes: 'National registration code of the AIFM' },
+  { name: 'aifm_name',               required: false, example: 'Synth ManCo S.A.',  notes: 'AIFM legal name' },
+  { name: 'aifm_national_code',      required: false, example: 'SYN000000',         notes: 'National registration code of the AIFM' },
   { name: 'reporting_member_state',  required: true,  example: 'LU',                notes: 'ISO 3166-1 alpha-2 country code of the reporting AIFM' },
   { name: 'aif_lei',                 required: true,  example: '549300XXXXXXXXXX',  notes: 'AIF Legal Entity Identifier (20-char ISO 17442)' },
-  { name: 'aif_national_code',       required: false, example: 'LU12345678',        notes: 'National registration code of the AIF' },
+  { name: 'aif_national_code',       required: false, example: 'SYN12345678',       notes: 'National registration code of the AIF' },
   { name: 'share_classes',           required: true,  example: '[{...}]',           notes: 'Array — at least one share class required (see below)' },
 ]
 
@@ -288,7 +288,7 @@ function AnnexIvMetaTab() {
         <h3 className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('infoModal.annexIvMeta.exampleLabel')}</h3>
         <pre className="text-xs rounded-lg px-3 py-2 overflow-x-auto" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{`{
   "aifm_lei": "222100XXXXXXXXXX",
-  "aifm_name": "Lux ManCo S.A.",
+  "aifm_name": "Synth ManCo S.A.",
   "reporting_member_state": "LU",
   "aif_lei": "549300XXXXXXXXXX",
   "share_classes": [

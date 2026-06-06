@@ -17,6 +17,7 @@ export default function Uploader() {
   const [mkt, setMkt] = useState(null)
   const [dlFormat, setDlFormat] = useState('excel')
   const [downloadingAll, setDownloadingAll] = useState(false)
+  const [downloadingSample, setDownloadingSample] = useState(false)
   const busy = status === 'uploading' || status === 'running'
   const canDownload = status === 'complete' && !!runId
 
@@ -48,6 +49,27 @@ export default function Uploader() {
       URL.revokeObjectURL(objUrl)
     } finally {
       setDownloadingAll(false)
+    }
+  }
+
+  async function handleDownloadSample() {
+    if (downloadingSample) return
+    setDownloadingSample(true)
+    try {
+      const base = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/+$/, '') + '/api'
+      const resp = await fetch(`${base}/sample-data`)
+      if (!resp.ok) throw new Error(`Server returned ${resp.status}`)
+      const blob = await resp.blob()
+      const objUrl = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = objUrl
+      a.download = 'sample_data.zip'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(objUrl)
+    } finally {
+      setDownloadingSample(false)
     }
   }
 
@@ -94,6 +116,19 @@ export default function Uploader() {
           {downloadingAll ? t('export.downloading') : t('allPortfolios.downloadAll', 'Download All')}
         </button>
       </div>
+      {/* Download sample data — always available; synthetic demo files + Annex IV */}
+      <button
+        onClick={handleDownloadSample}
+        disabled={downloadingSample}
+        className="flex items-center gap-1.5 rounded px-3 py-1 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', color: 'var(--text-primary)', cursor: downloadingSample ? 'not-allowed' : 'pointer' }}
+        title={t('uploader.downloadSampleHint', 'Download all synthetic demo files (incl. Annex IV) as a zip')}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        {downloadingSample ? t('export.downloading') : t('uploader.downloadSample', 'Download sample data')}
+      </button>
     </div>
   )
 }

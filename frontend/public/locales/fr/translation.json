@@ -29,7 +29,10 @@
     "running": "En cours…",
     "runAnalysis": "Lancer l'analyse",
     "downloadReport": "Télécharger le rapport",
-    "runDemo": "Démo"
+    "runDemo": "Démo",
+    "format": "Format",
+    "downloadSample": "Télécharger les données d'exemple",
+    "downloadSampleHint": "Télécharger tous les fichiers de démonstration synthétiques (Annexe IV incluse) au format zip"
   },
   "status": {
     "uploading": "Téléversement des fichiers…",

@@ -1,22 +1,25 @@
 """
-POST /api/upload   — accept holdings + NAV CSV files, kick off pipeline async
-GET  /api/portfolios — list portfolio codes available in the data/ folder
-GET  /api/scenarios  — return STRESS_SCENARIOS metadata from settings
+POST /api/upload      — accept holdings + NAV CSV files, kick off pipeline async
+GET  /api/portfolios  — list portfolio codes available in the data/ folder
+GET  /api/scenarios   — return STRESS_SCENARIOS metadata from settings
+GET  /api/sample-data — download all bundled synthetic demo files as a zip
 """
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
 import re
 import tempfile
 import traceback
 import uuid
+import zipfile
 from pathlib import Path
 
 import json as _json
 
 from fastapi import APIRouter, Form, HTTPException, UploadFile, File
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from backend import store
 from backend.services.pipeline_service import run_all_portfolios
@@ -239,3 +242,54 @@ def list_scenarios(library: str = "esma"):
             for sc in source
         ]
     }
+
+
+@router.get("/sample-data")
+def download_sample_data():
+    """Bundle the synthetic demo dataset into a single zip download.
+
+    Includes the latest Holdings + matching NAV pair, the consolidated market
+    data, the zero-coupon yield curve, and a synthetic Annex IV metadata file.
+    All files are synthetic — safe to share publicly.
+    """
+    if not DATA_DIR.exists():
+        raise HTTPException(status_code=404, detail="No synthetic demo data found")
+
+    # Latest HOLDINGS file, then the NAV that shares its timestamp suffix
+    holdings_files = sorted(
+        DATA_DIR.glob("HOLDINGS_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+    )
+    if not holdings_files:
+        raise HTTPException(status_code=404, detail="No synthetic holdings data found")
+
+    holdings_file = holdings_files[0]
+    timestamp = holdings_file.stem.replace("HOLDINGS_", "")
+    nav_file = DATA_DIR / f"NAV_{timestamp}.csv"
+    if not nav_file.exists():
+        nav_files = sorted(
+            DATA_DIR.glob("NAV_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True
+        )
+        nav_file = nav_files[0] if nav_files else None
+
+    # (source path, name inside the zip) — skip any that are missing
+    candidates = [
+        (holdings_file, holdings_file.name),
+        (nav_file, nav_file.name if nav_file else None),
+        (DATA_DIR / "market_data_ALL.csv", "market_data_ALL.csv"),
+        (DATA_DIR / "zero_coupon_yields.xlsx", "zero_coupon_yields.xlsx"),
+        (DATA_DIR / "annex_iv_meta.json", "annex_iv_meta.json"),
+    ]
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for src, arcname in candidates:
+            if src is None or arcname is None or not src.exists():
+                continue
+            zf.writestr(arcname, src.read_bytes())
+
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="sample_data.zip"'},
+    )
