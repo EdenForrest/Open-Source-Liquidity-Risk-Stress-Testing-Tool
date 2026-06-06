@@ -105,6 +105,54 @@ DEFAULT_AXES: Tuple[ParameterAxis, ...] = (
 
 
 # ---------------------------------------------------------------------------
+# Plausibility model: crisis co-movement of the risk drivers
+# ---------------------------------------------------------------------------
+#
+# Treating the axes as independent (a diagonal severity norm) lets the optimiser
+# reach economically *incoherent* corners — e.g. a ×3 liquidity-haircut blow-out
+# with equities flat, spreads unchanged and normal trading volume. That never
+# happens: liquidity dries up *because* markets fall. Both ESMA's Guidelines on
+# liquidity stress testing (Guideline 17) and AIFMD II Art.16(1) require shocks to
+# be "severe **but plausible**" — i.e. jointly coherent, not just individually
+# bounded.
+#
+# Industry practice for a quantitative least-severe-breach search is a covariance-
+# based **Mahalanobis** severity norm, D(s) = sqrt(sᵀ Σ⁻¹ s), so off-diagonal-
+# impossible combinations are *far* from calm even when each axis moves only a
+# little. We calibrate the correlation structure directly to the firm's own
+# hand-calibrated forward scenarios (config.STRESS_SCENARIOS), where liquidity
+# stress (haircut↑, ADV↓, redemptions↑) always rises together with market stress
+# (equity↓, rate↑). Severity fractions are signed so that "more severe" is +1 on
+# every axis (the raw adv_stress_scalar falls toward 0 as severity rises, but the
+# fraction sᵢ still runs 0→1), which makes all pairwise co-movements **positive**.
+#
+# Axis order MUST match DEFAULT_AXES:
+#   0 equity_shock  1 rate_shock_bps  2 adv_stress_scalar
+#   3 liquidity_haircut_multiplier   4 redemption_rate
+SHOCK_CORRELATION: np.ndarray = np.array(
+    [
+        #  eq    rate   adv    hc     redeem
+        [1.00,  0.30,  0.70,  0.70,  0.60],   # equity drawdown
+        [0.30,  1.00,  0.40,  0.40,  0.30],   # rate shock (weaker market link)
+        [0.70,  0.40,  1.00,  0.80,  0.50],   # ADV collapse
+        [0.70,  0.40,  0.80,  1.00,  0.50],   # haircut blow-out
+        [0.60,  0.30,  0.50,  0.50,  1.00],   # redemption run
+    ],
+    dtype=float,
+)
+
+# Index groupings used by the coherence guardrail.
+_MARKET_AXES = ("equity_shock", "rate_shock_bps")
+_LIQUIDITY_AXES = ("adv_stress_scalar", "liquidity_haircut_multiplier", "redemption_rate")
+
+# A small *autonomous* allowance: liquidity/redemption stress may exceed the
+# market-driven level by at most this fraction (idiosyncratic fund-specific
+# pressure — a key investor leaving, an operational ADV hit). Beyond it, a
+# liquidity-only breach with no market driver is rejected as implausible.
+COHERENCE_AUTONOMY: float = 0.25
+
+
+# ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
 
@@ -175,6 +223,9 @@ class ReverseStressEngine:
         self.target_liquid_pct = (
             LIQUIDITY_BREACH_THRESHOLD if target_liquid_pct is None else target_liquid_pct
         )
+        # Precision matrix Σ⁻¹ for the Mahalanobis severity norm, aligned to the
+        # ACTIVE axes (weights fold into Σ as a diagonal scaling). Built once.
+        self._precision: np.ndarray = self._build_precision()
         self._n_eval = 0
         # Hard ceiling on *fresh* (uncached) portfolio repricings, so a single
         # solve can never run away past the client timeout. Set per-solve.
@@ -264,11 +315,100 @@ class ReverseStressEngine:
         affects the *search path*, never which scenarios count as breaches."""
         return self.target_liquid_pct - self._liquid_after(s)
 
-    def _distance(self, s: np.ndarray) -> float:
-        """Plausibility-weighted severity norm D(s) = sqrt(Σ w_i s_i²)."""
+    # ------------------------------------------------------------------
+    # Plausibility (Mahalanobis) norm + coherence guardrail
+    # ------------------------------------------------------------------
+
+    def _build_precision(self) -> np.ndarray:
+        """Build the precision matrix Σ⁻¹ used by the Mahalanobis severity norm.
+
+        Σ is the crisis co-movement covariance of the severity fractions:
+        ``Σ = W^½ · R · W^½`` where ``R`` is :data:`SHOCK_CORRELATION` and ``W`` is
+        the diagonal of per-axis implausibility weights. Folding the weights into Σ
+        means D(s) = sqrt(sᵀ Σ⁻¹ s) generalises the old diagonal norm: with R = I it
+        collapses back to sqrt(Σ wᵢ sᵢ²), but with the real correlation structure an
+        *incoherent* combination (e.g. haircut blow-out while equities are flat) sits
+        far from the calm state because Σ⁻¹ penalises moves that violate the expected
+        co-movement.
+
+        Falls back to a pure diagonal precision (the original behaviour) whenever the
+        active axes are not the canonical five-driver set, so custom axis tuples and
+        unit tests that pass their own axes keep working.
+        """
+        n = len(self.axes)
         w = np.array([a.weight for a in self.axes], dtype=float)
+        names = tuple(a.name for a in self.axes)
+        default_names = tuple(a.name for a in DEFAULT_AXES)
+
+        if names == default_names and SHOCK_CORRELATION.shape == (n, n):
+            r = SHOCK_CORRELATION
+        else:
+            # Unknown / custom axis layout — no calibrated correlation available.
+            logger.debug(
+                "reverse-stress axes %s differ from default; using diagonal norm", names
+            )
+            r = np.eye(n)
+
+        sqrt_w = np.sqrt(w)
+        cov = np.outer(sqrt_w, sqrt_w) * r          # Σ = W^½ R W^½
+        # Symmetric PD inverse via pseudo-inverse for numerical safety (R is PD here,
+        # but pinv tolerates a near-singular custom calibration without raising).
+        precision = np.linalg.pinv(cov)
+        return 0.5 * (precision + precision.T)       # re-symmetrise
+
+    def _distance(self, s: np.ndarray) -> float:
+        """Mahalanobis severity / implausibility norm D(s) = sqrt(sᵀ Σ⁻¹ s).
+
+        Distance from the calm state ``s = 0`` under the crisis co-movement metric:
+        coherent shocks (all drivers stressing together) are *cheap*; incoherent
+        ones (a liquidity-only blow-out with calm markets) are *expensive*. The
+        constrained minimiser on the breach boundary is therefore the most plausible
+        way the fund can fail — never an economically impossible corner.
+        """
         s = np.clip(np.asarray(s, dtype=float), 0.0, 1.0)
-        return float(np.sqrt(np.sum(w * s * s)))
+        q = float(s @ self._precision @ s)
+        return float(np.sqrt(max(q, 0.0) + 1e-12))
+
+    def _distance_grad(self, s: np.ndarray) -> np.ndarray:
+        """Gradient of :meth:`_distance` w.r.t. s (for SLSQP)."""
+        s = np.clip(np.asarray(s, dtype=float), 0.0, 1.0)
+        d = self._distance(s)
+        return (self._precision @ s) / d
+
+    def _coherence_margin(self, s: np.ndarray) -> float:
+        """Coherence guardrail: ≥ 0 when liquidity stress is *justified* by market
+        stress, < 0 for an implausible liquidity-only / redemption-only breach.
+
+        The economic rule is that liquidity dries up *because* markets fall, so the
+        worst liquidity-side severity (ADV collapse, haircut blow-out, redemption
+        run) may exceed the worst market-side severity (equity drawdown, rate shock)
+        by at most an autonomous, fund-specific allowance
+        (:data:`COHERENCE_AUTONOMY`). Beyond that, a breach driven purely by
+        liquidity levers with no market driver is rejected as not severe-but-
+        plausible::
+
+            max(liquidity severities) ≤ max(market severities) + COHERENCE_AUTONOMY
+
+        Returned as a smooth signed margin so SLSQP can use it as an inequality
+        constraint and the grid seeder can filter on its sign.
+        """
+        s = np.clip(np.asarray(s, dtype=float), 0.0, 1.0)
+        idx = {a.name: i for i, a in enumerate(self.axes)}
+
+        market = [s[idx[n]] for n in _MARKET_AXES if n in idx]
+        liquidity = [s[idx[n]] for n in _LIQUIDITY_AXES if n in idx]
+        # If either side is absent (custom axes), the guardrail does not apply.
+        if not market or not liquidity:
+            return 1.0
+
+        max_market = max(market)
+        max_liquidity = max(liquidity)
+        return float(max_market + COHERENCE_AUTONOMY - max_liquidity)
+
+    def _is_coherent(self, s: np.ndarray) -> bool:
+        """True when ``s`` satisfies the coherence guardrail (market stress justifies
+        the liquidity stress, within the autonomous allowance)."""
+        return self._coherence_margin(s) >= -1e-9
 
     # ------------------------------------------------------------------
     # Optimisation
@@ -361,9 +501,10 @@ class ReverseStressEngine:
             margin = liquid - self.target_liquid_pct  # smooth guide: ≤ 0 → near breach
             all_seeds.append((margin, s))
             # Feasibility is the *true* breach test (redemption failure), not the
-            # liquidity-floor proxy used for ordering — so only genuine failures
-            # seed the refinement and can become the materialised scenario.
-            if self._is_breach(s):
+            # liquidity-floor proxy used for ordering — AND the coherence guardrail:
+            # an incoherent liquidity-only corner is not a plausible breach, so it
+            # must never seed the refinement or become the materialised scenario.
+            if self._is_coherent(s) and self._is_breach(s):
                 feasible_seeds.append((self._distance(s), s))
 
         feasible_seeds.sort(key=lambda t: t[0])
@@ -378,16 +519,12 @@ class ReverseStressEngine:
         try:
             from scipy.optimize import minimize
 
-            w = np.array([a.weight for a in self.axes], dtype=float)
-
             def objective(s):
-                s = np.clip(s, 0.0, 1.0)
-                return float(np.sqrt(np.sum(w * s * s) + 1e-12))
+                # Mahalanobis severity norm under the crisis co-movement metric.
+                return self._distance(s)
 
             def obj_grad(s):
-                s = np.clip(s, 0.0, 1.0)
-                d = np.sqrt(np.sum(w * s * s) + 1e-12)
-                return (w * s) / d
+                return self._distance_grad(s)
 
             def breach_constraint(s):
                 # Smooth guide: ≥ 0 when liquidity is at/below target. Pulls SLSQP
@@ -395,7 +532,15 @@ class ReverseStressEngine:
                 # with _is_breach (redemption failure), which is non-smooth.
                 return self._breach_margin(s)
 
-            constraints = {"type": "ineq", "fun": breach_constraint}
+            def coherence_constraint(s):
+                # Hard plausibility guardrail: ≥ 0 only when market stress justifies
+                # the liquidity stress, blocking implausible liquidity-only breaches.
+                return self._coherence_margin(s)
+
+            constraints = [
+                {"type": "ineq", "fun": breach_constraint},
+                {"type": "ineq", "fun": coherence_constraint},
+            ]
             bounds = [(0.0, 1.0)] * dim
 
             # Seed from severe corner + most-breaching grid points.
@@ -419,9 +564,11 @@ class ReverseStressEngine:
                     logger.debug("SLSQP start failed", exc_info=True)
                     continue
                 s_star = np.clip(res.x, 0.0, 1.0)
-                # Accept only genuine breaches — the fund actually fails to meet
-                # redemptions (or hits the floor) here, per _is_breach.
-                if self._is_breach(s_star):
+                # Accept only genuine *and plausible* breaches: the fund actually
+                # fails to meet redemptions (per _is_breach) AND the shock is
+                # coherent (market stress justifies the liquidity stress). SLSQP can
+                # settle marginally outside the coherence constraint, so re-check it.
+                if self._is_coherent(s_star) and self._is_breach(s_star):
                     d = self._distance(s_star)
                     if best is None or d < best[0]:
                         best = (d, s_star)
