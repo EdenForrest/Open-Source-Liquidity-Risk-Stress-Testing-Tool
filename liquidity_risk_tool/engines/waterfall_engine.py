@@ -24,6 +24,7 @@ from ..config.settings import (
     BUCKET_ORDER,
     MAX_ADV_PARTICIPATION,
     MIN_CASH_BUFFER_PCT,
+    REDEMPTION_SETTLEMENT_DAYS,
 )
 from ..models.position import Portfolio
 
@@ -49,13 +50,16 @@ class SellOrder:
 class WaterfallResult:
     target_eur: float
     total_proceeds_eur: float
-    target_met: bool
+    target_met: bool                          # met WITHIN the settlement horizon
     days_to_target: float
     sell_orders: List[SellOrder] = field(default_factory=list)
-    residual_shortfall_eur: float = 0.0
+    residual_shortfall_eur: float = 0.0       # shortfall within the settlement horizon
     nav_before: float = 0.0
     nav_after: float = 0.0
     nav_impact_pct: float = 0.0
+    settlement_days: int = REDEMPTION_SETTLEMENT_DAYS   # horizon the redemption must be met within
+    proceeds_within_horizon_eur: float = 0.0  # net proceeds raised by day <= settlement_days
+    met_eventually: bool = False              # target met given UNLIMITED time (full liquidation)
 
     def sell_schedule_df(self) -> pd.DataFrame:
         if not self.sell_orders:
@@ -164,11 +168,20 @@ class WaterfallEngine:
                 remaining -= sell_result.net_proceeds
 
         total_proceeds = sum(o.net_proceeds for o in orders)
+        # Proceeds realisable WITHIN the contractual settlement horizon. Cash that
+        # only arrives after the fund's redemption cycle does not help meet that
+        # redemption on time (ESMA liquidity STT — assess against the dealing cycle).
+        horizon = REDEMPTION_SETTLEMENT_DAYS
+        proceeds_in_horizon = sum(o.net_proceeds for o in orders if o.day <= horizon)
 
         result.sell_orders            = orders
         result.total_proceeds_eur     = total_proceeds
-        result.target_met             = (effective_target - total_proceeds) <= 0.01
-        result.residual_shortfall_eur = max(0.0, effective_target - total_proceeds)
+        result.settlement_days        = horizon
+        result.proceeds_within_horizon_eur = proceeds_in_horizon
+        # "Met" now means: enough cash raised WITHIN the settlement horizon.
+        result.target_met             = (effective_target - proceeds_in_horizon) <= 0.01
+        result.met_eventually         = (effective_target - total_proceeds) <= 0.01
+        result.residual_shortfall_eur = max(0.0, effective_target - proceeds_in_horizon)
         result.days_to_target         = float(self._sequential_days(orders))
         result.nav_after              = nav - sum(o.gross_value for o in orders)
         result.nav_impact_pct       = (result.nav_before - result.nav_after) / result.nav_before
@@ -256,16 +269,22 @@ class WaterfallEngine:
 
         total_proceeds = float(sum(o.net_proceeds for o in orders))
         gross_sold = float(sum(o.gross_value for o in orders))
+        horizon = REDEMPTION_SETTLEMENT_DAYS
+        proceeds_in_horizon = float(sum(o.net_proceeds for o in orders if o.day <= horizon))
         return WaterfallResult(
             target_eur=target_eur,
             total_proceeds_eur=total_proceeds,
-            target_met=bool((effective_target - total_proceeds) <= 0.01),
+            # "Met" requires raising the target WITHIN the settlement horizon.
+            target_met=bool((effective_target - proceeds_in_horizon) <= 0.01),
             days_to_target=float(self._sequential_days(orders)),
             sell_orders=orders,
-            residual_shortfall_eur=max(0.0, effective_target - total_proceeds),
+            residual_shortfall_eur=max(0.0, effective_target - proceeds_in_horizon),
             nav_before=nav,
             nav_after=nav - gross_sold,
             nav_impact_pct=(gross_sold / nav) if nav > 0 else 0.0,
+            settlement_days=horizon,
+            proceeds_within_horizon_eur=proceeds_in_horizon,
+            met_eventually=bool((effective_target - total_proceeds) <= 0.01),
         )
 
     # ------------------------------------------------------------------

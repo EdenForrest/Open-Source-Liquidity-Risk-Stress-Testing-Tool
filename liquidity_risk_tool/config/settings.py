@@ -173,6 +173,16 @@ LIQUIDITY_BREACH_THRESHOLD: float  = 0.05   # <5% triggers breach
 # Represents a moderate market stress where trading volumes compress to 60% of normal.
 REDEMPTION_STRESS_ADV_SCALAR: float = 0.60
 
+# Maximum number of days within which a redemption must be satisfied for it to count
+# as "met". ESMA's Guidelines on liquidity stress testing (and AIFMD II Art.16(1))
+# require liquidity to be assessed against the fund's *contractual* redemption /
+# settlement cycle — a redemption is only met if enough cash can be raised within
+# that window, NOT "eventually given unlimited time". A waterfall that takes 110
+# days to fund a redemption does NOT meet it for a fund with a 7-day settlement
+# cycle. Set this to the fund's redemption notice + settlement period (in calendar
+# trading days). Default T+7 reflects a standard open-ended dealing cycle.
+REDEMPTION_SETTLEMENT_DAYS: int = 7
+
 
 # ---------------------------------------------------------------------------
 # AIFMD II (Directive (EU) 2024/927) — effective 16 April 2026

@@ -18,6 +18,7 @@ from liquidity_risk_tool.models.csv_loader import (
 )
 from liquidity_risk_tool.engines.liquidity_profiler import LiquidityProfiler
 from liquidity_risk_tool.engines.stress_engine import StressEngine
+from liquidity_risk_tool.engines.reverse_stress_engine import ReverseStressEngine
 from liquidity_risk_tool.engines.redemption_simulator import RedemptionSimulator
 from liquidity_risk_tool.engines.waterfall_engine import WaterfallEngine
 from liquidity_risk_tool.engines.leverage_engine import LeverageEngine
@@ -98,20 +99,25 @@ def run_full_pipeline(
     stress_engine = StressEngine(portfolio, scenario_library=scenario_library)
     stress_detail = stress_engine.run_detail()
 
-    # Reverse stress: the minimum single-parameter shock that drives T0-T1 liquidity
-    # below the regulatory breach threshold. We sweep the liquidity_haircut_multiplier
-    # (the parameter that actually stresses *liquidity* — an equity price shock alone
-    # rarely makes assets illiquid) from 1x up to 10x. The breach is materialised as a
-    # forward scenario so it slots into the same results/params tables as the standard
-    # scenarios. Skipped silently when no breach is reachable within 10x (a deeply
-    # liquid book), which is itself a meaningful resilience result.
+    # Reverse stress: instead of sweeping a single parameter, we search JOINTLY
+    # over the five risk drivers (equity shock, rate shock, ADV collapse, liquidity
+    # haircut multiplier, redemption rate) for the LEAST-SEVERE combination that
+    # drives T0-T1 liquidity below the regulatory breach threshold — the standard
+    # reverse-stress objective under ESMA Guideline 17 / AIFMD II Art.16(1). The
+    # ReverseStressEngine minimises a plausibility-weighted severity norm subject to
+    # the breach constraint (multi-start SLSQP with a coarse-grid fallback) and
+    # materialises the winning point as a real StressScenario, re-priced through the
+    # host StressEngine so it slots into the same results/params tables as the
+    # standard scenarios. Skipped silently when no breach is reachable within the
+    # plausible box (a deeply liquid book), which is itself a meaningful resilience
+    # result.
     reverse_scenario = None
+    reverse_detail = None
     try:
-        reverse_scenario, reverse_result, _ = stress_engine.reverse_stress_scenario(
-            shock_parameter="liquidity_haircut_multiplier", lo=1.0, hi=10.0
-        )
-        if reverse_result is not None:
-            stress_detail = stress_detail + [reverse_result]
+        reverse_engine = ReverseStressEngine(stress_engine)
+        reverse_scenario, reverse_detail, _reverse_result = reverse_engine.run()
+        if reverse_detail is not None:
+            stress_detail = stress_detail + [reverse_detail]
     except Exception:  # reverse stress is supplementary — never break the run
         logger.exception("Reverse stress computation failed; continuing without it")
 
@@ -197,6 +203,9 @@ def run_full_pipeline(
             "target_met": waterfall.target_met,
             "days_to_target": waterfall.days_to_target,
             "residual_shortfall_eur": waterfall.residual_shortfall_eur,
+            "settlement_days": waterfall.settlement_days,
+            "proceeds_within_horizon_eur": waterfall.proceeds_within_horizon_eur,
+            "met_eventually": waterfall.met_eventually,
             "nav_before": waterfall.nav_before,
             "nav_after": waterfall.nav_after,
             "nav_impact_pct": waterfall.nav_impact_pct,

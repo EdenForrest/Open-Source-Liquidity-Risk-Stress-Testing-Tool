@@ -1,7 +1,7 @@
 # Liquidity Risk & Stress Testing Tool — Model Documentation
 
-**Version:** 1.2  
-**Last reviewed:** 2026-05-20  
+**Version:** 1.3  
+**Last reviewed:** 2026-06-06  
 **Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV / AIFMD II (Directive (EU) 2024/927)  
 **Purpose:** Complete audit trail for every metric displayed in the GUI, its mathematical definition, and the theoretical framework used to derive it.
 
@@ -290,7 +290,22 @@ The waterfall engine is run within each stress scenario to estimate how many cal
 
 ### 8.6 Can meet redemption
 
-$$\mathrm{CanMeet} = \mathbf{1}\!\left[\sum_i \mathrm{netProceeds}_i \geq R\right] \qquad \text{where} \quad R = NAV^* \cdot \mathrm{redemptionRate}$$
+A redemption is only "met" if the required cash can be raised **within the fund's
+contractual settlement / notice cycle** — not merely "eventually". Under the ESMA
+Guidelines on liquidity stress testing and AIFMD II, the test is time-bounded: cash
+that arrives after the settlement horizon $H$ does not discharge an in-cycle
+redemption obligation. We therefore count only proceeds from positions whose
+liquidation completes by day $H$:
+
+$$\mathrm{CanMeet} = \mathbf{1}\!\left[\sum_{i \,:\, \mathrm{day}_i \leq H} \mathrm{netProceeds}_i \geq R\right] \qquad R = NAV^* \cdot \mathrm{redemptionRate}$$
+
+where $H = \texttt{REDEMPTION\_SETTLEMENT\_DAYS} = 7$ (settable in `settings.py`).
+`ScenarioResult.can_meet_redemption` reads `WaterfallResult.target_met`, which is
+itself horizon-aware (see §10.2), so the constraint propagates automatically. This
+fixes the prior behaviour where `CanMeet` was effectively always `true` once enough
+proceeds accrued over an unbounded horizon (e.g. a 30% redemption "met" only after
+110 days). The unbounded notion is preserved separately as `met_eventually` for
+diagnostic purposes.
 
 ---
 
@@ -380,11 +395,27 @@ $$R_{\text{remaining}} \leftarrow R_{\text{remaining}} - \mathrm{netProceeds}_i$
 
 ### 10.2 Waterfall summary metrics
 
-$$\mathrm{TotalProceeds} = \sum_i \mathrm{netProceeds}_i \qquad \mathrm{TargetMet} = \mathbf{1}\!\left[\mathrm{TotalProceeds} \geq T\right]$$
+Total proceeds are split into those realised **within the settlement horizon**
+$H = \texttt{REDEMPTION\_SETTLEMENT\_DAYS} = 7$ and the full (unbounded) total:
 
-$$\mathrm{ResidualShortfall} = \max(0,\ T - \mathrm{TotalProceeds})$$
+$$\mathrm{ProceedsWithinHorizon} = \sum_{i \,:\, \mathrm{day}_i \leq H} \mathrm{netProceeds}_i \qquad \mathrm{TotalProceeds} = \sum_i \mathrm{netProceeds}_i$$
+
+The headline `target_met` flag is **horizon-bounded** — a redemption is met only if
+enough cash is raised by day $H$ — while `met_eventually` preserves the legacy
+unbounded notion for diagnostics:
+
+$$\mathrm{TargetMet} = \mathbf{1}\!\left[\mathrm{ProceedsWithinHorizon} \geq T\right] \qquad \mathrm{MetEventually} = \mathbf{1}\!\left[\mathrm{TotalProceeds} \geq T\right]$$
+
+$$\mathrm{ResidualShortfall} = \max(0,\ T - \mathrm{ProceedsWithinHorizon})$$
 
 $$\mathrm{DaysToTarget} = \max_i \text{days}_i \qquad NAV_{\text{after}} = NAV_{\text{before}} - \sum_i \mathrm{sellGross}_i$$
+
+`WaterfallResult` exposes `settlement_days` ($H$), `proceeds_within_horizon_eur`,
+`target_met` (within horizon), `met_eventually`, and `residual_shortfall_eur`
+(measured against the within-horizon proceeds). These fields flow through
+`pipeline_service.py` → `waterfall_meta` and into the Excel/XML exports; the
+Validation panel checks `target_met` for consistency against
+`proceeds_within_horizon_eur ≥ target` rather than total proceeds.
 
 $$\mathrm{NAVImpact}_{\%} = \frac{NAV_{\text{before}} - NAV_{\text{after}}}{NAV_{\text{before}}}$$
 
@@ -455,18 +486,82 @@ Triggered when less than 5% of NAV is in T+0/T+1 assets. At this level the fund 
 
 ## 14. Reverse Stress Testing
 
-**Code:** `StressEngine.run_reverse_stress()` — `stress_engine.py`  
-**Not displayed in GUI directly — available via API**
+**Code:** `ReverseStressEngine` — `liquidity_risk_tool/engines/reverse_stress_engine.py`  
+**Wired in:** `pipeline_service.py` (the breach is materialised as a scenario row in `stress_results` / `scenario_metadata`)
 
-Binary search for the minimum shock magnitude $\varepsilon^*$ that drives T+0/T+1 liquidity below the breach threshold:
+Where forward stress tests ask *"what is the impact of scenario X?"*, reverse stress
+tests invert the question — *"what combination of shocks would breach our liquidity
+constraint?"* — as required by the **ESMA Guidelines on liquidity stress testing
+(Guideline 17)** and **AIFMD II Art.16(1)**. Rather than sweeping a single
+parameter, this engine searches **jointly** over the five risk drivers a manager is
+actually exposed to.
 
-$$\varepsilon^* = \min \varepsilon \quad \text{such that} \quad L_{\text{after}}(\varepsilon) \leq L_{\text{breach}} = 0.05$$
+### 14.1 Decision variables
 
-The search uses bisection with tolerance $0.005$ and maximum 40 iterations:
+Each axis is a `ParameterAxis` with a *severity fraction* $s_i \in [0,1]$ mapped
+linearly onto a severe-but-plausible range, $\mathrm{value}_i(s_i) = c_i + s_i\,(\sigma_i - c_i)$,
+where $c_i$ is the calm (no-stress) endpoint and $\sigma_i$ the extreme-but-bounded
+endpoint:
 
-$$\varepsilon_{n+1} = \begin{cases} \frac{\varepsilon_{\text{lo}} + \varepsilon_n}{2} & \text{if } L_{\text{after}}(\varepsilon_n) > L_{\text{breach}} \\ \frac{\varepsilon_n + \varepsilon_{\text{hi}}}{2} & \text{otherwise} \end{cases}$$
+| Axis | Calm $c_i$ | Severe $\sigma_i$ | Weight $w_i$ |
+|------|-----------|-------------------|--------------|
+| `equity_shock` | 0% | −60% | 1.0 |
+| `rate_shock_bps` | 0 | +400 bps | 1.0 |
+| `adv_stress_scalar` | 1.0 | 0.20 (ADV → 20% of normal) | 0.8 |
+| `liquidity_haircut_multiplier` | ×1.0 | ×5.0 | 0.8 |
+| `redemption_rate` | 0% | 50% | 1.2 |
 
-**Theoretical basis:** Reverse stress testing is mandated by EBA/GL/2018/04 and ESMA guidance as a complement to forward stress testing. Where forward tests ask "what is the impact of scenario X?", reverse tests ask "what scenario breaks the fund?" — providing a direct measure of margin of safety.
+The credit-spread shock is intentionally **not** a free variable so the five
+requested drivers are isolated; an axis can be appended to `axes` if desired.
+
+### 14.2 Optimisation problem
+
+Let $\mathbf{s} = (s_1,\dots,s_5) \in [0,1]^5$. We seek the **most plausible
+(least-severe) joint shock that still breaches** — the "closest scenario to the calm
+state on the breach boundary":
+
+$$\min_{\mathbf{s}} \ D(\mathbf{s}) = \sqrt{\textstyle\sum_i w_i\, s_i^2} \quad \text{s.t.} \quad L_{\text{after}}(\mathbf{s}) \leq L_{\text{breach}}, \quad 0 \leq s_i \leq 1$$
+
+$D(\mathbf{s})$ is a plausibility-weighted (Mahalanobis-style) distance from calm;
+larger $w_i$ marks an axis as more implausible to move, so the optimiser prefers to
+leave it near $c_i$. The breach threshold defaults to `LIQUIDITY_BREACH_THRESHOLD`.
+$L_{\text{after}}(\mathbf{s})$ is evaluated by **re-pricing the real portfolio**
+through the host `StressEngine._apply_scenario` — the engine never re-implements the
+pricing logic, and evaluations are cached because the optimiser revisits points.
+
+### 14.3 Solver
+
+The breach surface is non-convex (liquidity responds discontinuously as buckets
+cross horizons), so the solve uses a **multi-start SLSQP** search with a grid
+fallback:
+
+1. **Feasibility check** — evaluate the severe corner $\mathbf{s}=\mathbf{1}$. If
+   even that does not breach, the book is robust across the whole plausible box and
+   the result is `found=False` (a meaningful resilience result).
+2. **Coarse grid** — sample a small per-axis grid to seed starting points and to
+   give the fallback something to refine.
+3. **Multi-start SLSQP** (`scipy.optimize.minimize`) — from the severe corner plus
+   the most-breaching grid seeds, minimise $D(\mathbf{s})$ subject to
+   $L_{\text{breach}} - L_{\text{after}}(\mathbf{s}) \geq 0$; keep the feasible
+   optimum with the smallest $D$.
+4. **Fallback** — if scipy is unavailable or SLSQP finds nothing feasible, return
+   the best breaching grid point (or the severe corner).
+
+`solve()` returns a `ReverseStressResult` carrying `found`, `severity_distance`
+($D(\mathbf{s}^*)$), the per-axis `severity_fractions` and mapped
+`breach_parameters`, `liquid_pct_at_breach`, `margin_to_breach`, `n_evaluations`,
+and `method` (`"SLSQP+multistart"`, `"grid"`, or `"infeasible"`).
+
+### 14.4 Materialisation
+
+`build_breach_scenario()` turns a found breach into a named, regulatory-tagged
+`StressScenario` (name *"Reverse stress (multi-factor breach)"*, `regulatory_basis`
+citing AIFMD II Art.16(1) and ESMA Guideline 17). `run()` solves, materialises, and
+re-applies the scenario through the host engine, returning
+`(scenario, scenario_result, reverse_result)` — so the breach slots into the same
+`stress_results` and `scenario_metadata` tables as the forward scenarios. When the
+book is robust it returns `(None, None, reverse_result)` and the pipeline simply
+omits the row.
 
 ---
 

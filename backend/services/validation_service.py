@@ -547,13 +547,20 @@ def run_checks(portfolio_results: dict) -> list[dict]:
 
         target = wf_meta.get("target_eur")
         target_met_flag = wf_meta.get("target_met")
-        meta_proceeds_val = wf_meta.get("total_proceeds_eur")
-        if target is not None and target_met_flag is not None and meta_proceeds_val is not None:
-            expected_met = (meta_proceeds_val >= target - 0.01)
+        # target_met is assessed against cash raised WITHIN the settlement horizon
+        # (ESMA liquidity STT — proceeds arriving after the dealing cycle do not count).
+        # Fall back to total proceeds only when the horizon figure is unavailable.
+        horizon_proceeds_val = wf_meta.get("proceeds_within_horizon_eur")
+        if horizon_proceeds_val is None:
+            horizon_proceeds_val = wf_meta.get("total_proceeds_eur")
+        if target is not None and target_met_flag is not None and horizon_proceeds_val is not None:
+            expected_met = (horizon_proceeds_val >= target - 0.01)
+            settlement_days = wf_meta.get("settlement_days")
+            horizon_lbl = f" within T+{settlement_days}" if settlement_days is not None else ""
             results.append(_check(
-                "Waterfall target_met consistent with proceeds ≥ target", "Waterfall",
+                f"Waterfall target_met consistent with proceeds{horizon_lbl} ≥ target", "Waterfall",
                 bool(target_met_flag) == expected_met,
-                (f"target={_eur(target)} | proceeds={_eur(meta_proceeds_val)} | "
+                (f"target={_eur(target)} | proceeds{horizon_lbl}={_eur(horizon_proceeds_val)} | "
                  f"target_met={target_met_flag} (expected {expected_met})"),
             ))
 

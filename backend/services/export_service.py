@@ -456,10 +456,14 @@ def _build_waterfall(wb: openpyxl.Workbook, r: dict) -> None:
         ws.cell(row=row, column=c).border = _THIN_BORDER
     row += 1
 
+    _settle = meta.get("settlement_days")
+    _met_lbl = f"Met within T+{_settle}" if _settle is not None else "Target Met"
     meta_rows = [
         ("Redemption Target (EUR)", _eur(meta.get("target_eur")), _EUR_FMT),
         ("Total Proceeds (EUR)",    _eur(meta.get("total_proceeds_eur")), _EUR_FMT),
-        ("Target Met",              meta.get("target_met"), None),
+        ("Proceeds within Horizon (EUR)", _eur(meta.get("proceeds_within_horizon_eur")), _EUR_FMT),
+        (_met_lbl,                  meta.get("target_met"), None),
+        ("Met Eventually",          meta.get("met_eventually"), None),
         ("Days to Target",          meta.get("days_to_target"), None),
         ("Residual Shortfall (EUR)", _eur(meta.get("residual_shortfall_eur")), _EUR_FMT),
         ("NAV Before (EUR)",        _eur(meta.get("nav_before")), _EUR_FMT),
@@ -468,7 +472,7 @@ def _build_waterfall(wb: openpyxl.Workbook, r: dict) -> None:
     ]
     for i, (label, val, fmt) in enumerate(meta_rows):
         fill = _ALT_FILL if i % 2 == 0 else None
-        is_breach = label == "Target Met" and val is False
+        is_breach = label == _met_lbl and val is False
         if is_breach:
             fill = _RED_FILL
         _cell(ws, row, 1, label, bold=True, fill=fill)
