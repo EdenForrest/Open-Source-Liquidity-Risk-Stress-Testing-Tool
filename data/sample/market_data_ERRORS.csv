@@ -1,0 +1,3 @@
+portfolio,isin,ric,asset_class_hint,currency,fetch_errors
+SYN-EQUITY,GB1284067730,RIRTV.PA,listed_equity,GBP,adv_missing
+SYN-LEVERAGED,IT4878980760,IT4878980760=,government_bond,EUR,stale_price
