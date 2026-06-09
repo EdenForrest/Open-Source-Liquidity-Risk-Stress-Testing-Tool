@@ -14,18 +14,20 @@ from __future__ import annotations
 
 import io
 import zipfile
-from typing import List, Optional
+from typing import Optional
 
-import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, Field, model_validator
 
 from backend import store
-from liquidity_risk_tool.config.settings import (
-    AIFMD2_MIN_LMT_COUNT,
-    SELECTABLE_TOOLS,
+from backend.schemas.analysis import (
+    CustomScenarioRequest,
+    LMTSimRequest,
+    LmtConfig,  # noqa: F401  (kept importable from this module for back-compat)
+    ReverseStressRequest,
+    WaterfallOptimiseRequest,
 )
+from backend.services import stress_service
 
 router = APIRouter(tags=["analysis"])
 
@@ -296,61 +298,6 @@ def export_all(run_id: str, format: str = Query(default="excel")):
 # AIFMD II LMT Impact Simulator
 # ---------------------------------------------------------------------------
 
-class LmtConfig(BaseModel):
-    """
-    Typed AIFMD II LMT configuration with server-side compliance enforcement.
-
-    All cost params are fractions in [0, 1]; day params are >= 0. The
-    ``model_validator`` enforces the two MODEL.md §20.4 rules:
-      1. at least ``AIFMD2_MIN_LMT_COUNT`` selectable LMTs active (suspension /
-         side_pockets are always-available and do not count — only
-         ``SELECTABLE_TOOLS`` are counted), and
-      2. swing_pricing and dual_pricing are mutually exclusive.
-    Violations raise a ``ValueError`` → FastAPI returns HTTP 422.
-
-    ``dual_spread_frac`` is the canonical bid-spread key; ``dual_spread_bps`` is
-    still accepted as a backward-compatible alias (also a fraction on the wire).
-    """
-
-    model_config = {"extra": "allow"}
-
-    active_tools: List[str] = Field(default_factory=list)
-    gate_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    suspension_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    swing_threshold: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    swing_factor_max: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    adl_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    fee_rate: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    notice_extension_days: Optional[int] = Field(default=None, ge=0)
-    in_kind_pct: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    dual_spread_frac: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    dual_spread_bps: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-
-    @model_validator(mode="after")
-    def _enforce_aifmd2_rules(self) -> "LmtConfig":
-        # Rule 1: at least AIFMD2_MIN_LMT_COUNT *selectable* LMTs must be active.
-        selectable = {t for t in self.active_tools if t in SELECTABLE_TOOLS}
-        if len(selectable) < AIFMD2_MIN_LMT_COUNT:
-            raise ValueError(
-                f"AIFMD II requires at least {AIFMD2_MIN_LMT_COUNT} selectable LMTs "
-                f"active (suspension and side_pockets are always-available and do "
-                f"not count); got {sorted(selectable)} from {self.active_tools}."
-            )
-        # Rule 2: swing_pricing and dual_pricing are mutually exclusive.
-        if "swing_pricing" in self.active_tools and "dual_pricing" in self.active_tools:
-            raise ValueError(
-                "swing_pricing and dual_pricing are mutually exclusive anti-dilution "
-                "tools — activate at most one."
-            )
-        return self
-
-
-class LMTSimRequest(BaseModel):
-    lmt_config: LmtConfig = Field(default_factory=LmtConfig)
-    scenarios: Optional[List[float]] = None
-    portfolio: Optional[str] = None
-
-
 @router.post("/run/{run_id}/lmt-simulate")
 def lmt_simulate(run_id: str, body: LMTSimRequest):
     """
@@ -361,87 +308,14 @@ def lmt_simulate(run_id: str, body: LMTSimRequest):
     enforces the AIFMD II §20.4 compliance rules (≥2 selectable LMTs active;
     swing_pricing / dual_pricing mutually exclusive) and range-checks every
     fraction param. Violations return HTTP 422.
-
-    lmt_config keys (all optional):
-      active_tools          list[str]  — tool names to activate
-      gate_threshold        float      — fraction of NAV (default 0.10)
-      suspension_threshold  float      — fraction of NAV (default 0.25)
-      swing_threshold       float      — fraction of NAV that triggers swing/ADL
-      swing_factor_max      float      — max swing factor (fraction)
-      adl_rate              float      — ADL as fraction of NAV (e.g. 0.005)
-      fee_rate              float      — redemption fee as fraction (e.g. 0.002)
-      notice_extension_days int        — extra days before cash due
-      in_kind_pct           float      — fraction met via asset transfer (0–1)
-      dual_spread_frac      float      — bid spread applied to redemption price
-                                         (alias: dual_spread_bps, also a fraction)
     """
-    from liquidity_risk_tool.engines.redemption_simulator import RedemptionSimulator
-    from liquidity_risk_tool.models.position import Portfolio
-
     r = _portfolio_results(run_id, body.portfolio)
-
-    normal_buckets = pd.DataFrame(r["position_buckets"])
-    stress_buckets_raw = r.get("stress_position_buckets") or r.get("position_buckets")
-    stress_buckets = pd.DataFrame(stress_buckets_raw)
-
-    # Reconstruct minimal Portfolio stub — simulator only needs total_nav + concentration
-    class _PortfolioStub:
-        total_nav = r["total_nav_eur"]
-        top_10_investor_concentration = r.get("top_10_concentration", 0.30)
-
-    lmt_config_dict = body.lmt_config.model_dump(exclude_none=True)
-
-    sim = RedemptionSimulator(
-        portfolio=_PortfolioStub(),  # type: ignore[arg-type]
-        liquid_profile=normal_buckets,
-        stress_profile=stress_buckets,
-        lmt_config=lmt_config_dict,
-    )
-
-    from backend.services.pipeline_service import _clean_records
-
-    normal_df = sim.run(scenarios=body.scenarios, stress=False)
-    stress_df  = sim.run(scenarios=body.scenarios, stress=True)
-
-    return {
-        "normal":            _clean_records(normal_df.to_dict(orient="records")),
-        "stress":            _clean_records(stress_df.to_dict(orient="records")),
-        "lmt_config_applied": lmt_config_dict,
-    }
+    return stress_service.run_lmt_simulation(r, body.lmt_config, scenarios=body.scenarios)
 
 
 # ---------------------------------------------------------------------------
 # Custom stress scenario
 # ---------------------------------------------------------------------------
-
-class CustomScenarioRequest(BaseModel):
-    """
-    A user-defined stress scenario. Field semantics mirror ``StressScenario``:
-
-      equity_shock                multiplicative price shock on equities/ETFs,
-                                  e.g. -0.10 == -10% (range [-1, 1]).
-      credit_spread_shock_bps     additive credit-spread widening in basis points.
-      rate_shock_bps              parallel rate shift applied to government bonds.
-      liquidity_haircut_multiplier  uplift on stress haircuts (1.0 == no uplift).
-      redemption_rate             fraction of NAV redeemed in the scenario (0–1).
-      adv_stress_scalar           ADV collapse: 0.5 == 50% of normal volume.
-
-    The scenario is run via the StressEngine against a freshly re-loaded
-    portfolio (the engine reprices real positions, so a results-only stub will
-    not do), and the resulting ScenarioResult + parameter metadata are returned
-    in the same shape as the pipeline's ``stress_results`` / ``scenario_metadata``
-    so the UI can append them to the existing tables.
-    """
-
-    name: str = Field(default="Custom Scenario", min_length=1, max_length=80)
-    equity_shock: float = Field(default=0.0, ge=-1.0, le=1.0)
-    credit_spread_shock_bps: int = Field(default=0, ge=0, le=10000)
-    rate_shock_bps: int = Field(default=0, ge=-10000, le=10000)
-    liquidity_haircut_multiplier: float = Field(default=1.0, ge=1.0, le=20.0)
-    redemption_rate: float = Field(default=0.05, ge=0.0, le=1.0)
-    adv_stress_scalar: float = Field(default=1.0, gt=0.0, le=5.0)
-    portfolio: Optional[str] = None
-
 
 @router.post("/run/{run_id}/custom-scenario")
 def custom_scenario(run_id: str, body: CustomScenarioRequest):
@@ -456,89 +330,24 @@ def custom_scenario(run_id: str, body: CustomScenarioRequest):
     persisted on the originating run. Requires those source paths to still
     exist on disk (they are retained for the process lifetime).
     """
-    from pathlib import Path
-
-    from liquidity_risk_tool.config.settings import StressScenario
-    from liquidity_risk_tool.engines.stress_engine import StressEngine
-    from liquidity_risk_tool.models.csv_loader import (
-        load_portfolio_from_csv,
-        enrich_portfolio_from_market_data,
-    )
-    from backend.services.pipeline_service import _clean_dict
-
     # Validate the run exists & is complete, and resolve the portfolio code.
-    r = _portfolio_results(run_id, body.portfolio)
+    _portfolio_results(run_id, body.portfolio)
     codes: list[str] = _require_complete(run_id).get("portfolio_codes", [])
     code = body.portfolio or (codes[0] if codes else None)
-
     record = store.get(run_id)
-    holdings_path = getattr(record, "holdings_path", None) if record else None
-    nav_path = getattr(record, "nav_path", None) if record else None
-    market_data_path = getattr(record, "market_data_path", None) if record else None
-
-    if not holdings_path or not nav_path or not Path(holdings_path).exists() or not Path(nav_path).exists():
-        raise HTTPException(
-            status_code=409,
-            detail="Source portfolio files for this run are no longer available. "
-            "Re-run the pipeline (upload or demo) before creating a custom scenario.",
-        )
 
     try:
-        portfolio = load_portfolio_from_csv(holdings_path, nav_path, portfolio_code=code)
-        if market_data_path and Path(market_data_path).exists():
-            enrich_portfolio_from_market_data(portfolio, Path(market_data_path))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to re-load portfolio: {exc}") from exc
-
-    scenario = StressScenario(
-        name=body.name,
-        equity_shock=body.equity_shock,
-        credit_spread_shock_bps=body.credit_spread_shock_bps,
-        liquidity_haircut_multiplier=body.liquidity_haircut_multiplier,
-        redemption_rate=body.redemption_rate,
-        adv_stress_scalar=body.adv_stress_scalar,
-        rate_shock_bps=body.rate_shock_bps,
-        description="User-defined custom stress scenario.",
-        regulatory_basis="User-defined - not a prescribed regulatory scenario",
-    )
-
-    try:
-        results = StressEngine(portfolio, scenarios=[scenario]).run_detail()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Stress run failed: {exc}") from exc
-
-    if not results:
-        raise HTTPException(status_code=500, detail="Stress run produced no result")
-
-    result = results[0]
-
-    scenario_meta = {
-        "name": scenario.name,
-        "equity_shock": scenario.equity_shock,
-        "credit_spread_shock_bps": scenario.credit_spread_shock_bps,
-        "rate_shock_bps": scenario.rate_shock_bps,
-        "liquidity_haircut_multiplier": scenario.liquidity_haircut_multiplier,
-        "redemption_rate": scenario.redemption_rate,
-        "adv_stress_scalar": scenario.adv_stress_scalar,
-        "description": scenario.description,
-        "regulatory_basis": scenario.regulatory_basis,
-        "is_worst_case": scenario.is_worst_case,
-        "version": scenario.version,
-    }
-
-    return {
-        "stress_result": _clean_dict(result.to_dict()),
-        "scenario_metadata": _clean_dict(scenario_meta),
-    }
+        return stress_service.run_custom_scenario(record, code, body)
+    except stress_service.PortfolioUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (stress_service.PortfolioLoadError, stress_service.StressRunError,
+            stress_service.EmptyStressResult) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
 # Reverse stress (multi-parameter breach search) — on demand only
 # ---------------------------------------------------------------------------
-
-class ReverseStressRequest(BaseModel):
-    portfolio: Optional[str] = None
-
 
 @router.post("/run/{run_id}/reverse-stress")
 def reverse_stress(run_id: str, body: ReverseStressRequest):
@@ -557,79 +366,18 @@ def reverse_stress(run_id: str, body: ReverseStressRequest):
     reachable), ``found`` is False and ``stress_result`` / ``scenario_metadata``
     are null — a meaningful resilience result, not an error.
     """
-    from pathlib import Path
-
-    from liquidity_risk_tool.engines.stress_engine import StressEngine
-    from liquidity_risk_tool.engines.reverse_stress_engine import ReverseStressEngine
-    from liquidity_risk_tool.models.csv_loader import (
-        load_portfolio_from_csv,
-        enrich_portfolio_from_market_data,
-    )
-    from backend.services.pipeline_service import _clean_dict
-
     # Validate the run exists & is complete, and resolve the portfolio code.
     _portfolio_results(run_id, body.portfolio)
     codes: list[str] = _require_complete(run_id).get("portfolio_codes", [])
     code = body.portfolio or (codes[0] if codes else None)
-
     record = store.get(run_id)
-    holdings_path = getattr(record, "holdings_path", None) if record else None
-    nav_path = getattr(record, "nav_path", None) if record else None
-    market_data_path = getattr(record, "market_data_path", None) if record else None
-
-    if not holdings_path or not nav_path or not Path(holdings_path).exists() or not Path(nav_path).exists():
-        raise HTTPException(
-            status_code=409,
-            detail="Source portfolio files for this run are no longer available. "
-            "Re-run the pipeline (upload or demo) before running reverse stress.",
-        )
 
     try:
-        portfolio = load_portfolio_from_csv(holdings_path, nav_path, portfolio_code=code)
-        if market_data_path and Path(market_data_path).exists():
-            enrich_portfolio_from_market_data(portfolio, Path(market_data_path))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to re-load portfolio: {exc}") from exc
-
-    try:
-        stress_engine = StressEngine(portfolio)
-        scenario, scenario_result, reverse_result = ReverseStressEngine(stress_engine).run()
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Reverse stress run failed: {exc}") from exc
-
-    if scenario is None or scenario_result is None:
-        # Robust across the plausible box — no breach found.
-        return {
-            "found": False,
-            "stress_result": None,
-            "scenario_metadata": None,
-            "reverse_result": _clean_dict(reverse_result.to_dict()),
-        }
-
-    scenario_meta = {
-        "name": scenario.name,
-        "equity_shock": scenario.equity_shock,
-        "credit_spread_shock_bps": scenario.credit_spread_shock_bps,
-        "rate_shock_bps": scenario.rate_shock_bps,
-        "liquidity_haircut_multiplier": scenario.liquidity_haircut_multiplier,
-        "redemption_rate": scenario.redemption_rate,
-        "adv_stress_scalar": scenario.adv_stress_scalar,
-        "description": scenario.description,
-        "regulatory_basis": scenario.regulatory_basis,
-        "is_worst_case": scenario.is_worst_case,
-        "version": getattr(scenario, "version", ""),
-    }
-
-    return {
-        "found": True,
-        "stress_result": _clean_dict(scenario_result.to_dict()),
-        "scenario_metadata": _clean_dict(scenario_meta),
-        "reverse_result": _clean_dict(reverse_result.to_dict()),
-    }
-
-
-class WaterfallOptimiseRequest(BaseModel):
-    portfolio: Optional[str] = None
+        return stress_service.run_reverse_stress(record, code)
+    except stress_service.PortfolioUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (stress_service.PortfolioLoadError, stress_service.StressRunError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/run/{run_id}/waterfall-optimise")
@@ -647,51 +395,9 @@ def waterfall_optimise(run_id: str, body: WaterfallOptimiseRequest):
     (``waterfall_meta``, ``waterfall``, ``waterfall_summary``) plus
     ``optimiser: "lp"`` so the caller can label the active schedule.
     """
-    from liquidity_risk_tool.engines.waterfall_engine import WaterfallEngine
-    from backend.services.pipeline_service import _clean_records, _clean_dict
-
     r = _portfolio_results(run_id, body.portfolio)
 
-    stress_buckets_raw = r.get("stress_position_buckets") or r.get("position_buckets")
-    stress_buckets = pd.DataFrame(stress_buckets_raw)
-
-    target_eur = (r.get("waterfall_meta") or {}).get("target_eur")
-    if target_eur is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No stored waterfall target for this run — run the pipeline first.",
-        )
-
-    # Reconstruct minimal Portfolio stub — the engine only reads total_nav.
-    class _PortfolioStub:
-        total_nav = r["total_nav_eur"]
-
-    engine = WaterfallEngine(
-        portfolio=_PortfolioStub(),  # type: ignore[arg-type]
-        profile=stress_buckets,
-        stress=True,
-    )
-    result = engine.run_lp_optimised(float(target_eur))
-
-    return {
-        "optimiser": "lp",
-        "waterfall_meta": _clean_dict({
-            "target_eur": result.target_eur,
-            "total_proceeds_eur": result.total_proceeds_eur,
-            "target_met": result.target_met,
-            "days_to_target": result.days_to_target,
-            "residual_shortfall_eur": result.residual_shortfall_eur,
-            "settlement_days": result.settlement_days,
-            "proceeds_within_horizon_eur": result.proceeds_within_horizon_eur,
-            "met_eventually": result.met_eventually,
-            "nav_before": result.nav_before,
-            "nav_after": result.nav_after,
-            "nav_impact_pct": result.nav_impact_pct,
-        }),
-        "waterfall": _clean_records(
-            result.sell_schedule_df().to_dict(orient="records")
-        ),
-        "waterfall_summary": _clean_records(
-            result.daily_summary_df().to_dict(orient="records")
-        ),
-    }
+    try:
+        return stress_service.run_waterfall_optimise(r)
+    except stress_service.MissingWaterfallTarget as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
