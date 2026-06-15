@@ -32,9 +32,6 @@ from ..config.settings import (
 # Asset classes treated as originated loans for loan-origination AIF detection
 _LOAN_ASSET_CLASSES = {"originated_loan", "loan"}
 
-# Asset classes with derivative-like exposure that are already at notional in MV
-_DERIVATIVE_CLASSES = {"option", "future"}
-
 
 @dataclass
 class LeverageResult:
@@ -121,14 +118,24 @@ class LeverageEngine:
         """
         Approximate commitment method: exclude locked illiquid positions
         (e.g. private equity, real estate) that cannot be hedged or netted,
-        and treat derivatives at their absolute notional.
+        and treat derivatives at their absolute (delta-equivalent) notional.
         This is a conservative approximation — a full commitment calculation
         requires trade-level netting agreements not available in the CSV model.
         """
         if nav <= 0:
             return float("inf")
-        # Locked positions (closed-end lock-ups) are excluded from commitment netting
-        netted = df[~df["is_locked"]]["market_value_eur"].abs().sum()
+        # Locked positions (closed-end lock-ups) are excluded from commitment netting.
+        live = df[~df["is_locked"]]
+        # Use the same notional basis as the Gross Method: exposure_base where
+        # populated (a future/option whose MV is just margin), else market_value.
+        # Without this, a leveraged derivative book understates commitment
+        # leverage exactly as the gross method would, since both reduce to |MV|.
+        if "exposure_base" in live.columns:
+            exp = pd.to_numeric(live["exposure_base"], errors="coerce")
+            notional = exp.where(exp.notna() & (exp.abs() > 0), live["market_value_eur"])
+        else:
+            notional = live["market_value_eur"]
+        netted = notional.abs().sum()
         return netted / nav
 
     # ------------------------------------------------------------------

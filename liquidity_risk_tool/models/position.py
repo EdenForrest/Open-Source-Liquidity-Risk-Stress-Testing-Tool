@@ -6,6 +6,7 @@ fund-level metadata (NAV, share class details, investor base).
 """
 from __future__ import annotations
 
+import math
 import warnings
 from dataclasses import dataclass, field
 from typing import Optional
@@ -56,6 +57,15 @@ class Position:
     # ISO 3166-1 alpha-2 country code derived from ISIN prefix (e.g. "DE", "US")
     country: Optional[str] = None
 
+    def __post_init__(self):
+        # Normalise identifiers only; domain-constraint checks live in
+        # engines.validators so invalid positions can be collected and reported
+        # in bulk rather than failing one at a time at construction.
+        self.isin = (self.isin or "").strip()
+        self.name = (self.name or "").strip()
+        self.asset_class = (self.asset_class or "").strip()
+        self.currency = (self.currency or "EUR").strip().upper() or "EUR"
+
     @property
     def effective_convexity(self) -> float:
         if self.convexity is not None:
@@ -69,11 +79,17 @@ class Position:
         return self.market_value
 
     def days_to_liquidate(self, adv_participation: float = 0.20) -> float:
-        """Estimate calendar days to fully liquidate using ADV constraint."""
-        if self.adv_30d <= 0:
+        """Estimate calendar days to fully liquidate using ADV constraint.
+
+        Uses absolute market value so short positions (negative MV) report
+        the days needed to close out, never a negative duration.
+        """
+        if adv_participation <= 0:
+            raise ValueError(f"adv_participation must be > 0, got {adv_participation}")
+        if not math.isfinite(self.adv_30d) or self.adv_30d <= 0:
             return float("inf")
         daily_capacity = self.adv_30d * adv_participation
-        trading_days = self.market_value_eur / daily_capacity
+        trading_days = abs(self.market_value_eur) / daily_capacity
         if self.is_locked:
             lock_delay = self.lock_expiry_days if self.lock_expiry_days is not None else float("inf")
             return lock_delay + trading_days
@@ -89,15 +105,20 @@ class ShareClass:
     redemption_frequency: str = "daily"  # daily, weekly, monthly
 
     def __post_init__(self):
-        if self.nav_per_share <= 0:
+        if not math.isfinite(self.nav_per_share) or self.nav_per_share <= 0:
             raise ValueError(
-                f"ShareClass '{self.name}': nav_per_share must be positive, "
+                f"ShareClass '{self.name}': nav_per_share must be a positive finite number, "
                 f"got {self.nav_per_share}"
             )
-        if self.shares_outstanding < 0:
+        if not math.isfinite(self.shares_outstanding) or self.shares_outstanding < 0:
             raise ValueError(
-                f"ShareClass '{self.name}': shares_outstanding cannot be negative, "
-                f"got {self.shares_outstanding}"
+                f"ShareClass '{self.name}': shares_outstanding must be a non-negative finite "
+                f"number, got {self.shares_outstanding}"
+            )
+        if self.notice_period_days < 0:
+            raise ValueError(
+                f"ShareClass '{self.name}': notice_period_days cannot be negative, "
+                f"got {self.notice_period_days}"
             )
 
     @property
@@ -119,6 +140,22 @@ class Portfolio:
     top_10_investor_concentration: float = 0.40
 
     def __post_init__(self):
+        if not isinstance(self.reporting_date, pd.Timestamp):
+            try:
+                self.reporting_date = pd.Timestamp(self.reporting_date)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(
+                    f"Portfolio '{self.fund_name}': cannot parse reporting_date "
+                    f"{self.reporting_date!r}: {exc}"
+                ) from exc
+        if pd.isna(self.reporting_date):
+            raise ValueError(f"Portfolio '{self.fund_name}': reporting_date is NaT")
+        conc = self.top_10_investor_concentration
+        if not math.isfinite(conc) or not (0.0 <= conc <= 1.0):
+            raise ValueError(
+                f"Portfolio '{self.fund_name}': top_10_investor_concentration must be "
+                f"a fraction in [0, 1], got {conc}"
+            )
         self._positions_df_cache: Optional[pd.DataFrame] = None
         self._refresh_weights()
         self._check_nav_drift()
@@ -154,9 +191,21 @@ class Portfolio:
             return sum(sc.total_nav for sc in self.share_classes)
         return sum(p.market_value_eur for p in self.positions)
 
+    _DF_COLUMNS = (
+        "isin", "name", "asset_class", "market_value_eur", "weight", "currency",
+        "adv_30d", "bid_ask_spread_bps", "duration", "credit_spread_bps", "rating",
+        "beta", "fx_rate", "is_locked", "lock_expiry_days", "bucket_override",
+        "convexity", "effective_convexity", "settlement_days", "is_government",
+        "exposure_base", "country",
+    )
+
     @property
     def positions_df(self) -> pd.DataFrame:
-        """Flat DataFrame view of all positions (cached until weights refresh)."""
+        """Flat DataFrame view of all positions (cached until weights refresh).
+
+        Always carries the full column set, even when the portfolio is empty,
+        so downstream column access never raises KeyError.
+        """
         if self._positions_df_cache is not None:
             return self._positions_df_cache
         rows = []
@@ -185,5 +234,5 @@ class Portfolio:
                 "exposure_base":      p.exposure_base,
                 "country":            p.country,
             })
-        self._positions_df_cache = pd.DataFrame(rows)
+        self._positions_df_cache = pd.DataFrame(rows, columns=list(self._DF_COLUMNS))
         return self._positions_df_cache

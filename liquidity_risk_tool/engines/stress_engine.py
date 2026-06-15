@@ -18,7 +18,8 @@ Shock types modelled
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass, field
+import math
+from dataclasses import dataclass, field, replace
 from typing import List, Optional
 
 import pandas as pd
@@ -55,13 +56,29 @@ class ScenarioResult:
     nav_impact_pct: float
     equity_loss_eur: float
     credit_loss_eur: float
-    liquid_pct_before: float    # % liquid in T0-T1 pre-stress
-    liquid_pct_after: float     # % liquid in T0-T1 post-stress
+    liquid_pct_before: float    # % liquid in T0-T1 pre-stress  (÷ nav_before)
+    liquid_pct_after: float     # % liquid in T0-T1 post-stress (÷ nav_after — ESMA basis)
     time_to_liquidate_days: float
     redemption_pct: float       # redemption rate in scenario
     can_meet_redemption: bool
     liquidity_loss_eur: float = 0.0   # loss attributable to haircut uplift
     rate_loss_eur: float = 0.0        # loss attributable to parallel rate shock on gov bonds
+    derivative_loss_eur: float = 0.0  # loss on leveraged derivatives (options/futures) under the equity shock
+    # Absolute realisable EUR in the T0-T1 horizon, before and after the shock.
+    # liquid_pct_after divides by the (shrunken) post-shock NAV, which is the
+    # ESMA reporting basis but is NOT comparable to liquid_pct_before: a NAV
+    # crash inflates the share of any unshocked liquidity (e.g. cash), so the
+    # stressed % can RISE even as the fund's real liquidity falls. These EUR
+    # figures and liquid_pct_after_vs_before are the like-for-like comparison.
+    liquid_eur_before: float = 0.0
+    liquid_eur_after: float = 0.0
+    # liquid_after measured against the SAME denominator as liquid_before
+    # (nav_before), so the two are directly comparable.
+    liquid_pct_after_vs_before: float = 0.0
+    # Carried from the source StressScenario so downstream consumers (Annex IV
+    # validation, reporting) can identify the regulator-mandated worst case
+    # without re-deriving it from nav_impact. ESMA's "Severe Combined" sets this.
+    is_worst_case: bool = False
     position_detail: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def to_dict(self) -> dict:
@@ -87,6 +104,9 @@ class StressEngine:
     GOVERNMENT_BOND_CLASSES = {"government_bond"}
     CREDIT_BOND_CLASSES     = {"ig_corporate_bond", "hy_corporate_bond", "structured_credit", "money_market"}
     BOND_ASSET_CLASSES      = GOVERNMENT_BOND_CLASSES | CREDIT_BOND_CLASSES
+    # Linear derivatives repriced off the equity shock on their economic
+    # exposure (exposure_base), not their (near-zero / margin) market value.
+    DERIVATIVE_ASSET_CLASSES = {"option", "future"}
 
     def __init__(
         self,
@@ -134,6 +154,7 @@ class StressEngine:
             spread_shock_bps=scenario.credit_spread_shock_bps,
             rate_shock_bps=scenario.rate_shock_bps,
         )
+        df, derivative_loss = self._shock_derivatives(df, scenario.equity_shock)
 
         equity_loss = (
             df.loc[df["asset_class"].isin(self.EQUITY_ASSET_CLASSES), "shocked_mv"].sum()
@@ -161,23 +182,40 @@ class StressEngine:
         profiler_pre = LiquidityProfiler(
             self.portfolio, stress=False, adv_stress_scalar=1.0
         ).run()
-        liquid_before = self._liquidity_at_horizon_df(
-            profiler_pre.position_buckets, 1, nav_before
-        )
-        # liquid_after: shocked portfolio under stressed conditions (post-shock, compressed ADV + multiplied haircuts)
-        liquid_after  = self._liquidity_at_horizon_df(stressed_profile, 1, nav_after)
+        # Absolute realisable EUR in the T0-T1 horizon — the like-for-like basis.
+        liquid_eur_before = liquidity_at_horizon(profiler_pre.position_buckets, 1)
+        liquid_eur_after  = liquidity_at_horizon(stressed_profile, 1)
+        liquid_before = safe_divide(liquid_eur_before, nav_before)
+        # liquid_after: shocked portfolio under stressed conditions (post-shock, compressed ADV + multiplied haircuts).
+        # Divided by nav_after — the ESMA reporting basis (stressed liquidity vs stressed NAV).
+        liquid_after  = safe_divide(liquid_eur_after, nav_after)
+        # Same numerator measured against nav_before, so it can be compared
+        # directly to liquid_before without the shrinking-denominator artefact.
+        liquid_after_vs_before = safe_divide(liquid_eur_after, nav_before)
 
-        # 3. Waterfall to meet redemption
-        redemption_eur = nav_after * scenario.redemption_rate
+        # 3. Waterfall to meet redemption.
+        # Under an extreme shock a *leveraged* book can have its NAV wiped out
+        # entirely (shocked_mv sums to ≤ 0). A redemption is a claim on positive
+        # net assets, so a non-positive NAV means the fund is already insolvent —
+        # it cannot honour any redemption. Clamp the target to 0 (the waterfall
+        # rejects a negative target) and let target_met decide: with no positive
+        # NAV to redeem against, a non-trivial redemption_rate is unmeetable, which
+        # is exactly the breach a reverse stress search must be able to locate
+        # rather than crash on.
+        redemption_eur = max(nav_after, 0.0) * scenario.redemption_rate
         waterfall = WaterfallEngine(shocked_portfolio, stressed_profile, stress=True)
         wf_result = waterfall.run(redemption_eur)
+        # An insolvent book that owes a redemption cannot meet it regardless of how
+        # the (degenerate) waterfall scores a near-zero target.
+        if nav_after <= 0.0 and scenario.redemption_rate > 0.0:
+            wf_result = replace(wf_result, target_met=False)
 
         return ScenarioResult(
             scenario_name          = scenario.name,
             nav_before             = nav_before,
             nav_after_shock        = nav_after,
             nav_impact_eur         = nav_impact,
-            nav_impact_pct         = nav_impact / nav_before,
+            nav_impact_pct         = safe_divide(nav_impact, nav_before),
             equity_loss_eur        = equity_loss,
             credit_loss_eur        = credit_loss,
             liquid_pct_before      = liquid_before,   # already a fraction from liquidity_at_horizon
@@ -187,6 +225,11 @@ class StressEngine:
             can_meet_redemption    = wf_result.target_met,
             liquidity_loss_eur     = liquidity_loss,
             rate_loss_eur          = rate_loss,
+            derivative_loss_eur    = derivative_loss,
+            liquid_eur_before      = liquid_eur_before,
+            liquid_eur_after       = liquid_eur_after,
+            liquid_pct_after_vs_before = liquid_after_vs_before,
+            is_worst_case          = getattr(scenario, "is_worst_case", False),
             position_detail        = stressed_profile,
         )
 
@@ -195,10 +238,15 @@ class StressEngine:
     # ------------------------------------------------------------------
 
     def _shock_equities(self, df: pd.DataFrame, shock: float) -> pd.DataFrame:
-        df["shocked_mv"] = df["market_value_eur"].copy()
+        # Cast to float: integer market values would give shocked_mv an int64
+        # dtype, and assigning float shocks into an int column truncates (and
+        # is deprecated by pandas).
+        df["shocked_mv"] = df["market_value_eur"].astype(float)
         mask = df["asset_class"].isin(self.EQUITY_ASSET_CLASSES)
         if mask.any():
-            beta = df.loc[mask, "beta"].fillna(1.0)
+            # to_numeric first: beta defaults to None, so the column can be
+            # object-dtype, where fillna would emit a downcasting FutureWarning.
+            beta = pd.to_numeric(df.loc[mask, "beta"], errors="coerce").fillna(1.0)
             price_return = (shock * beta).clip(lower=-EQUITY_SHOCK_MAX_LOSS)
             df.loc[mask, "shocked_mv"] = df.loc[mask, "market_value_eur"] * (1 + price_return)
         return df
@@ -217,7 +265,7 @@ class StressEngine:
         Returns (df, total_credit_loss_eur, total_rate_loss_eur).
         """
         if "shocked_mv" not in df.columns:
-            df["shocked_mv"] = df["market_value_eur"].copy()
+            df["shocked_mv"] = df["market_value_eur"].astype(float)
 
         rate_dy = rate_shock_bps / 10_000
         spread_dy = spread_shock_bps / 10_000
@@ -230,35 +278,95 @@ class StressEngine:
             mask = df["asset_class"] == ac
             if not mask.any():
                 continue
-            dur = df.loc[mask, "duration"].fillna(DURATION_BY_ASSET_CLASS.get(ac, 3.0))
-            cvx = df.loc[mask, "effective_convexity"].fillna(0.0)
+            dur = pd.to_numeric(df.loc[mask, "duration"], errors="coerce").fillna(
+                DURATION_BY_ASSET_CLASS.get(ac, 3.0))
+            cvx = pd.to_numeric(df.loc[mask, "effective_convexity"],
+                                errors="coerce").fillna(0.0)
             dy = rate_dy
             price_change_pct = -dur * dy + 0.5 * cvx * (dy ** 2)
             mv_before = df.loc[mask, "shocked_mv"].copy()
             df.loc[mask, "shocked_mv"] = mv_before * (1 + price_change_pct)
             total_rate_loss += (df.loc[mask, "shocked_mv"] - mv_before).sum()
 
-        # Credit bonds: rate shock + spread shock
+        # Credit bonds: rate shock + spread shock. The MV reprices on the
+        # combined move; for attribution, the rate-only repricing books to
+        # rate loss and the incremental spread effect (including the
+        # rate×spread convexity cross-term) books to credit loss, so the two
+        # components sum exactly to the total ΔMV.
         for ac in self.CREDIT_BOND_CLASSES:
             mask = df["asset_class"] == ac
             if not mask.any():
                 continue
-            dur = df.loc[mask, "duration"].fillna(DURATION_BY_ASSET_CLASS.get(ac, 3.0))
-            cvx = df.loc[mask, "effective_convexity"].fillna(0.0)
+            dur = pd.to_numeric(df.loc[mask, "duration"], errors="coerce").fillna(
+                DURATION_BY_ASSET_CLASS.get(ac, 3.0))
+            cvx = pd.to_numeric(df.loc[mask, "effective_convexity"],
+                                errors="coerce").fillna(0.0)
             dy = rate_dy + spread_dy
             price_change_pct = -dur * dy + 0.5 * cvx * (dy ** 2)
+            rate_only_pct = -dur * rate_dy + 0.5 * cvx * (rate_dy ** 2)
             mv_before = df.loc[mask, "shocked_mv"].copy()
             df.loc[mask, "shocked_mv"] = mv_before * (1 + price_change_pct)
-            total_credit_loss += (df.loc[mask, "shocked_mv"] - mv_before).sum()
+            total_rate_loss += (mv_before * rate_only_pct).sum()
+            total_credit_loss += (mv_before * (price_change_pct - rate_only_pct)).sum()
 
         return df, total_credit_loss, total_rate_loss
+
+    def _shock_derivatives(
+        self, df: pd.DataFrame, equity_shock: float
+    ) -> tuple[pd.DataFrame, float]:
+        """Reprice linear derivatives (options/futures) under the equity shock.
+
+        A derivative's market_value_eur is its mark-to-market / margin balance,
+        which is near zero at inception and does NOT reflect the economic
+        exposure being shocked. The P&L of an index future or delta-one option
+        is driven by its notional (exposure_base), so:
+
+            loss = equity_shock * beta * exposure
+            shocked_mv = market_value_eur + loss
+
+        exposure_base falls back to market_value_eur where it is missing/zero
+        (a derivative carried at full notional). A negative exposure_base is a
+        short hedge: it GAINS when the market falls, correctly offsetting long
+        book losses. Without this, leveraged derivatives showed zero stress P&L.
+        """
+        if "shocked_mv" not in df.columns:
+            df["shocked_mv"] = df["market_value_eur"].astype(float)
+
+        mask = df["asset_class"].isin(self.DERIVATIVE_ASSET_CLASSES)
+        if not mask.any():
+            return df, 0.0
+
+        exp = pd.to_numeric(df.loc[mask, "exposure_base"], errors="coerce")
+        mv = df.loc[mask, "market_value_eur"].astype(float)
+        # Economic notional: exposure_base where populated and non-zero, else MV.
+        exposure = exp.where(exp.notna() & (exp.abs() > 0), mv)
+        beta = pd.to_numeric(df.loc[mask, "beta"], errors="coerce").fillna(1.0)
+        price_return = (equity_shock * beta).clip(lower=-EQUITY_SHOCK_MAX_LOSS)
+        loss = exposure * price_return
+        df.loc[mask, "shocked_mv"] = mv + loss
+        return df, float(loss.sum())
 
     def _apply_haircut_multiplier(
         self, profile: pd.DataFrame, multiplier: float
     ) -> pd.DataFrame:
         profile = profile.copy()
-        profile["haircut"] = (profile["haircut"] * multiplier).clip(upper=MAX_HAIRCUT)
-        profile["realisable_value"] = profile["market_value_eur"] * (1 - profile["haircut"])
+        # The multiplier is calibrated against regime (stress) haircuts — see
+        # StressScenario.liquidity_haircut_multiplier ("applied on top of
+        # stress haircuts"). The bid-ask half-spread component is an observed
+        # transaction cost, not a regime haircut, so it passes through
+        # unscaled.
+        if "bid_ask_spread_bps" in profile.columns:
+            spread_cost = (profile["bid_ask_spread_bps"] / 2.0 / 10_000).clip(lower=0.0)
+        else:
+            spread_cost = 0.0
+        base = (profile["haircut"] - spread_cost).clip(lower=0.0)
+        profile["haircut"] = (base * multiplier + spread_cost).clip(lower=0.0, upper=MAX_HAIRCUT)
+        # mv - |mv|*h, not mv*(1-h): haircuts must gross UP the cost of closing
+        # negative-MV positions (shorts, overdrafts), mirroring the profiler.
+        profile["realisable_value"] = (
+            profile["market_value_eur"]
+            - profile["market_value_eur"].abs() * profile["haircut"]
+        )
         nav = profile["market_value_eur"].sum()
         profile["realisable_weight"] = safe_divide(profile["realisable_value"], nav)
         return profile
@@ -266,10 +374,24 @@ class StressEngine:
     def _build_shocked_portfolio(self, df: pd.DataFrame) -> Portfolio:
         """Shallow copy of portfolio with shocked market values."""
         shocked = copy.deepcopy(self.portfolio)
-        mv_map = df.set_index("isin")["shocked_mv"].to_dict()
-        for pos in shocked.positions:
-            if pos.isin in mv_map:
-                pos.market_value = mv_map[pos.isin] / pos.fx_rate
+        # positions_df builds rows in self.positions order and the shock helpers
+        # never reorder df, so the shocked_mv column aligns positionally with
+        # shocked.positions. Mapping by ISIN instead would collapse duplicate
+        # ISINs (e.g. two tranches / two lots of the same instrument) to a single
+        # value, mis-stating the shocked NAV of every position sharing that ISIN.
+        if len(df) != len(shocked.positions):
+            # Defensive: fall back to ISIN mapping if the 1:1 row alignment ever
+            # breaks (it should not), accepting the duplicate-collapse risk over
+            # a silent positional mismatch.
+            mv_map = df.set_index("isin")["shocked_mv"].to_dict()
+            for pos in shocked.positions:
+                if pos.isin in mv_map:
+                    pos.market_value = float(mv_map[pos.isin])
+        else:
+            # market_value is already EUR (converted at load); fx_rate is
+            # informational only, so no re-conversion here.
+            for pos, shocked_mv in zip(shocked.positions, df["shocked_mv"]):
+                pos.market_value = float(shocked_mv)
         shocked._refresh_weights()
         return shocked
 
@@ -311,6 +433,26 @@ class StressEngine:
         if target_liquid_pct is None:
             target_liquid_pct = LIQUIDITY_BREACH_THRESHOLD
 
+        valid_parameters = frozenset({
+            "equity_shock",
+            "credit_spread_shock_bps",
+            "adv_stress_scalar",
+            "liquidity_haircut_multiplier",
+            "rate_shock_bps",
+            "redemption_rate",
+        })
+        if shock_parameter not in valid_parameters:
+            raise ValueError(
+                f"Unknown shock_parameter '{shock_parameter}'; "
+                f"expected one of {sorted(valid_parameters)}"
+            )
+        if not (math.isfinite(lo) and math.isfinite(hi) and lo < hi):
+            raise ValueError(
+                f"Search bounds must be finite with lo < hi (got lo={lo}, hi={hi})"
+            )
+        if not (math.isfinite(tolerance) and tolerance > 0):
+            raise ValueError(f"tolerance must be a finite value > 0 (got {tolerance})")
+
         # Start the search from a NEUTRAL (all-zero) scenario so the swept
         # `shock_parameter` is the ONLY shock applied. Previously this deep-copied
         # self.scenarios[-1] (the worst-case scenario), which contaminated the
@@ -341,10 +483,18 @@ class StressEngine:
         for n_iter in range(1, max_iterations + 1):
             mid = (lo + hi) / 2.0
             trial = copy.deepcopy(base_scenario)
+            # The bisection assumes severity is increasing in `mid`, so each
+            # parameter needs an explicit mapping onto its stress direction.
             if shock_parameter == "equity_shock":
                 trial.equity_shock = -mid
             elif shock_parameter == "credit_spread_shock_bps":
                 trial.credit_spread_shock_bps = int(mid * 10_000)
+            elif shock_parameter == "adv_stress_scalar":
+                # Smaller scalar = less volume = more stress.
+                trial.adv_stress_scalar = 1.0 - mid
+            elif shock_parameter == "liquidity_haircut_multiplier":
+                # Multiplier > 1 widens haircuts; values below 1 would be anti-stress.
+                trial.liquidity_haircut_multiplier = 1.0 + mid
             else:
                 setattr(trial, shock_parameter, mid)
 

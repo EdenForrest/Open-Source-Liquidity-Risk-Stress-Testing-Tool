@@ -13,6 +13,12 @@ import { SERIES_COLORS, bucketBadgeStyle, chartTheme } from '../theme'
 import MetricTooltip from '../components/MetricTooltip'
 import { fmt, fmtEur } from '../utils/formatters'
 
+const _LEVERAGE_AIF_TOL = 1e-6
+function isAif(a) {
+  if (!a) return false
+  return !!a.is_loan_origination_aif || (a.gross_leverage != null && a.gross_leverage > 1.0 + _LEVERAGE_AIF_TOL)
+}
+
 export default function Dashboard() {
   const { data, error } = useAnalysis()
   const { theme } = useTheme()
@@ -25,6 +31,7 @@ export default function Dashboard() {
 
   const m = liq.liquidity_metrics
   const aifmd2 = data?.aifmd2
+  const isFundAif = isAif(aifmd2)
 
   const ladderData = (liq.liquidity_ladder || []).map((row) => ({
     bucket: row.bucket,
@@ -105,6 +112,39 @@ export default function Dashboard() {
         </ResponsiveContainer>
       </div>
 
+      <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
+        <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
+          {t('dashboard.ladderTitle')} — Detailed Breakdown
+        </h2>
+        <table className="w-full text-sm">
+          <thead style={{ background: surfaceStyle.background }}>
+            <tr style={{ borderBottom: '1px solid var(--border)' }}>
+              <th className="px-3 py-2 text-left font-semibold" style={{ color: 'var(--text-secondary)' }}>Bucket</th>
+              <th className="px-3 py-2 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>Normal %</th>
+              <th className="px-3 py-2 text-right font-semibold" style={{ color: 'var(--text-secondary)' }}>Stressed %</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ladderData.map((row, i) => (
+              <tr key={i} style={{ borderBottom: '1px solid var(--border)', background: i % 2 === 0 ? rowEven.background : rowOdd.background }}>
+                <td className="px-3 py-2 font-medium" style={{ color: 'var(--text-primary)' }}>{row.bucket}</td>
+                <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text-primary)' }}>{row.Normal.toFixed(2)}%</td>
+                <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text-primary)' }}>{row.Stressed.toFixed(2)}%</td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: '2px solid var(--border)', background: surfaceStyle.background, fontWeight: 'bold' }}>
+              <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>Total</td>
+              <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                {ladderData.reduce((sum, row) => sum + row.Normal, 0).toFixed(2)}%
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums" style={{ color: 'var(--text-primary)' }}>
+                {ladderData.reduce((sum, row) => sum + row.Stressed, 0).toFixed(2)}%
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <KPICard label={<MetricTooltip id="days_to_50pct">{t('dashboard.kpi.days50Pct')}</MetricTooltip>} value={m.days_to_50pct?.toFixed(1) ?? '—'} color="slate" />
         <KPICard label={<MetricTooltip id="days_to_75pct">{t('dashboard.kpi.days75Pct')}</MetricTooltip>} value={m.days_to_75pct?.toFixed(1) ?? '—'} color="slate" />
@@ -112,7 +152,7 @@ export default function Dashboard() {
         <KPICard label={<MetricTooltip id="top10_concentration">{t('dashboard.kpi.top10Concentration')}</MetricTooltip>} value={fmt(m.top10_concentration)} color="slate" />
       </div>
 
-      {aifmd2 && aifmd2.gross_leverage != null ? (
+      {isFundAif ? (
         <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
           <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
             {t('dashboard.aifmd.title')}
@@ -179,7 +219,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {m.ucits_issuer_weights && Object.keys(m.ucits_issuer_weights).length > 0 && (
+      {!isFundAif && m.ucits_issuer_weights && Object.keys(m.ucits_issuer_weights).length > 0 && (
         <div className="rounded shadow-sm border overflow-auto" style={panelStyle}>
           <h2 className="text-sm font-semibold uppercase tracking-wide bb-head px-3 py-2" style={{ ...surfaceStyle, color: 'var(--text-secondary)' }}>
             <MetricTooltip id="ucits_5_10_40">{t('dashboard.ucits.title')}</MetricTooltip>

@@ -23,9 +23,15 @@ function fmtDays(n) {
 // 100% NAV (derivatives/loans → AIFMD II regime). Otherwise it is treated as a
 // UCITS. UCITS issuer-concentration rows are hidden for AIFs, and AIFMD II
 // leverage/LMT rows are hidden for UCITS — a fund is one or the other.
+//
+// Plain long-only funds compute gross leverage of exactly 1.0 in theory, but
+// floating-point summation leaves dust just above 1.0 (e.g. 1.0000000000002).
+// A small tolerance keeps unlevered funds classified as UCITS instead of being
+// misread as AIFs on rounding error.
+const _LEVERAGE_AIF_TOL = 1e-6
 function isAif(a) {
   if (!a) return false
-  return !!a.is_loan_origination_aif || (a.gross_leverage != null && a.gross_leverage > 1.0)
+  return !!a.is_loan_origination_aif || (a.gross_leverage != null && a.gross_leverage > 1.0 + _LEVERAGE_AIF_TOL)
 }
 const naCell = <span style={{ color: 'var(--text-muted)' }}>—</span>
 
@@ -48,13 +54,6 @@ function RiskCell({ value, warnAt, redAt, display }) {
   if (value == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
   const color = value >= redAt ? 'var(--kpi-red-text)' : value >= warnAt ? 'var(--kpi-amber-text)' : 'var(--kpi-green-text)'
   return <span className="font-semibold" style={{ color }}>{display ?? value}</span>
-}
-
-// higher = better (liq/concentration ratio)
-function RatioCell({ value }) {
-  if (value == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
-  const color = value >= 1.5 ? 'var(--kpi-green-text)' : value >= 0.5 ? 'var(--kpi-amber-text)' : 'var(--kpi-red-text)'
-  return <span className="font-semibold" style={{ color }}>{value.toFixed(2)}x</span>
 }
 
 export default function AllPortfolios() {
@@ -133,6 +132,9 @@ export default function AllPortfolios() {
       <div className="rounded border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
         <div className="bb-head px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('allPortfolios.metricComparison')}</h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+            Realisable figures (LCR, illiquid realisable) are shown net of liquidation haircut.
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -152,13 +154,10 @@ export default function AllPortfolios() {
               <MetricRow label={t('allPortfolios.metrics.lcrT3')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t3} />} />
               <MetricRow label={t('allPortfolios.metrics.lcrT7')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t7} />} />
               <MetricRow label={t('allPortfolios.metrics.illiquidPct')} codes={portfolioCodes} allData={allData} getter={m => (
-                <RiskCell value={m?.illiquid_pct} warnAt={0.1} redAt={0.2} display={fmt(m?.illiquid_pct)} />
+                <RiskCell value={m?.illiquid_realisable} warnAt={0.1} redAt={0.2} display={fmt(m?.illiquid_realisable)} />
               )} />
               <MetricRow label="Top-10 Concentration" codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.top10_concentration} warnAt={0.4} redAt={0.6} display={fmt(m?.top10_concentration)} />
-              )} />
-              <MetricRow label="Liq / Concentration" codes={portfolioCodes} allData={allData} getter={m => (
-                <RatioCell value={m?.liquidity_vs_concentration} />
               )} />
               <MetricRow label="Days to 50% liquidated" codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.days_to_50pct} warnAt={3} redAt={7} display={fmtDays(m?.days_to_50pct)} />
@@ -214,6 +213,7 @@ export default function AllPortfolios() {
           </table>
         </div>
       </div>
+
     </div>
   )
 }

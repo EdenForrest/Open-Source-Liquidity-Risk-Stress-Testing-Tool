@@ -1,7 +1,7 @@
 # Liquidity Risk & Stress Testing Tool — Model Documentation
 
-**Version:** 1.4  
-**Last reviewed:** 2026-06-06  
+**Version:** 1.5  
+**Last reviewed:** 2026-06-15  
 **Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV / AIFMD II (Directive (EU) 2024/927)  
 **Purpose:** Complete audit trail for every metric displayed in the GUI, its mathematical definition, and the theoretical framework used to derive it.
 
@@ -206,6 +206,15 @@ $$h_i^* = h_{AC}^{\text{stress}} + \frac{s_i}{2 \times 10{,}000} \qquad RV_i^* =
 $$h_i^{**} = \min\!\left(0.99,\ \lambda \cdot h_i^*\right) \qquad RV_i^{**} = MV_i^* \cdot (1 - h_i^{**})$$
 
 **Theoretical basis:** Liquidation haircuts model the bid-ask spread widening and price concession that occurs when a seller is forced to liquidate quickly. The decomposition into a structural asset-class haircut plus a bid-ask spread component is consistent with the Amihud (2002) illiquidity measure framework and the Bank of England's liquidity-adjusted mark-to-market approach.
+
+### 6.4 Raw vs. realisable illiquid bucket
+
+The model carries two distinct illiquid measures (both fields of `LiquidityMetrics`, `risk_metrics.py`):
+
+- $\text{illiquid\_pct}$ — raw market value classified beyond T+7, before any liquidation haircut.
+- $\text{illiquid\_realisable}$ — the same bucket valued net of the Section 6.1 haircut, i.e. $\sum_{i:\,t_i > 7} RV_i / NAV$.
+
+**Displayed:** AllPortfolios → Metric Comparison surfaces a single illiquid row backed by the **realisable** (post-haircut) figure, consistent with the LCR T+1/T+3/T+7 rows, which are likewise realisable. The raw `illiquid_pct` remains available in the API payload for callers that need the pre-haircut exposure.
 
 ---
 

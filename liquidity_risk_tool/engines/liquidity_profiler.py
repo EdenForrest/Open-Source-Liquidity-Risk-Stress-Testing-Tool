@@ -33,6 +33,7 @@ from ..config.settings import (
     UCITS_AGGREGATE_BUCKET_SINGLE_CAP,
 )
 from ..models.position import Portfolio
+from .liquidity_utils import safe_divide
 
 
 _BUCKET_RANK = {"T+0": 0, "T+1": 1, "T+3": 2, "T+7": 3, ">T+7": 4}
@@ -111,11 +112,15 @@ class LiquidityProfiler:
     def liquidity_at_horizon(self, days: int) -> float:
         """Return fraction of NAV realisable within `days` calendar days."""
         ladder = self.liquidity_ladder()
+        if self._nav <= 0:
+            return 0.0
         covered = []
         for _, row in ladder.iterrows():
-            lo, hi = LIQUIDITY_BUCKETS[row["bucket"]]
-            if lo <= days:
-                covered.append(row["nav_pct"])
+            _, hi = LIQUIDITY_BUCKETS[row["bucket"]]
+            if hi <= days:
+                # Realisable (post-haircut) value, not raw market value — this
+                # feeds coverage ratios, which must be net of liquidation costs.
+                covered.append(row["realisable_value_eur"] / self._nav)
         return sum(covered)
 
     def coverage_ratio(self, redemption_pct: float) -> float:
@@ -162,7 +167,9 @@ class LiquidityProfiler:
                 non_cash.groupby("isin")["market_value_eur"].sum() / total_nav
             ).sort_values(ascending=False)
 
-            breaching = issuer_weights[issuer_weights > UCITS_SINGLE_ISSUER_LIMIT]
+            # Hard breach is >10% (the single-issuer cap); 5-10% holdings are
+            # permitted under Art. 52 subject to the 40% aggregate limit.
+            breaching = issuer_weights[issuer_weights > UCITS_AGGREGATE_BUCKET_SINGLE_CAP]
             bucket_5_10 = issuer_weights[
                 (issuer_weights > UCITS_SINGLE_ISSUER_LIMIT) &
                 (issuer_weights <= UCITS_AGGREGATE_BUCKET_SINGLE_CAP)
@@ -199,17 +206,25 @@ class LiquidityProfiler:
         This prevents overstatement of short-term liquidity for concentrated
         or illiquid-by-size positions.
         """
+        if df.empty:
+            # df.apply(..., axis=1) on an empty frame returns an empty DataFrame
+            # rather than a Series, so the bucket assignment below would break.
+            df["bucket"] = pd.Series(dtype=object)
+            return df
+
         effective_adv = df["adv_30d"] * self.adv_stress_scalar
         daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
         # Cash-like positions settle same-day regardless of trading volume, so the
         # ADV-implied bucket must not drag them below T+0 (see _is_settled_not_traded).
         settled = df["asset_class"].map(_is_settled_not_traded)
+        # abs() so short positions (negative MV) are bucketed by the time it
+        # takes to buy them back, not treated as instantly liquid.
         days_to_liq = np.where(
             settled,
             0.0,
             np.where(
                 daily_capacity > 0,
-                np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
+                np.ceil(df["market_value_eur"].abs() / daily_capacity.replace(0, np.nan)),
                 np.inf,
             ),
         )
@@ -255,6 +270,13 @@ class LiquidityProfiler:
         """
         regime = "haircut_stress" if self.stress else "haircut_normal"
 
+        if df.empty:
+            # Same empty-frame apply() pitfall as in _assign_buckets.
+            df["haircut"] = pd.Series(dtype=float)
+            df["realisable_value"] = pd.Series(dtype=float)
+            df["realisable_weight"] = pd.Series(dtype=float)
+            return df
+
         def total_haircut(row):
             profile = ASSET_CLASS_LIQUIDITY.get(row["asset_class"], {})
             base_haircut = profile.get(regime, 0.0)
@@ -263,8 +285,14 @@ class LiquidityProfiler:
             return base_haircut + spread_cost
 
         df["haircut"] = df.apply(total_haircut, axis=1).clip(lower=0.0, upper=MAX_HAIRCUT)
-        df["realisable_value"] = df["market_value_eur"] * (1 - df["haircut"])
-        df["realisable_weight"] = df["realisable_value"] / nav
+        # Haircut is a realisation COST: it reduces what a long position fetches
+        # AND increases what closing a short/overdraft (negative MV) costs.
+        # mv * (1 - h) on a negative MV would shrink the liability and overstate
+        # liquidity; mv - |mv|*h is conservative for both signs.
+        df["realisable_value"] = (
+            df["market_value_eur"] - df["market_value_eur"].abs() * df["haircut"]
+        )
+        df["realisable_weight"] = safe_divide(df["realisable_value"], nav)
         return df
 
     def _apply_adv_cap(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -281,17 +309,30 @@ class LiquidityProfiler:
         # not have to be sold into a market, so adv_30d == 0 must NOT mean
         # "cannot liquidate". They are fully realisable same-day.
         settled = df["asset_class"].map(_is_settled_not_traded)
-        df["adv_capped"] = (daily_capacity > 0) & ~settled
         # Days needed to fully exit the position (0 for cash-like positions).
+        # abs() so short positions get a meaningful horizon: closing a short
+        # means buying back through the same ADV-capped market.
         df["days_to_liquidate"] = np.where(
             settled,
             0.0,
             np.where(
                 daily_capacity > 0,
-                np.ceil(df["market_value_eur"] / daily_capacity.replace(0, np.nan)),
+                np.ceil(df["market_value_eur"].abs() / daily_capacity.replace(0, np.nan)),
                 np.inf,
             ),
         )
+        # adv_capped flags positions where the cap BINDS: the ADV-implied exit
+        # horizon exceeds the asset class's own settlement bucket, i.e. the
+        # participation cap — not settlement mechanics — is what slows the
+        # exit. Zero-ADV non-cash positions (days = inf) are capped by
+        # definition; positions that clear within their settlement window are
+        # not, even though a cap nominally exists.
+        def _asset_bucket_horizon(ac: str) -> float:
+            bucket = ASSET_CLASS_LIQUIDITY.get(ac, {}).get("bucket", ">T+7")
+            return float(LIQUIDITY_BUCKETS[bucket][1])
+
+        horizon = df["asset_class"].map(_asset_bucket_horizon)
+        df["adv_capped"] = ~settled & (df["days_to_liquidate"] > horizon)
         return df
 
     def _flag_concentration(self, df: pd.DataFrame, nav: float) -> pd.DataFrame:

@@ -30,9 +30,12 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).parent.parent.parent / "data" / "sample"
 
-# Cached demo run — invalidated when the holdings file changes
+# Cached demo run — invalidated when any input file (holdings, NAV, market data)
+# changes. Keying on the full input set rather than just the holdings mtime means
+# regenerating the synthetic data always busts the cache, even when the holdings
+# file alone is byte-identical to a prior run.
 _DEMO_RUN_ID: str | None = None
-_DEMO_HOLDINGS_MTIME: float | None = None
+_DEMO_INPUT_KEY: tuple[float, ...] | None = None
 
 
 def _safe_filename(raw: str | None, fallback: str) -> str:
@@ -181,7 +184,7 @@ async def run_demo():
     Result is cached — subsequent calls return the same run_id instantly.
     Pairs HOLDINGS and NAV files by matching timestamp prefix to prevent mismatches.
     """
-    global _DEMO_RUN_ID, _DEMO_HOLDINGS_MTIME
+    global _DEMO_RUN_ID, _DEMO_INPUT_KEY
 
     # Find best matched HOLDINGS+NAV pair by shared timestamp prefix
     holdings_files = sorted(DATA_DIR.glob("HOLDINGS_*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -201,16 +204,21 @@ async def run_demo():
             raise HTTPException(status_code=404, detail="No NAV demo data found in data/ directory")
         nav_file = nav_files[0]
 
-    # Return cached run if already complete and the holdings file hasn't changed
-    current_mtime = holdings_file.stat().st_mtime
-    if _DEMO_RUN_ID is not None and _DEMO_HOLDINGS_MTIME == current_mtime:
+    # Cache key: mtimes of every input that feeds the pipeline. If any changes
+    # (e.g. the synthetic data is regenerated), the key differs and we recompute.
+    current_key = tuple(
+        f.stat().st_mtime
+        for f in (holdings_file, nav_file, market_data)
+        if f.exists()
+    )
+    if _DEMO_RUN_ID is not None and _DEMO_INPUT_KEY == current_key:
         record = store.get(_DEMO_RUN_ID)
         if record and record.status in ("complete", "running", "pending"):
             return {"run_id": _DEMO_RUN_ID, "status": record.status}
 
     run_id = str(uuid.uuid4())
     _DEMO_RUN_ID = run_id
-    _DEMO_HOLDINGS_MTIME = current_mtime
+    _DEMO_INPUT_KEY = current_key
     store.create(run_id)
 
     asyncio.create_task(

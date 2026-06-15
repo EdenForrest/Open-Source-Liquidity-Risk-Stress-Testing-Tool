@@ -81,3 +81,13 @@ liquidity_risk_tool/.claude/
 
 # Vite build cache
 frontend/.vite/
+
+# Node dependencies — install via npm, never commit
+node_modules/
+
+# Generated documents (built from MODEL.md via scripts/md2html.mjs)
+MODEL.html
+MODEL.pdf
+
+# graphify knowledge-graph output — local tooling artifact
+graphify-out/
