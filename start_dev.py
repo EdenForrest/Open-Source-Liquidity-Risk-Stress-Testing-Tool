@@ -75,15 +75,21 @@ except Exception:
 # Start backend
 print("▶️  Backend (FastAPI on port 8080)...")
 try:
+    # NOTE: no --reload. uvicorn's reloader runs the app in a spawn-based child
+    # worker; on some Python builds that worker can wedge (stops servicing the
+    # socket) while the supervisor keeps accepting, so every request hangs until
+    # the client times out. Running without --reload keeps a single stable
+    # server process. Set DEV_RELOAD=1 to opt back in for live code reloading.
     backend_cmd = [
         sys.executable,
         "-m",
         "uvicorn",
         "backend.main:app",
-        "--reload",
         "--port",
-        "8080"
+        "8080",
     ]
+    if os.environ.get("DEV_RELOAD") == "1":
+        backend_cmd.insert(-2, "--reload")
     backend_proc = subprocess.Popen(
         backend_cmd,
         cwd=str(PROJECT_ROOT),

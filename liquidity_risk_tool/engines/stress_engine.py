@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import copy
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import List, Optional
 
 import pandas as pd
@@ -75,6 +75,10 @@ class ScenarioResult:
     # liquid_after measured against the SAME denominator as liquid_before
     # (nav_before), so the two are directly comparable.
     liquid_pct_after_vs_before: float = 0.0
+    # Carried from the source StressScenario so downstream consumers (Annex IV
+    # validation, reporting) can identify the regulator-mandated worst case
+    # without re-deriving it from nav_impact. ESMA's "Severe Combined" sets this.
+    is_worst_case: bool = False
     position_detail: pd.DataFrame = field(default_factory=pd.DataFrame)
 
     def to_dict(self) -> dict:
@@ -189,10 +193,22 @@ class StressEngine:
         # directly to liquid_before without the shrinking-denominator artefact.
         liquid_after_vs_before = safe_divide(liquid_eur_after, nav_before)
 
-        # 3. Waterfall to meet redemption
-        redemption_eur = nav_after * scenario.redemption_rate
+        # 3. Waterfall to meet redemption.
+        # Under an extreme shock a *leveraged* book can have its NAV wiped out
+        # entirely (shocked_mv sums to ≤ 0). A redemption is a claim on positive
+        # net assets, so a non-positive NAV means the fund is already insolvent —
+        # it cannot honour any redemption. Clamp the target to 0 (the waterfall
+        # rejects a negative target) and let target_met decide: with no positive
+        # NAV to redeem against, a non-trivial redemption_rate is unmeetable, which
+        # is exactly the breach a reverse stress search must be able to locate
+        # rather than crash on.
+        redemption_eur = max(nav_after, 0.0) * scenario.redemption_rate
         waterfall = WaterfallEngine(shocked_portfolio, stressed_profile, stress=True)
         wf_result = waterfall.run(redemption_eur)
+        # An insolvent book that owes a redemption cannot meet it regardless of how
+        # the (degenerate) waterfall scores a near-zero target.
+        if nav_after <= 0.0 and scenario.redemption_rate > 0.0:
+            wf_result = replace(wf_result, target_met=False)
 
         return ScenarioResult(
             scenario_name          = scenario.name,
@@ -213,6 +229,7 @@ class StressEngine:
             liquid_eur_before      = liquid_eur_before,
             liquid_eur_after       = liquid_eur_after,
             liquid_pct_after_vs_before = liquid_after_vs_before,
+            is_worst_case          = getattr(scenario, "is_worst_case", False),
             position_detail        = stressed_profile,
         )
 

@@ -97,7 +97,7 @@
       "aifmdIiDataNotAvailable": "AIFMD II leverage data is not available for this portfolio. Upload a holdings file with leveraged positions or derivative exposures to enable this section."
     },
     "geo": {
-      "title": "Geographical Concentration (AIFMD Annex IV)",
+      "title": "Geographical Concentration (ESMA34-39-897 §4.2)",
       "breach": "BREACH — Non-EU >50%",
       "warning": "Warning — Single country >35%",
       "ok": "Geo OK",
@@ -291,13 +291,7 @@
     },
     "yes": "Yes",
     "no": "No",
-    "partialBadge": "Partial",
-    "activateLp": "Activate LP optimiser",
-    "showGreedy": "Show greedy schedule",
-    "optimising": "Optimising…",
-    "lpActive": "LP-optimised schedule",
-    "greedyActive": "Greedy schedule",
-    "lpError": "LP optimisation failed"
+    "partialBadge": "Partial"
   },
   "charts": {
     "title": "Charts",
@@ -305,7 +299,7 @@
     "compositionTitle": "Portfolio Composition by Asset Class",
     "stressNavTitle": "Stress NAV Impact (%)",
     "liquidityScenarioTitle": "Liquidity Before vs After — Each Scenario",
-    "geoTitle": "Geographical Concentration (AIFMD Annex IV)",
+    "geoTitle": "Geographical Concentration (ESMA34-39-897 §4.2)",
     "daysToLiqTitle": "Days to Liquidate — by Position",
     "waterfallCumTitle": "Waterfall — Cumulative Proceeds (€M)",
     "geo": {
@@ -340,7 +334,7 @@
     }
   },
   "leverage": {
-    "title": "AIFMD II Leverage — {{fundName}}",
+    "title": "Leverage — {{fundName}}",
     "kpi": {
       "grossLeverage": "Gross Leverage",
       "commitmentLeverage": "Commitment Leverage",

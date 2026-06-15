@@ -56,13 +56,6 @@ function RiskCell({ value, warnAt, redAt, display }) {
   return <span className="font-semibold" style={{ color }}>{display ?? value}</span>
 }
 
-// higher = better (liq/concentration ratio)
-function RatioCell({ value }) {
-  if (value == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>
-  const color = value >= 1.5 ? 'var(--kpi-green-text)' : value >= 0.5 ? 'var(--kpi-amber-text)' : 'var(--kpi-red-text)'
-  return <span className="font-semibold" style={{ color }}>{value.toFixed(2)}x</span>
-}
-
 export default function AllPortfolios() {
   const { allData, portfolioCodes, status, selectedPortfolio, selectPortfolio, runId } = useAnalysis()
   const { t } = useTranslation()
@@ -139,6 +132,9 @@ export default function AllPortfolios() {
       <div className="rounded border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
         <div className="bb-head px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('allPortfolios.metricComparison')}</h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)', opacity: 0.7 }}>
+            Realisable figures (LCR, illiquid realisable) are shown net of liquidation haircut.
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -158,16 +154,10 @@ export default function AllPortfolios() {
               <MetricRow label={t('allPortfolios.metrics.lcrT3')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t3} />} />
               <MetricRow label={t('allPortfolios.metrics.lcrT7')} codes={portfolioCodes} allData={allData} getter={m => <LcrCell value={m?.lcr_t7} />} />
               <MetricRow label={t('allPortfolios.metrics.illiquidPct')} codes={portfolioCodes} allData={allData} getter={m => (
-                <RiskCell value={m?.illiquid_pct} warnAt={0.1} redAt={0.2} display={fmt(m?.illiquid_pct)} />
-              )} />
-              <MetricRow label="Illiquid (Realisable)" codes={portfolioCodes} allData={allData} getter={m => (
-                <LcrCell value={m?.illiquid_realisable} />
+                <RiskCell value={m?.illiquid_realisable} warnAt={0.1} redAt={0.2} display={fmt(m?.illiquid_realisable)} />
               )} />
               <MetricRow label="Top-10 Concentration" codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.top10_concentration} warnAt={0.4} redAt={0.6} display={fmt(m?.top10_concentration)} />
-              )} />
-              <MetricRow label="Liq / Concentration" codes={portfolioCodes} allData={allData} getter={m => (
-                <RatioCell value={m?.liquidity_vs_concentration} />
               )} />
               <MetricRow label="Days to 50% liquidated" codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.days_to_50pct} warnAt={3} redAt={7} display={fmtDays(m?.days_to_50pct)} />
@@ -224,53 +214,6 @@ export default function AllPortfolios() {
         </div>
       </div>
 
-      {/* Liquidity Ladder breakdown */}
-      <div className="rounded border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
-        <div className="bb-head px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Liquidity Ladder — Raw Breakdown</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="text-xs uppercase tracking-wide" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
-              <tr>
-                <th className="px-3 py-2 text-left" style={{ background: 'var(--bg-surface)' }}>Bucket</th>
-                {portfolioCodes.map(code => (
-                  <th key={code} className="px-3 py-2 text-right whitespace-nowrap">{code}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {['T+0', 'T+1', 'T+3', 'T+7', '>T+7'].map(bucket => (
-                <tr key={bucket} style={{ borderBottom: '1px solid var(--border)' }} className="transition-colors hover:opacity-80">
-                  <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>{bucket}</td>
-                  {portfolioCodes.map(code => {
-                    const ladder = allData[code]?.liquidity?.liquidity_ladder
-                    const row = ladder?.find(r => r.bucket === bucket)
-                    const pct = row?.nav_pct ?? 0
-                    return (
-                      <td key={code} className="px-3 py-1.5 text-right" style={{ color: 'var(--text-primary)' }}>
-                        {(pct * 100).toFixed(2)}%
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-              <tr style={{ borderBottom: '2px solid var(--border)', fontWeight: 'bold' }} className="transition-colors hover:opacity-80">
-                <td className="px-3 py-1.5 font-semibold whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>Total</td>
-                {portfolioCodes.map(code => {
-                  const ladder = allData[code]?.liquidity?.liquidity_ladder
-                  const total = ladder?.reduce((sum, r) => sum + (r.nav_pct ?? 0), 0) ?? 0
-                  return (
-                    <td key={code} className="px-3 py-1.5 text-right" style={{ color: 'var(--text-primary)' }}>
-                      {(total * 100).toFixed(2)}%
-                    </td>
-                  )
-                })}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   )
 }

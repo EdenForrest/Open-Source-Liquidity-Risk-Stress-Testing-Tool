@@ -163,7 +163,7 @@ def get_validation(run_id: str, portfolio: Optional[str] = Query(default=None)):
     """Run business-logic validation checks against a completed pipeline run."""
     from backend.services.validation_service import run_checks
     r = _portfolio_results(run_id, portfolio)
-    checks = run_checks(r)
+    checks = run_checks(r, annex_iv_meta=_annex_iv_meta(run_id))
     passed = sum(1 for c in checks if c["passed"])
     return {
         "total": len(checks),

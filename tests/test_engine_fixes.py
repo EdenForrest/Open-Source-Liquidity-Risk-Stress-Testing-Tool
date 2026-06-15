@@ -294,6 +294,94 @@ class TestReverseStressIsRedemptionFailure:
         assert scenario is None
         assert scenario_result is None
 
+    def test_insolvent_leveraged_book_breaches_without_crashing(self):
+        """A leveraged book whose NAV is wiped out by a severe equity crash must
+        not crash the search with a negative redemption target.
+
+        With long equity financed by an offsetting short (negative-MV) liability,
+        a deep equity drawdown drives shocked NAV ≤ 0. The redemption target is
+        ``nav_after * redemption_rate``; without clamping that goes negative and
+        WaterfallEngine.run() rejects it (ValueError). An insolvent fund cannot
+        meet a redemption, so the search must instead surface this as a breach.
+        """
+        long_eq = Position(
+            isin="LEVEQ", name="Levered Equity", asset_class="listed_equity",
+            market_value=10_000_000.0, currency="EUR", fx_rate=1.0,
+            adv_30d=1_000_000.0, beta=1.0, bid_ask_spread_bps=0.0, weight=2.0,
+        )
+        # Financing leg: a large negative market value so NAV is thin and a deep
+        # equity crash pushes shocked NAV through zero.
+        financing = Position(
+            isin="LEVFIN", name="Financing Leg", asset_class="cash",
+            market_value=-5_000_000.0, currency="EUR", fx_rate=1.0,
+            adv_30d=1e12, bid_ask_spread_bps=0.0, weight=-1.0,
+        )
+        port = _make_portfolio([long_eq, financing])
+        engine = StressEngine(port, scenarios=[
+            StressScenario(
+                name="dummy", equity_shock=0.0, credit_spread_shock_bps=0,
+                liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
+            )
+        ])
+        rev = ReverseStressEngine(engine)
+
+        # The pre-fix bug raised ValueError("target_eur must be ... >= 0") here.
+        scenario, scenario_result, reverse_result = rev.run(
+            n_starts=4, grid_per_axis=3, max_evaluations=120,
+        )
+
+        # A breach is reachable (the corner wipes out NAV) and must be reported as
+        # an actual failure, never an exception.
+        assert reverse_result.found is True
+        assert not reverse_result.can_meet_redemption_at_breach
+
+    def test_corner_only_breach_is_flagged_frontier(self):
+        """When the *only* reachable breach hugs the severe corner, the fund is
+        practically resilient: the result must be classified ``frontier`` (with a
+        finite ``corner_distance``), NOT presented as a plausible scenario.
+
+        A single highly-liquid equity can only be pushed to a redemption failure
+        at the extreme corner (deep crash + max haircut + max redemptions), so its
+        breach distance sits within FRONTIER_DISTANCE_RATIO of the corner.
+        """
+        port = _single_liquid_portfolio()
+        engine = StressEngine(port, scenarios=[
+            StressScenario(
+                name="dummy", equity_shock=0.0, credit_spread_shock_bps=0,
+                liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
+            )
+        ])
+        rev = ReverseStressEngine(engine)
+        result = rev.solve(n_starts=4, grid_per_axis=3, max_evaluations=120)
+
+        if result.found:
+            assert result.corner_distance is not None and result.corner_distance > 0
+            assert result.plausibility in {"plausible", "frontier"}
+            # A corner-hugging breach is exactly the case this verdict must catch.
+            if result.severity_distance >= 0.85 * result.corner_distance:
+                assert result.plausibility == "frontier"
+            else:
+                assert result.plausibility == "plausible"
+
+    def test_plausible_breach_is_not_flagged_frontier(self):
+        """A genuinely illiquid book breaches well inside the plausible box (its
+        breach distance is a modest fraction of the corner), so the verdict must be
+        ``plausible`` — the realistic, actionable scenario the user wants surfaced."""
+        port = _equity_plus_illiquid_portfolio()  # 30% locked ballast
+        engine = StressEngine(port, scenarios=[
+            StressScenario(
+                name="dummy", equity_shock=0.0, credit_spread_shock_bps=0,
+                liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
+            )
+        ])
+        rev = ReverseStressEngine(engine)
+        result = rev.solve(n_starts=6, grid_per_axis=3, max_evaluations=200)
+
+        assert result.found is True
+        assert result.corner_distance is not None
+        # Distance is strictly below the corner — a sub-corner, plausible breach.
+        assert result.severity_distance < result.corner_distance - 1e-9
+
 
 # ---------------------------------------------------------------------------
 # Finding #4 — reverse-stress breaches must be ECONOMICALLY COHERENT

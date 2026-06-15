@@ -162,6 +162,27 @@ _LIQUIDITY_AXES = ("adv_stress_scalar", "liquidity_haircut_multiplier", "redempt
 # liquidity-only breach with no market driver is rejected as implausible.
 COHERENCE_AUTONOMY: float = 0.25
 
+# Frontier verdict threshold. A located breach whose implausibility distance is at
+# least this fraction of the severe-corner distance D(1,…,1) is classified as a
+# "frontier" breach: the fund effectively only fails at the maximally-severe corner
+# of the plausible box, so it is *practically resilient* and the breach is not a
+# realistic scenario to plan around. 0.85 cleanly separates the genuine plausible
+# breaches observed in the demo book (D ≈ 0.50·corner) from the corner-hugging
+# results (D ≈ 0.85–0.92·corner) that prompted "of course it won't meet redemption".
+FRONTIER_DISTANCE_RATIO: float = 0.85
+
+
+def _classify_plausibility(distance: Optional[float], corner: Optional[float]) -> str:
+    """Map (severity_distance, corner_distance) onto a plausibility verdict.
+
+    See :class:`ReverseStressResult.plausibility`. A breach within
+    ``FRONTIER_DISTANCE_RATIO`` of the severe corner is "frontier" (practically
+    resilient); a closer-to-calm breach is a genuine "plausible" scenario.
+    """
+    if distance is None or corner is None or corner <= 0:
+        return "none"
+    return "frontier" if distance >= FRONTIER_DISTANCE_RATIO * corner else "plausible"
+
 
 # ---------------------------------------------------------------------------
 # Result container
@@ -193,6 +214,22 @@ class ReverseStressResult:
     # breach — so callers should surface this distinctly, not as a found scenario.
     breached_at_baseline: bool = False
     baseline_liquid_pct: Optional[float] = None   # T0-T1 liquidity at s = 0 (no shock)
+    # Implausibility distance of the maximally-severe corner s=(1,…,1) under the
+    # same Mahalanobis metric — the natural yardstick for severity_distance. A
+    # breach whose distance approaches this is, in practice, only reachable at the
+    # severe-but-plausible frontier (see ``plausibility``).
+    corner_distance: Optional[float] = None
+    # Verdict on how realistic the located breach is, derived from the ratio
+    # severity_distance / corner_distance:
+    #   "plausible"   — a genuine severe-but-plausible breach well inside the box;
+    #                   this is an actionable reverse-stress scenario.
+    #   "frontier"    — the fund only fails at (or within a whisker of) the severe
+    #                   corner. It is *practically resilient*: the breach is the
+    #                   implausible extreme, not a realistic scenario, and should be
+    #                   surfaced as "robust except at the frontier", NOT as a
+    #                   plausible shock the manager should plan around.
+    #   "none"        — no breach found / not applicable.
+    plausibility: str = "none"
 
     def to_dict(self) -> dict:
         return {
@@ -208,6 +245,8 @@ class ReverseStressResult:
             "margin_to_breach": self.margin_to_breach,
             "breached_at_baseline": self.breached_at_baseline,
             "baseline_liquid_pct": self.baseline_liquid_pct,
+            "corner_distance": self.corner_distance,
+            "plausibility": self.plausibility,
         }
 
 
@@ -467,6 +506,71 @@ class ReverseStressEngine:
         s_star = hi * s_breach
         return self._distance(s_star), s_star
 
+    def _refine_coordinate(
+        self,
+        s_breach: np.ndarray,
+        n_passes: int = 2,
+        n_bisect: int = 12,
+    ) -> Tuple[float, np.ndarray]:
+        """Boundary-walk polish: shrink each axis individually toward calm while
+        the point keeps breaching and stays coherent.
+
+        The radial ray polish (:meth:`_refine_along_ray`) can only scale *all*
+        axes by a common ``t``; it cannot trade severity *between* axes. But the
+        least-severe breach rarely sits on the ray from calm to the search winner
+        — on the non-convex breach surface a different *mix* of severities at the
+        same radius (or less) often also breaches and is strictly closer to calm
+        under the Mahalanobis metric. This coordinate descent captures exactly
+        those sideways gains: for each axis we bisect its fraction down to the
+        smallest value that still breaches (holding the others fixed), then sweep
+        again, since relaxing one axis can free another. Axes are visited in
+        descending order of their marginal contribution to ``D(s)`` so the most
+        implausible levers are relaxed first.
+
+        Every accepted point is re-checked for breach *and* coherence, so the
+        polish is a pure improvement: it only ever returns a point with
+        ``D ≤ D(s_breach)`` that still breaches and stays plausible. Costs at most
+        ``n_passes · dim · n_bisect`` cached evaluations. Returns ``(D(s*), s*)``.
+        """
+        s = np.clip(np.asarray(s_breach, dtype=float), 0.0, 1.0).copy()
+        if not (self._is_breach(s) and self._is_coherent(s)):
+            return self._distance(s), s
+
+        dim = len(s)
+        for _ in range(n_passes):
+            improved = False
+            # Relax the axes contributing most to the severity norm first.
+            contrib = (self._precision @ s) * s
+            order = list(np.argsort(-contrib))
+            for i in order:
+                if s[i] <= 1e-6:
+                    continue
+                # Bisect axis i down: lo = smallest value known to still breach,
+                # hi = current (breaching) value. Find how far toward 0 we can go.
+                lo, hi = 0.0, float(s[i])
+                trial = s.copy()
+                trial[i] = lo
+                # If dropping the axis to 0 still breaches coherently, take it whole.
+                if self._is_breach(trial) and self._is_coherent(trial):
+                    if abs(s[i]) > 1e-9:
+                        improved = True
+                    s[i] = 0.0
+                    continue
+                # Otherwise squeeze [lo, hi]: lo non-breach, hi breach.
+                for _ in range(n_bisect):
+                    mid = 0.5 * (lo + hi)
+                    trial[i] = mid
+                    if self._is_breach(trial) and self._is_coherent(trial):
+                        hi = mid
+                    else:
+                        lo = mid
+                if hi < s[i] - 1e-6:
+                    s[i] = hi
+                    improved = True
+            if not improved:
+                break
+        return self._distance(s), s
+
     # ------------------------------------------------------------------
     # Optimisation
     # ------------------------------------------------------------------
@@ -485,13 +589,21 @@ class ReverseStressEngine:
         1. **Feasibility check** — evaluate the maximally-severe corner ``s = 1``.
            If even that does not breach, the portfolio is robust across the whole
            plausible box and we report ``found=False`` (a meaningful result).
-        2. **Coarse grid** — sample a small grid to seed starting points and to
-           give the grid-only fallback something to refine.
+        2. **Coarse grid + boundary refinement** — sample a grid to seed starting
+           points, then add a finer *local* sample around every breach/no-breach
+           transition (the midpoint of each adjacent feasible/infeasible seed
+           pair), so the breach boundary is seeded densely *where it actually is*
+           rather than only on the coarse lattice. This is the main accuracy gain:
+           it surfaces plausible breaches that fall between coarse grid nodes.
         3. **Multi-start SLSQP** — from the most promising feasible/near-feasible
-           seeds, minimise ``D(s)`` subject to ``target - liquid_after(s) ≥ 0``.
-           Keep the best feasible optimum.
-        4. **Fallback** — if scipy is missing or SLSQP yields nothing feasible,
-           refine on the grid (coarse-to-fine bisection toward the boundary).
+           seeds (including the boundary midpoints), minimise ``D(s)`` subject to
+           ``target - liquid_after(s) ≥ 0``. Keep the best feasible optimum.
+        4. **Two-phase polish** — bisect the winner radially toward calm along its
+           Mahalanobis ray, *then* run a coordinate boundary-walk that relaxes each
+           axis individually. The ray polish cannot trade severity between axes; the
+           coordinate walk captures those sideways gains, so the returned breach is
+           genuinely the least-severe coherent one on the located boundary, not just
+           the closest point on a single ray. Both are pure improvements.
         """
         self._n_eval = 0
         self._cache.clear()
@@ -521,6 +633,7 @@ class ReverseStressEngine:
 
         # ---- 1. Feasibility at the severe corner -------------------------------
         s_max = np.ones(dim)
+        corner_distance = self._distance(s_max)  # yardstick for the plausibility verdict
         if not self._is_breach(s_max):
             # No breach (redemption failure) is reachable within the plausible
             # box → the fund is robust across all severe-but-plausible shocks.
@@ -546,12 +659,15 @@ class ReverseStressEngine:
         grid_vals = np.linspace(0.0, 1.0, grid_per_axis)
         feasible_seeds: List[Tuple[float, np.ndarray]] = []  # (distance, s) breaching
         all_seeds: List[Tuple[float, np.ndarray]] = []        # (margin, s) by closeness
-        # Keep ~2/3 of the budget for the grid, leaving room for SLSQP. Always
-        # allow at least a minimal grid so seeding still works.
-        max_grid_points = max(32, (2 * max_evaluations) // 3)
+        # Keep ~half the budget for the grid + boundary refinement, leaving room for
+        # SLSQP and the two-phase polish. Always allow at least a minimal grid.
+        max_grid_points = max(32, max_evaluations // 2)
         coords = list(product(grid_vals, repeat=dim))
         if len(coords) > max_grid_points:
             coords = coords[:: max(1, len(coords) // max_grid_points)]
+        # Track each sampled point with its breach verdict so we can refine the
+        # boundary between breaching and non-breaching neighbours.
+        sampled: List[Tuple[np.ndarray, bool]] = []  # (s, breaches_coherently)
         for c in coords:
             s = np.array(c, dtype=float)
             liquid = self._liquid_after(s)
@@ -561,10 +677,42 @@ class ReverseStressEngine:
             # liquidity-floor proxy used for ordering — AND the coherence guardrail:
             # an incoherent liquidity-only corner is not a plausible breach, so it
             # must never seed the refinement or become the materialised scenario.
-            if self._is_coherent(s) and self._is_breach(s):
+            breaches = self._is_coherent(s) and self._is_breach(s)
+            sampled.append((s, breaches))
+            if breaches:
                 feasible_seeds.append((self._distance(s), s))
 
+        # ---- 2b. Boundary refinement -----------------------------------------
+        # The coarse grid only samples severity fractions at the lattice nodes, so a
+        # plausible breach that lives *between* nodes is invisible to it. Add a finer
+        # local sample at the midpoint of every adjacent (breach, no-breach) seed
+        # pair: those midpoints straddle the breach boundary, so they are the most
+        # informative new points to probe and the best SLSQP seeds. Budget-capped so
+        # this never starves the refinement. Most useful when the coarsest grid
+        # (grid_per_axis=3) would otherwise miss a sub-corner breach entirely.
+        boundary_seeds: List[Tuple[float, np.ndarray]] = []
+        refine_cap = max(8, max_evaluations // 6)
+        n_refined = 0
+        breachers = [s for s, b in sampled if b]
+        non_breachers = [s for s, b in sampled if not b]
+        for sb in breachers:
+            if n_refined >= refine_cap:
+                break
+            # Nearest non-breaching seed to this breaching one — they bracket the
+            # boundary; their midpoint is the cheapest informative probe.
+            if not non_breachers:
+                break
+            dists = [float(np.sum((sb - sn) ** 2)) for sn in non_breachers]
+            sn = non_breachers[int(np.argmin(dists))]
+            mid = 0.5 * (sb + sn)
+            if self._is_coherent(mid) and self._is_breach(mid):
+                d = self._distance(mid)
+                boundary_seeds.append((d, mid))
+                feasible_seeds.append((d, mid))
+            n_refined += 1
+
         feasible_seeds.sort(key=lambda t: t[0])
+        boundary_seeds.sort(key=lambda t: t[0])
         all_seeds.sort(key=lambda t: t[0])  # most-breaching first
 
         best: Optional[Tuple[float, np.ndarray]] = (
@@ -600,9 +748,18 @@ class ReverseStressEngine:
             ]
             bounds = [(0.0, 1.0)] * dim
 
-            # Seed from severe corner + most-breaching grid points.
+            # Seed from severe corner + boundary midpoints + most-breaching grid
+            # points. The boundary midpoints straddle the breach surface, so they
+            # start SLSQP nearest the least-severe coherent breach — exactly where a
+            # non-convex book is most likely to hide a more plausible scenario than
+            # the lattice nodes reveal. They go right after the corner, ahead of the
+            # raw grid seeds, and the start count is widened so they never crowd out
+            # the corner/grid diversity that anchors the search.
+            n_starts = max(n_starts, n_starts + min(len(boundary_seeds), dim))
             seeds: List[np.ndarray] = [s_max]
-            seeds += [s for _, s in feasible_seeds[: max(0, n_starts - 1)]]
+            seeds += [s for _, s in boundary_seeds[: max(0, n_starts - 1)]]
+            remaining = max(0, n_starts - len(seeds))
+            seeds += [s for _, s in feasible_seeds[:remaining]]
             if len(seeds) < n_starts:
                 seeds += [s for _, s in all_seeds[: n_starts - len(seeds)]]
 
@@ -657,6 +814,25 @@ class ReverseStressEngine:
             else:
                 best = (d_polished, s_polished)
 
+        # ---- 3c. Coordinate boundary-walk polish ------------------------------
+        # The radial ray can only scale every axis by one common factor; it cannot
+        # *trade* severity between axes. On a non-convex breach surface the least-
+        # severe breach often sits where one axis can still relax further if another
+        # holds — a sideways move the ray structurally misses. Walk each axis toward
+        # calm individually (descending marginal D contribution) while the point
+        # keeps breaching coherently. This is again a pure improvement: it only ever
+        # shrinks axes of an already-breaching coherent point, so D never rises and
+        # the breach/coherence invariants are preserved. It runs after the ray polish
+        # so it refines the genuinely closest point found so far, at a cost of at most
+        # a few cached evaluations per axis.
+        d_walk, s_walk = self._refine_coordinate(best[1])
+        if self._is_breach(s_walk) and self._is_coherent(s_walk) and d_walk < best[0] - 1e-9:
+            best = (d_walk, s_walk)
+            if not method.endswith("ray") and "coord" not in method:
+                method = f"{method}+coord" if method != "grid" else "coordinate-walk"
+            else:
+                method = f"{method}+coord"
+
         # ---- 4. Materialise the winning breach point --------------------------
         # Force a real repricing of the winner (bypassing the budget guard): the
         # reported result must be truthful, never the budget sentinel. Then enforce
@@ -678,10 +854,11 @@ class ReverseStressEngine:
             for i, axis in enumerate(self.axes)
         }
 
+        severity_distance = round(best[0], 4)
         return ReverseStressResult(
             found=True,
             target_liquid_pct=self.target_liquid_pct,
-            severity_distance=round(best[0], 4),
+            severity_distance=severity_distance,
             severity_fractions=fractions,
             breach_parameters=breach_params,
             liquid_pct_at_breach=liquid_star,
@@ -690,6 +867,8 @@ class ReverseStressEngine:
             baseline_liquid_pct=liquid_zero,
             n_evaluations=self._n_eval,
             method=method,
+            corner_distance=round(corner_distance, 4),
+            plausibility=_classify_plausibility(severity_distance, corner_distance),
         )
 
     # ------------------------------------------------------------------
@@ -719,8 +898,27 @@ class ReverseStressEngine:
             bits.append(f"redemptions {p['redemption_rate']:.0%}")
         shock_desc = ", ".join(bits) if bits else "no shock"
 
+        # A "frontier" breach only materialises at (or within a whisker of) the
+        # severe corner — the fund is practically resilient and this is the
+        # implausible extreme, not a realistic scenario. Flag it in the name so the
+        # row is never read as a plausible shock to plan around.
+        is_frontier = result.plausibility == "frontier"
+        name = (
+            "Reverse stress (resilient — breaches only at severe-but-plausible frontier)"
+            if is_frontier
+            else "Reverse stress (multi-factor breach)"
+        )
+        frontier_note = (
+            " This breach sits at the implausible extreme of the plausible box "
+            f"(distance {result.severity_distance} vs severe-corner {result.corner_distance}): "
+            "the fund is practically resilient and does not fail under any genuinely "
+            "plausible shock."
+            if is_frontier
+            else ""
+        )
+
         scenario = StressScenario(
-            name="Reverse stress (multi-factor breach)",
+            name=name,
             equity_shock=p.get("equity_shock", 0.0),
             credit_spread_shock_bps=int(p.get("credit_spread_shock_bps", 0)),
             liquidity_haircut_multiplier=p.get("liquidity_haircut_multiplier", 1.0),
@@ -732,6 +930,7 @@ class ReverseStressEngine:
                 f"{result.target_liquid_pct:.0%}: {shock_desc}. "
                 f"Found by {result.method} over {result.n_evaluations} portfolio "
                 f"re-pricings (implausibility distance {result.severity_distance})."
+                f"{frontier_note}"
             ),
             regulatory_basis=(
                 "Reverse stress (multi-factor) - AIFMD II Art.16(1); "

@@ -110,7 +110,7 @@
       "ok": "OK"
     },
     "geo": {
-      "title": "Geografische Konzentration (AIFMD Anhang IV)",
+      "title": "Geografische Konzentration (ESMA34-39-897 §4.2)",
       "breach": "VERLETZUNG — Nicht-EU >50 %",
       "warning": "Warnung — Einzelland >35 %",
       "ok": "Geo OK",
@@ -291,13 +291,7 @@
     },
     "yes": "Ja",
     "no": "Nein",
-    "partialBadge": "Teilweise",
-    "activateLp": "LP-Optimierer aktivieren",
-    "showGreedy": "Greedy-Plan anzeigen",
-    "optimising": "Optimierung…",
-    "lpActive": "LP-optimierter Plan",
-    "greedyActive": "Greedy-Plan",
-    "lpError": "LP-Optimierung fehlgeschlagen"
+    "partialBadge": "Teilweise"
   },
   "charts": {
     "title": "Diagramme",
@@ -305,7 +299,7 @@
     "compositionTitle": "Portfoliozusammensetzung nach Anlageklasse",
     "stressNavTitle": "NAV-Auswirkung unter Stress (%)",
     "liquidityScenarioTitle": "Liquidität vorher/nachher — je Szenario",
-    "geoTitle": "Geografische Konzentration (AIFMD Anhang IV)",
+    "geoTitle": "Geografische Konzentration (ESMA34-39-897 §4.2)",
     "daysToLiqTitle": "Liquidationstage — je Position",
     "waterfallCumTitle": "Kaskade — Kumulierter Erlös (Mio. €)",
     "geo": {
@@ -340,7 +334,7 @@
     }
   },
   "leverage": {
-    "title": "AIFMD-II-Hebelwirkung — {{fundName}}",
+    "title": "Hebelwirkung — {{fundName}}",
     "kpi": {
       "grossLeverage": "Brutto-Hebel",
       "commitmentLeverage": "Engagement-Hebel",

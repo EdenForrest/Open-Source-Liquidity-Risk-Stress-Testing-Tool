@@ -110,7 +110,7 @@
       "ok": "OK"
     },
     "geo": {
-      "title": "Concentration géographique (Annexe IV AIFMD)",
+      "title": "Concentration géographique (ESMA34-39-897 §4.2)",
       "breach": "DÉPASSEMENT — Hors UE >50 %",
       "warning": "Avertissement — Pays unique >35 %",
       "ok": "Géo OK",
@@ -291,13 +291,7 @@
     },
     "yes": "Oui",
     "no": "Non",
-    "partialBadge": "Partiel",
-    "activateLp": "Activer l'optimiseur PL",
-    "showGreedy": "Afficher le plan glouton",
-    "optimising": "Optimisation…",
-    "lpActive": "Plan optimisé par PL",
-    "greedyActive": "Plan glouton",
-    "lpError": "Échec de l'optimisation PL"
+    "partialBadge": "Partiel"
   },
   "charts": {
     "title": "Graphiques",
@@ -305,7 +299,7 @@
     "compositionTitle": "Composition du portefeuille par classe d'actif",
     "stressNavTitle": "Impact VNI sous stress (%)",
     "liquidityScenarioTitle": "Liquidité avant/après par scénario",
-    "geoTitle": "Concentration géographique (Annexe IV AIFMD)",
+    "geoTitle": "Concentration géographique (ESMA34-39-897 §4.2)",
     "daysToLiqTitle": "Jours de liquidation — par position",
     "waterfallCumTitle": "Cascade — Produits cumulés (M€)",
     "geo": {
@@ -340,7 +334,7 @@
     }
   },
   "leverage": {
-    "title": "Levier AIFMD II — {{fundName}}",
+    "title": "Levier — {{fundName}}",
     "kpi": {
       "grossLeverage": "Levier brut",
       "commitmentLeverage": "Levier d'engagement",

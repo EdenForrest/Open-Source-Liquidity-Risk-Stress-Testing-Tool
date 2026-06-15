@@ -232,6 +232,24 @@ _SPREAD_DEFAULTS: dict[str, float] = {
     "option":            25,
 }
 
+# Currency → issuing country, used to attribute a domicile to positions whose
+# identifier is not an ISIN (cash, FX, OTC derivatives). EUR maps to the fund's
+# reporting member state rather than a single eurozone country.
+_CCY_COUNTRY: dict[str, str] = {
+    "EUR": "LU",   # fund domicile / reporting member state
+    "USD": "US",
+    "GBP": "GB",
+    "CHF": "CH",
+    "JPY": "JP",
+    "SEK": "SE",
+    "NOK": "NO",
+    "DKK": "DK",
+    "CAD": "CA",
+    "AUD": "AU",
+    "HKD": "HK",
+    "SGD": "SG",
+}
+
 
 # ---------------------------------------------------------------------------
 # Public loader
@@ -402,6 +420,11 @@ def load_portfolio_from_csv(
 
         eff_isin = isin or csc
         _country = eff_isin[:2] if len(eff_isin) == 12 and eff_isin[:2].isalpha() else None
+        # Cash, FX and OTC derivatives carry no ISIN; attribute them to their
+        # currency's issuing country (EUR → fund domicile) so every position
+        # has a country for Annex IV geographic reporting.
+        if _country is None:
+            _country = _CCY_COUNTRY.get(currency.upper())
 
         positions.append(
             Position(
