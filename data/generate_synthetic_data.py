@@ -1096,6 +1096,10 @@ def generate_market_data(
     # Asset classes that need a full market data row (others get cash/skip)
     _mkt_generators = {
         "listed_equity":     lambda pcode, isin: _mkt_equity(pcode, isin, report_date_iso),
+        # Leveraged equity is a cash equity bought on margin: it has a real ISIN
+        # and full market value, so it needs an equity market row for ADV. Without
+        # it the position falls back to the loader's default ADV and looks illiquid.
+        "leveraged_equity":  lambda pcode, isin: _mkt_equity(pcode, isin, report_date_iso),
         "government_bond":   lambda pcode, isin: _mkt_bond(pcode, isin, "government_bond", report_date_iso),
         "ig_corporate_bond": lambda pcode, isin: _mkt_bond(pcode, isin, "ig_corporate_bond", report_date_iso),
         "hy_corporate_bond": lambda pcode, isin: _mkt_bond(pcode, isin, "hy_corporate_bond", report_date_iso),
@@ -1108,6 +1112,13 @@ def generate_market_data(
         # Generate a market data row for every ISIN that appears in the holdings file.
         # Cash ISINs (CASH-EUR etc.) get cash rows; futures/forwards get no ADV row
         # (they're exchange-traded or OTC with zero MV — the profiler handles them).
+        known = set(portfolios)
+        stray = {p for _, (p, _) in isin_map.items()} - known
+        if stray:
+            raise ValueError(
+                f"isin_map references portfolios not in {sorted(known)}: "
+                f"{sorted(stray)} — holdings and market data are out of sync."
+            )
         for isin, (pcode, ac) in isin_map.items():
             if ac == "cash":
                 ccy = isin.split("-", 1)[1] if isin.startswith("CASH-") else "EUR"
@@ -1127,27 +1138,17 @@ def generate_market_data(
                     all_rows.append(row)
             # future / forward: no market data row needed (MV=0 or near-zero)
     else:
-        # Fallback: generate random ISINs (legacy behaviour, not MVHOL-aligned)
-        for pcode in portfolios:
-            for ccy in random.sample(["EUR", "USD", "GBP"], k=random.randint(1, 3)):
-                all_rows.append(_mkt_cash(pcode, ccy, report_date_iso))
-        for _ in range(300):
-            pcode = random.choice(portfolios)
-            ac    = random.choice(list(_mkt_generators.keys()))
-            if ac == "listed_equity":
-                isin = _isin(random.choice(EQUITY_COUNTRIES))
-            elif ac == "etf":
-                isin = _isin(random.choice(ETF_COUNTRIES))
-            elif ac == "option":
-                idx_code = f"OPO{random.choice(['ESX','SPX'])}"
-                isin     = f"{idx_code}/SYN{random.choice([3500,4000])}0626_SYN_EUR"
-            else:
-                isin = _isin(random.choice(BOND_COUNTRIES))
-            row = _mkt_generators[ac](pcode, isin)
-            if random.random() < error_rate:
-                error_rows.append({k: row[k] for k in MARKET_ERRORS_COLUMNS})
-            else:
-                all_rows.append(row)
+        # No isin_map means we would have to invent ISINs unrelated to any
+        # holdings file. That path produced a market_data universe disjoint
+        # from the holdings universe, so ADV enrichment silently missed real
+        # positions and they fell back to the loader's small default ADV
+        # (which made large equities/loans look illiquid). Refuse it: market
+        # data must always be generated in lock-step with a holdings isin_map.
+        raise ValueError(
+            "generate_market_data requires an isin_map so every holdings ISIN "
+            "gets a matching market data row. Call it from generate_all (which "
+            "threads the isin_map from generate_holdings), not standalone."
+        )
 
     all_output.parent.mkdir(parents=True, exist_ok=True)
     with all_output.open("w", newline="", encoding="utf-8") as f:

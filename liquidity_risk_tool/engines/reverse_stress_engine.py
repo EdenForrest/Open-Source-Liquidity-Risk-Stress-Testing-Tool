@@ -26,19 +26,30 @@ scenario to the central / calm state" on the breach boundary.
 Let ``s = (s_eq, s_rate, s_adv, s_hc, s_redeem) ∈ [0, 1]^5`` be per-parameter
 *severity fractions*, each linearly mapped onto a plausible range. We solve::
 
-    minimise    D(s) = sqrt( Σ_i w_i · s_i² )          (severity / implausibility)
-    subject to  liquid_pct_after(s) ≤ breach_threshold  (a breach occurs)
+    minimise    D(s) = sqrt( sᵀ Σ⁻¹ s )                (severity / implausibility)
+    subject to  cannot meet redemptions at s            (a breach occurs)
+                max liquidity-severity ≤ max market-severity + α   (coherence)
                 0 ≤ s_i ≤ 1
 
-``D(s)`` is a plausibility-weighted Euclidean (Mahalanobis-style) distance from
-the calm state ``s = 0``. Its constrained minimiser on the breach boundary is the
-*easiest* way the fund can breach — exactly what reverse stress is meant to find.
+``D(s)`` is a **Mahalanobis** distance from the calm state ``s = 0`` under the
+crisis co-movement metric ``Σ = W^½ · R · W^½`` (R = :data:`SHOCK_CORRELATION`,
+W = per-axis implausibility weights). Coherent shocks — every driver stressing
+together, the way real crises move — are *cheap*; an incoherent liquidity-only
+blow-out with calm markets is *expensive*. A hard coherence guardrail additionally
+forbids liquidity/redemption stress that runs ahead of any market driver by more
+than the autonomous allowance ``α`` (:data:`COHERENCE_AUTONOMY`). The constrained
+minimiser is therefore the most plausible — never an economically impossible —
+way the fund can breach, exactly what reverse stress is meant to find.
 
 The breach surface is non-convex (liquidity responds discontinuously as buckets
-cross horizons), so we use a **multi-start SLSQP** search: a coarse Sobol/grid of
+cross horizons), so we use a **multi-start SLSQP** search: a coarse grid of
 starting points feeds a sequence of gradient-based constrained refinements, and
-we keep the feasible (breaching) point with the smallest ``D(s)``. If scipy is
-unavailable, we fall back to a pure coarse-to-fine grid search over the same box.
+we keep the coherent breaching point with the smallest ``D(s)``. Every winner is
+then **bisected back toward calm along its Mahalanobis ray** to shed any residual
+severity the gradient step left on the table. If scipy is unavailable, that same
+ray bisection from the most-breaching grid seed is the whole search — so the
+engine always returns a genuinely least-severe coherent breach, never just the
+full-severity corner.
 
 The result is materialised as a real :class:`StressScenario`, re-applied through
 the host :class:`StressEngine` so it slots into the same ``stress_results`` /
@@ -168,7 +179,13 @@ class ReverseStressResult:
     liquid_pct_at_breach: Optional[float] = None
     can_meet_redemption_at_breach: Optional[bool] = None
     n_evaluations: int = 0
-    method: str = ""                              # "SLSQP+multistart" | "grid"
+    # How the breach was located. The search winner is always ray-polished, so the
+    # method records the winner's *origin* with a "+ray" suffix when the bisection
+    # tightened it:
+    #   "SLSQP+multistart+ray" | "SLSQP+multistart" | "ray-bisection" | "grid"
+    #   "baseline-breach"  (already in breach at s=0) | "infeasible" (robust book)
+    # "ray-bisection" = scipy-free path: the grid/corner winner with only ray polish.
+    method: str = ""
     margin_to_breach: Optional[float] = None      # liquid_pct_after - target (≤0 if breach)
     # True when the portfolio is already below the liquidity target with NO shock
     # applied (severity distance 0). Reverse stress is ill-posed in this case —
@@ -410,6 +427,46 @@ class ReverseStressEngine:
         the liquidity stress, within the autonomous allowance)."""
         return self._coherence_margin(s) >= -1e-9
 
+    def _refine_along_ray(
+        self, s_breach: np.ndarray, n_bisect: int = 18
+    ) -> Tuple[float, np.ndarray]:
+        """Walk a *known* coherent breach back toward calm to shed residual severity.
+
+        Given a point ``s_breach`` that breaches and is coherent, the scaled points
+        ``t · s_breach`` for ``t ∈ [0, 1]`` trace the Mahalanobis ray from calm
+        (``t = 0``) out to the breach (``t = 1``): because D is a norm,
+        ``D(t·s) = t·D(s)`` is monotone in ``t``, so the *least-severe* point on the
+        ray is the smallest ``t`` that still breaches. Coherence is also preserved
+        under scaling toward the origin (both ``max`` severities shrink by the same
+        ``t``, and the ``+α`` slack only grows in relative terms), so every accepted
+        point stays plausible.
+
+        We bisect on ``t``: the breach region is ``[t*, 1]`` for some boundary
+        ``t* ≥ 0``; we squeeze ``[lo, hi]`` with ``lo`` non-breaching and ``hi``
+        breaching until they meet, then return the breaching end. This is gradient-
+        free, costs ``n_bisect`` cached evaluations, and is the entire search when
+        scipy is unavailable. Returns ``(D(s*), s*)``.
+
+        The input is assumed to breach (caller checks); if a numerical edge makes
+        even ``t = 1`` look non-breaching, we return it unchanged rather than fail.
+        """
+        s_breach = np.clip(np.asarray(s_breach, dtype=float), 0.0, 1.0)
+        if not self._is_breach(s_breach):
+            return self._distance(s_breach), s_breach
+
+        lo, hi = 0.0, 1.0          # lo: known non-breach (calm), hi: known breach
+        for _ in range(n_bisect):
+            mid = 0.5 * (lo + hi)
+            s_mid = mid * s_breach
+            # Coherence holds by construction under scaling, but re-check cheaply so
+            # a custom-axis configuration (guardrail inactive) can never regress.
+            if self._is_coherent(s_mid) and self._is_breach(s_mid):
+                hi = mid           # still breaches → push the boundary lower
+            else:
+                lo = mid           # no longer breaches → boundary is above mid
+        s_star = hi * s_breach
+        return self._distance(s_star), s_star
+
     # ------------------------------------------------------------------
     # Optimisation
     # ------------------------------------------------------------------
@@ -580,7 +637,25 @@ class ReverseStressEngine:
             # Breach is reachable (corner breached) but search lost it: fall back
             # to the severe corner so we still return an actionable breach point.
             best = (self._distance(s_max), s_max)
-            method = method or "grid"
+            method = "grid"
+
+        # ---- 3b. Ray-bisection polish -----------------------------------------
+        # The winner — whether an SLSQP optimum, the best grid seed, or the severe
+        # corner — generally still carries severity the gradient step (or the coarse
+        # grid) left on the table: D is a norm, so any point on the ray from calm to
+        # the winner that *still* breaches is strictly closer to the calm state.
+        # Bisect back along that Mahalanobis ray to the least-severe coherent breach.
+        # This is a pure improvement (the polished point breaches and is coherent by
+        # construction, and D(t·s) = t·D(s) ≤ D(s)), and — crucially — it is the
+        # entire search when scipy is absent, so the grid winner (or corner) is never
+        # returned at full severity. It costs only a handful of cached evaluations.
+        d_polished, s_polished = self._refine_along_ray(best[1])
+        if self._is_breach(s_polished) and self._is_coherent(s_polished):
+            if d_polished < best[0] - 1e-9:
+                best = (d_polished, s_polished)
+                method = "ray-bisection" if method == "grid" else f"{method}+ray"
+            else:
+                best = (d_polished, s_polished)
 
         # ---- 4. Materialise the winning breach point --------------------------
         # Force a real repricing of the winner (bypassing the budget guard): the

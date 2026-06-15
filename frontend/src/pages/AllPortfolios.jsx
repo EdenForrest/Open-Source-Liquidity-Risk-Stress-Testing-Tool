@@ -23,9 +23,15 @@ function fmtDays(n) {
 // 100% NAV (derivatives/loans → AIFMD II regime). Otherwise it is treated as a
 // UCITS. UCITS issuer-concentration rows are hidden for AIFs, and AIFMD II
 // leverage/LMT rows are hidden for UCITS — a fund is one or the other.
+//
+// Plain long-only funds compute gross leverage of exactly 1.0 in theory, but
+// floating-point summation leaves dust just above 1.0 (e.g. 1.0000000000002).
+// A small tolerance keeps unlevered funds classified as UCITS instead of being
+// misread as AIFs on rounding error.
+const _LEVERAGE_AIF_TOL = 1e-6
 function isAif(a) {
   if (!a) return false
-  return !!a.is_loan_origination_aif || (a.gross_leverage != null && a.gross_leverage > 1.0)
+  return !!a.is_loan_origination_aif || (a.gross_leverage != null && a.gross_leverage > 1.0 + _LEVERAGE_AIF_TOL)
 }
 const naCell = <span style={{ color: 'var(--text-muted)' }}>—</span>
 
@@ -154,6 +160,9 @@ export default function AllPortfolios() {
               <MetricRow label={t('allPortfolios.metrics.illiquidPct')} codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.illiquid_pct} warnAt={0.1} redAt={0.2} display={fmt(m?.illiquid_pct)} />
               )} />
+              <MetricRow label="Illiquid (Realisable)" codes={portfolioCodes} allData={allData} getter={m => (
+                <LcrCell value={m?.illiquid_realisable} />
+              )} />
               <MetricRow label="Top-10 Concentration" codes={portfolioCodes} allData={allData} getter={m => (
                 <RiskCell value={m?.top10_concentration} warnAt={0.4} redAt={0.6} display={fmt(m?.top10_concentration)} />
               )} />
@@ -210,6 +219,54 @@ export default function AllPortfolios() {
                 const color = a.lmt_compliant ? 'var(--kpi-green-text)' : 'var(--kpi-red-text)'
                 return <span className="font-semibold" style={{ color }}>{a.lmt_count} ({a.lmt_compliant ? t('allPortfolios.compliant') : t('allPortfolios.insufficient')})</span>
               }} />
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Liquidity Ladder breakdown */}
+      <div className="rounded border overflow-hidden" style={{ background: 'var(--bg-panel)', borderColor: 'var(--border)' }}>
+        <div className="bb-head px-3 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>Liquidity Ladder — Raw Breakdown</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs uppercase tracking-wide" style={{ background: 'var(--bg-surface)', color: 'var(--text-secondary)' }}>
+              <tr>
+                <th className="px-3 py-2 text-left" style={{ background: 'var(--bg-surface)' }}>Bucket</th>
+                {portfolioCodes.map(code => (
+                  <th key={code} className="px-3 py-2 text-right whitespace-nowrap">{code}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {['T+0', 'T+1', 'T+3', 'T+7', '>T+7'].map(bucket => (
+                <tr key={bucket} style={{ borderBottom: '1px solid var(--border)' }} className="transition-colors hover:opacity-80">
+                  <td className="px-3 py-1.5 font-medium whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>{bucket}</td>
+                  {portfolioCodes.map(code => {
+                    const ladder = allData[code]?.liquidity?.liquidity_ladder
+                    const row = ladder?.find(r => r.bucket === bucket)
+                    const pct = row?.nav_pct ?? 0
+                    return (
+                      <td key={code} className="px-3 py-1.5 text-right" style={{ color: 'var(--text-primary)' }}>
+                        {(pct * 100).toFixed(2)}%
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+              <tr style={{ borderBottom: '2px solid var(--border)', fontWeight: 'bold' }} className="transition-colors hover:opacity-80">
+                <td className="px-3 py-1.5 font-semibold whitespace-nowrap" style={{ color: 'var(--text-secondary)', background: 'var(--bg-panel)' }}>Total</td>
+                {portfolioCodes.map(code => {
+                  const ladder = allData[code]?.liquidity?.liquidity_ladder
+                  const total = ladder?.reduce((sum, r) => sum + (r.nav_pct ?? 0), 0) ?? 0
+                  return (
+                    <td key={code} className="px-3 py-1.5 text-right" style={{ color: 'var(--text-primary)' }}>
+                      {(total * 100).toFixed(2)}%
+                    </td>
+                  )
+                })}
+              </tr>
             </tbody>
           </table>
         </div>

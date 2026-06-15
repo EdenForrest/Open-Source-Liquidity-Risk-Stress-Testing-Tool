@@ -433,3 +433,244 @@ class TestReverseStressCoherence:
         # ... which for this book means a real equity drawdown drives it: the
         # liquidity stress is NOT autonomous of the market.
         assert result.breach_parameters["equity_shock"] < 0.0
+
+
+class TestReverseStressRayBisection:
+    """The solver's least-severe-breach guarantee depends on a ray-bisection polish.
+
+    The bug it fixes: the documented step-4 fallback returned the *full-severity
+    corner* ``s = (1,...,1)`` whenever scipy was missing or SLSQP found nothing,
+    which is the WORST breach, not the easiest — the opposite of reverse stress.
+    The polish walks any breaching winner back toward the calm state along its
+    Mahalanobis ray (D(t·s) = t·D(s) is monotone), returning the smallest ``t``
+    that still breaches *and* stays coherent. It is a pure improvement and is the
+    entire search when scipy is unavailable.
+
+    Axis order matches DEFAULT_AXES (see TestReverseStressCoherence).
+    """
+
+    def _breachable_engine(self):
+        """A fully-wired ReverseStressEngine over a book a severe shock can breach,
+        so _is_breach / _liquid_after reprice a real portfolio."""
+        port = _equity_plus_illiquid_portfolio()
+        host = StressEngine(port, scenarios=[
+            StressScenario(
+                name="dummy", equity_shock=0.0, credit_spread_shock_bps=0,
+                liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
+            )
+        ])
+        return ReverseStressEngine(host)
+
+    def test_bisection_reduces_severity_while_preserving_breach_and_coherence(self):
+        """Polishing the all-severe corner must yield a STRICTLY less-severe point
+        that still breaches and is still coherent — never the corner itself."""
+        rev = self._breachable_engine()
+        s_corner = np.ones(len(rev.axes))
+        assert rev._is_breach(s_corner)  # corner must breach for the book to be valid
+
+        d_corner = rev._distance(s_corner)
+        d_star, s_star = rev._refine_along_ray(s_corner)
+
+        assert rev._is_breach(s_star)            # still a genuine breach
+        assert rev._is_coherent(s_star)          # still economically plausible
+        assert d_star < d_corner - 1e-9          # strictly easier than the corner
+        assert d_star == pytest.approx(rev._distance(s_star))  # reported D is truthful
+        # the polished point lies ON the corner's ray (a pure scaling toward calm)
+        t = s_star[s_corner > 0] / s_corner[s_corner > 0]
+        assert np.allclose(t, t[0])
+        assert 0.0 <= t[0] <= 1.0
+
+    def test_bisection_lands_on_the_breach_boundary(self):
+        """The returned point breaches, but a hair closer to calm does not — i.e.
+        the bisection actually converges to the boundary, not to a slack interior."""
+        rev = self._breachable_engine()
+        s_corner = np.ones(len(rev.axes))
+        _d, s_star = rev._refine_along_ray(s_corner, n_bisect=24)
+
+        assert rev._is_breach(s_star)
+        # stepping 5% further toward calm along the same ray should drop the breach
+        # (the boundary is tight); guard the degenerate case where the corner itself
+        # is the only breaching scaling.
+        s_inside = 0.95 * s_star
+        if not np.allclose(s_inside, 0.0):
+            assert not rev._is_breach(s_inside)
+
+    def test_non_breaching_input_is_returned_unchanged(self):
+        """Defensive contract: the polish only ever *shrinks* a known breach. Handed
+        a calm (non-breaching) point, it returns it as-is rather than fabricating a
+        breach by scaling up."""
+        rev = self._breachable_engine()
+        s_calm = np.zeros(len(rev.axes))
+        assert not rev._is_breach(s_calm)
+        d, s_out = rev._refine_along_ray(s_calm)
+        assert np.allclose(s_out, s_calm)
+        assert d == pytest.approx(rev._distance(s_calm))
+
+    def test_scipy_free_path_returns_a_sub_corner_breach(self):
+        """With scipy forced unavailable, the grid-only search plus ray polish must
+        STILL return a coherent breach strictly easier than the full-severity corner
+        — the regression that motivated the polish (old fallback returned the corner).
+        """
+        import builtins
+        rev = self._breachable_engine()
+        s_corner = np.ones(len(rev.axes))
+        d_corner = rev._distance(s_corner)
+
+        real_import = builtins.__import__
+
+        def _no_scipy(name, *args, **kwargs):
+            if name == "scipy.optimize" or name.startswith("scipy"):
+                raise ImportError("scipy disabled for test")
+            return real_import(name, *args, **kwargs)
+
+        builtins.__import__ = _no_scipy
+        try:
+            result = rev.solve(n_starts=6, grid_per_axis=3, max_evaluations=300)
+        finally:
+            builtins.__import__ = real_import
+
+        assert result.found is True
+        s = np.array([result.severity_fractions[a.name] for a in rev.axes])
+        assert rev._is_coherent(s)
+        assert result.severity_distance < d_corner - 1e-9   # not the corner
+        assert "ray-bisection" in result.method or result.method.endswith("ray")
+
+
+# ---------------------------------------------------------------------------
+# Finding #3 — liquid_pct_after's shrinking denominator can make a stressed
+# fund look MORE liquid than normal.
+#
+# liquid_pct_after = (realisable EUR in T0-T1) / nav_after. Under a severe
+# shock nav_after collapses while the only thing inside the T0-T1 horizon is
+# unshocked cash, so the RATIO rises with severity — the stressed fund reads as
+# "more liquid" than pre-stress. That is a denominator artefact, not a real
+# improvement. The fix added absolute-EUR fields (liquid_eur_before/after) and
+# a common-basis pct (liquid_pct_after_vs_before = liquid_eur_after / nav_before)
+# so consumers have a like-for-like comparison. These tests pin the invariants
+# that genuinely hold on the absolute basis.
+# ---------------------------------------------------------------------------
+
+def _balanced_multi_asset_portfolio():
+    """8% cash + gov/IG/HY bonds + listed equity + private equity.
+
+    Only the cash (T+0) and a slice of gov bonds / equity (T+1) sit inside the
+    T0-T1 horizon; everything else settles later. Under a deepening shock the
+    risk assets lose value (and NAV shrinks) while cash is untouched, which is
+    exactly the configuration that inflates liquid_pct_after.
+    """
+    cash = Position(
+        isin="CASH01", name="EUR Cash", asset_class="cash",
+        market_value=800_000.0, currency="EUR", fx_rate=1.0,
+        adv_30d=1e12, bid_ask_spread_bps=0.0, weight=0.08,
+    )
+    govt = Position(
+        isin="GOV01", name="Bund 10y", asset_class="government_bond",
+        market_value=2_500_000.0, currency="EUR", fx_rate=1.0,
+        adv_30d=50_000_000.0, duration=8.0, is_government=True,
+        bid_ask_spread_bps=2.0, weight=0.25,
+    )
+    ig = Position(
+        isin="IG01", name="IG Corp", asset_class="ig_corporate_bond",
+        market_value=2_200_000.0, currency="EUR", fx_rate=1.0,
+        adv_30d=20_000_000.0, duration=5.0, credit_spread_bps=120.0,
+        bid_ask_spread_bps=8.0, weight=0.22,
+    )
+    hy = Position(
+        isin="HY01", name="HY Corp", asset_class="hy_corporate_bond",
+        market_value=1_500_000.0, currency="EUR", fx_rate=1.0,
+        adv_30d=8_000_000.0, duration=4.0, credit_spread_bps=400.0,
+        bid_ask_spread_bps=25.0, weight=0.15,
+    )
+    eq = Position(
+        isin="EQ01", name="Listed Equity", asset_class="listed_equity",
+        market_value=2_000_000.0, currency="EUR", fx_rate=1.0,
+        adv_30d=40_000_000.0, beta=1.1, bid_ask_spread_bps=5.0, weight=0.20,
+    )
+    pe = Position(
+        isin="PE01", name="Private Equity", asset_class="private_equity",
+        market_value=1_000_000.0, currency="EUR", fx_rate=1.0,
+        adv_30d=0.0, bid_ask_spread_bps=0.0, weight=0.10,
+    )
+    return _make_portfolio([cash, govt, ig, hy, eq, pe])
+
+
+class TestLiquidityLadderDenominator:
+
+    def _results(self):
+        pf = _balanced_multi_asset_portfolio()
+        return StressEngine(pf, scenario_library="all").run_detail()
+
+    def test_esma_basis_pct_diverges_from_common_basis(self):
+        """Document the artefact. On the ESMA basis (÷ nav_after) a scenario can
+        read as no worse — or better — than the common basis (÷ nav_before) even
+        though it destroyed liquidity, because the shrinking denominator flatters
+        the ratio. The two bases must therefore not be assumed interchangeable:
+        for at least one scenario the ESMA pct sits strictly above the common
+        basis pct. This is the gap the absolute-EUR fields exist to close.
+        """
+        results = self._results()
+        # nav_after <= nav_before for every shock, so dividing the SAME numerator
+        # by nav_after can only lift (never lower) the ratio vs the common basis.
+        assert any(
+            r.liquid_pct_after > r.liquid_pct_after_vs_before + 1e-9
+            for r in results
+        )
+
+    def test_absolute_liquidity_never_improves_under_stress(self):
+        """The real invariant: post-shock realisable EUR in T0-T1 can never
+        EXCEED the pre-shock figure. Shocks only compress ADV, deepen haircuts
+        and lower MVs — none of which can manufacture liquidity.
+        """
+        results = self._results()
+        for r in results:
+            assert r.liquid_eur_after <= r.liquid_eur_before + 1e-6, (
+                f"{r.scenario_name}: liquid_eur_after {r.liquid_eur_after:,.0f} "
+                f"> liquid_eur_before {r.liquid_eur_before:,.0f}"
+            )
+
+    def test_common_basis_pct_never_spuriously_improves(self):
+        """liquid_pct_after_vs_before (÷ nav_before, the like-for-like basis)
+        must never exceed liquid_pct_before — the fix's whole purpose. Unlike
+        liquid_pct_after it shares a denominator with the 'before' figure, so a
+        shrinking NAV cannot inflate it.
+        """
+        results = self._results()
+        for r in results:
+            assert r.liquid_pct_after_vs_before <= r.liquid_pct_before + 1e-9, (
+                f"{r.scenario_name}: common-basis liquid pct "
+                f"{r.liquid_pct_after_vs_before:.4f} > before {r.liquid_pct_before:.4f}"
+            )
+
+    def test_absolute_liquidity_monotone_along_a_severity_ray(self):
+        """Across the heterogeneous scenario library absolute T0-T1 liquidity is
+        NOT monotone in any single severity scalar — the numerator depends on the
+        composition of each scenario's shock (equity vs credit vs rate), and only
+        some shocked assets sit inside the T0-T1 horizon. An equity-led scenario
+        can therefore destroy more near-term liquidity than a nominally 'harder'
+        credit scenario whose losses land on bonds that settle later.
+
+        The invariant that DOES hold is monotonicity along a coherent severity
+        RAY: scale one scenario's shocks together (composition fixed) and
+        deepening severity can only ever shrink realisable T0-T1 EUR. We build
+        such a ray and assert non-increasing absolute liquidity.
+        """
+        pf = _balanced_multi_asset_portfolio()
+
+        def scaled_scenario(k):
+            return StressScenario(
+                name=f"ray-{k:.2f}",
+                equity_shock=-0.40 * k,
+                credit_spread_shock_bps=int(300 * k),
+                rate_shock_bps=int(150 * k),
+                liquidity_haircut_multiplier=1.0 + 1.2 * k,
+                adv_stress_scalar=1.0 - 0.6 * k,   # 1.0 → 0.4 as k: 0 → 1
+                redemption_rate=0.10,
+            )
+
+        ladder = [scaled_scenario(k) for k in (0.0, 0.25, 0.5, 0.75, 1.0)]
+        results = StressEngine(pf, scenarios=ladder).run_detail()
+        eur = [r.liquid_eur_after for r in results]
+        for milder, harsher in zip(eur, eur[1:]):
+            assert harsher <= milder + 1e-6, (
+                f"absolute T0-T1 liquidity rose as ray severity deepened: {eur}"
+            )

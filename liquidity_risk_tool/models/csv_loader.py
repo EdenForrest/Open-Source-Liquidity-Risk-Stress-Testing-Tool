@@ -20,7 +20,7 @@ from typing import Optional
 import pandas as pd
 
 from .position import Position, ShareClass, Portfolio
-from ..config.settings import DEFAULT_DURATION_YEARS, MAX_DURATION_YEARS
+from ..config.settings import DEFAULT_DURATION_YEARS, EQUITY_BETA_RANGE, MAX_DURATION_YEARS
 from ..engines.validators import ValidationError
 
 
@@ -29,9 +29,17 @@ from ..engines.validators import ValidationError
 # ---------------------------------------------------------------------------
 
 def _eu_float(value: str) -> float:
-    """'1.159.375,000000' → 1159375.0  |  '(21.016.625,00)' → -21016625.0"""
+    """'1.159.375,000000' → 1159375.0  |  '(21.016.625,00)' → -21016625.0
+
+    Unparseable, NaN, or infinite inputs all map to 0.0 so a single bad cell
+    never injects a non-finite value into the portfolio.
+    """
     if not isinstance(value, str):
-        return float(value) if value else 0.0
+        try:
+            f = float(value) if value else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+        return f if math.isfinite(f) else 0.0
     s = value.strip()
     if not s:
         return 0.0
@@ -41,9 +49,11 @@ def _eu_float(value: str) -> float:
     s = s.replace(".", "").replace(",", ".")
     try:
         result = float(s)
-        return -result if negative else result
     except ValueError:
         return 0.0
+    if not math.isfinite(result):
+        return 0.0
+    return -result if negative else result
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +157,13 @@ def _infer_asset_class(
 
     # Futures (ProductCode or ISIN contains futures identifier)
     if any(fc in pc_u for fc in _FUTURES_CODES) or any(fc in isin_u for fc in _FUTURES_CODES):
+        return "future"
+
+    # FX forwards and total return swaps: OTC derivatives with near-zero MV and a
+    # full notional in Exposure (base). They are settled, not separately traded,
+    # so they behave like futures for liquidity (T+1) — classifying them as equity
+    # mislabels them and triggers a spurious missing-ADV fallback.
+    if isin_u.startswith(("FWD-", "TRS-")):
         return "future"
 
     # Options
@@ -304,6 +321,14 @@ def load_portfolio_from_csv(
     except Exception as exc:
         raise ValidationError(f"Cannot read holdings file '{holdings_path.name}': {exc}") from exc
     holdings_df.columns = [c.strip() for c in holdings_df.columns]
+
+    _required = ["Portfolio Code", "Date", "Market Value in Base Currency"]
+    _missing = [c for c in _required if c not in holdings_df.columns]
+    if _missing:
+        raise ValidationError(
+            f"Holdings file '{holdings_path.name}' is missing required column(s) "
+            f"{_missing}. Found: {list(holdings_df.columns)}"
+        )
 
     available = sorted(holdings_df["Portfolio Code"].dropna().unique().tolist())
     if portfolio_code is None:
@@ -524,14 +549,24 @@ def enrich_portfolio_from_market_data(
     Columns consumed (all optional — missing columns are skipped gracefully):
         isin, portfolio, asset_class_hint, adv_30d_eur, bid_ask_spread_bps,
         modified_duration, convexity, ytm, beta
+
+    Out-of-range values are clamped (beta, duration) or skipped (negative
+    convexity/spread) rather than written through, so a bad market-data row
+    can degrade but never corrupt the portfolio.
     """
-    mkt = pd.read_csv(market_data_path, dtype=str)
+    market_data_path = Path(market_data_path)
+    try:
+        mkt = pd.read_csv(market_data_path, dtype=str)
+    except Exception as exc:
+        raise ValidationError(
+            f"Cannot read market data file '{market_data_path.name}': {exc}"
+        ) from exc
     mkt.columns = [c.strip() for c in mkt.columns]
 
     def _f(val) -> Optional[float]:
         try:
             f = float(val)
-            return None if math.isnan(f) else f
+            return f if math.isfinite(f) else None
         except (TypeError, ValueError):
             return None
 
@@ -550,10 +585,22 @@ def enrich_portfolio_from_market_data(
         elif has_portfolio_col and str(row.get("portfolio", "")).strip() == fund_id:
             rows_by_isin[isin] = row
 
+    # Asset classes whose ADV should come from market data. If one of these
+    # falls through enrichment it keeps the loader's small default ADV, which
+    # silently makes large positions look illiquid — exactly the holdings vs
+    # market_data universe mismatch we want surfaced rather than hidden.
+    _ADV_EXPECTED = {
+        "listed_equity", "etf", "option", "originated_loan",
+        "government_bond", "ig_corporate_bond", "hy_corporate_bond",
+    }
+
     enriched = 0
+    missed: list[tuple[str, str, float]] = []
     for pos in portfolio.positions:
         row = rows_by_isin.get(pos.isin)
         if row is None:
+            if pos.asset_class in _ADV_EXPECTED:
+                missed.append((pos.isin, pos.asset_class, abs(pos.market_value_eur)))
             continue
 
         hint = str(row.get("asset_class_hint", "")).strip()
@@ -570,17 +617,29 @@ def enrich_portfolio_from_market_data(
 
         dur = _f(row.get("modified_duration"))
         if dur is not None:
-            pos.duration = dur
+            pos.duration = min(max(dur, 0.0), 30.0)
 
         conv = _f(row.get("convexity"))
-        if conv is not None:
+        if conv is not None and conv >= 0:
             pos.convexity = conv
 
         beta = _f(row.get("beta"))
         if beta is not None:
-            pos.beta = beta
+            lo, hi = EQUITY_BETA_RANGE
+            pos.beta = min(max(beta, lo), hi)
 
         enriched += 1
+
+    if missed:
+        missed.sort(key=lambda t: t[2], reverse=True)
+        total_missed = sum(mv for *_, mv in missed)
+        top = "; ".join(f"{isin} ({ac}, €{mv:,.0f})" for isin, ac, mv in missed[:5])
+        warnings.warn(
+            f"{len(missed)} non-derivative position(s) worth €{total_missed:,.0f} "
+            f"have no market data row and fall back to default ADV "
+            f"(may overstate illiquidity). Largest: {top}",
+            stacklevel=2,
+        )
 
     portfolio._refresh_weights()
     return portfolio
@@ -588,5 +647,12 @@ def enrich_portfolio_from_market_data(
 
 def available_portfolio_codes(mvhol_path: str | Path) -> list[str]:
     """Return the sorted list of portfolio codes present in an MVHOL file."""
-    df = pd.read_csv(mvhol_path, sep=";", dtype=str, usecols=["Portfolio Code"])
+    mvhol_path = Path(mvhol_path)
+    try:
+        df = pd.read_csv(mvhol_path, sep=";", dtype=str, usecols=["Portfolio Code"])
+    except Exception as exc:
+        raise ValidationError(
+            f"Cannot read portfolio codes from '{mvhol_path.name}' "
+            f"(expected a semicolon-delimited file with a 'Portfolio Code' column): {exc}"
+        ) from exc
     return sorted(df["Portfolio Code"].dropna().unique().tolist())

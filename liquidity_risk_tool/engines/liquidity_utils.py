@@ -15,7 +15,7 @@ def liquidity_at_horizon(profile: pd.DataFrame, days: int) -> float:
     """Sum realisable_value for all buckets whose settlement day <= days."""
     total = 0.0
     for bucket in BUCKET_ORDER:
-        lo, _ = LIQUIDITY_BUCKETS[bucket]
-        if lo <= days:
+        _, hi = LIQUIDITY_BUCKETS[bucket]
+        if hi <= days:
             total += profile[profile["bucket"] == bucket]["realisable_value"].sum()
     return total

@@ -55,7 +55,8 @@ class LiquidityMetrics:
     lcr_t1: float               # liquid (T0+T1) / total NAV
     lcr_t3: float
     lcr_t7: float
-    illiquid_pct: float         # >T+7
+    illiquid_pct: float         # >T+7 raw market value
+    illiquid_realisable: float  # >T+7 post-haircut (for reconciliation: lcr_t7 + illiquid_realisable should be ~100%)
 
     # Concentration risk
     top10_concentration: float
@@ -122,8 +123,10 @@ class RiskMetricsBuilder:
         lcr_t3 = profiler.liquidity_at_horizon(3)
         lcr_t7 = profiler.liquidity_at_horizon(7)
 
-        # >T+7 illiquid pct
+        # >T+7 illiquid pct (raw market value)
         illiquid = ladder[ladder["bucket"] == ">T+7"]["nav_pct"].sum()
+        # >T+7 realisable pct (post-haircut, for reconciliation with LCR)
+        illiquid_realisable = ladder[ladder["bucket"] == ">T+7"]["realisable_value_eur"].sum() / nav if nav > 0 else 0.0
 
         # Days to liquidate percentiles
         profile_df = profiler.position_buckets
@@ -140,6 +143,7 @@ class RiskMetricsBuilder:
             lcr_t3                 = lcr_t3,
             lcr_t7                 = lcr_t7,
             illiquid_pct           = illiquid,
+            illiquid_realisable    = illiquid_realisable,
             top10_concentration    = self.portfolio.top_10_investor_concentration,
             liquidity_vs_concentration = lcr_t1 / self.portfolio.top_10_investor_concentration,
             warning_flag           = flags["warning"] or flags.get("geo_warning_flag", False),

@@ -13,6 +13,7 @@ Returns a day-by-day sell schedule and cumulative cash raised.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -27,6 +28,8 @@ from ..config.settings import (
     REDEMPTION_SETTLEMENT_DAYS,
 )
 from ..models.position import Portfolio
+from .liquidity_profiler import _is_settled_not_traded
+from .liquidity_utils import safe_divide
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +128,15 @@ class WaterfallEngine:
     # Public API
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _validate_target(target_eur: float) -> None:
+        if not math.isfinite(target_eur) or target_eur < 0:
+            raise ValueError(
+                f"target_eur must be a finite value >= 0 (got {target_eur})"
+            )
+
     def run(self, target_eur: float) -> WaterfallResult:
+        self._validate_target(target_eur)
         nav = self.portfolio.total_nav
         buffer = nav * MIN_CASH_BUFFER_PCT
         # Raise enough to meet the redemption AND retain the minimum cash buffer.
@@ -184,7 +195,7 @@ class WaterfallEngine:
         result.residual_shortfall_eur = max(0.0, effective_target - proceeds_in_horizon)
         result.days_to_target         = float(self._sequential_days(orders))
         result.nav_after              = nav - sum(o.gross_value for o in orders)
-        result.nav_impact_pct       = (result.nav_before - result.nav_after) / result.nav_before
+        result.nav_impact_pct       = safe_divide(result.nav_before - result.nav_after, result.nav_before)
 
         return result
 
@@ -202,6 +213,7 @@ class WaterfallEngine:
 
         Falls back to self.run(target_eur) if scipy is unavailable or LP infeasible.
         """
+        self._validate_target(target_eur)
         try:
             from scipy.optimize import linprog
         except ImportError:
@@ -209,7 +221,13 @@ class WaterfallEngine:
 
         regime = "haircut_stress" if self.stress else "haircut_normal"
 
-        sellable = self.profile[~self.profile["is_locked"]].copy()
+        # Only positive-MV positions can be sold for cash. Negative-MV positions
+        # (shorts, overdrafts) are liabilities — including them would make the
+        # LP bounds (0, mv) infeasible and let the optimiser raise phantom cash.
+        sellable = self.profile[
+            (~self.profile["is_locked"])
+            & (self.profile["market_value_eur"] > 0)
+        ].copy()
         if sellable.empty:
             return self.run(target_eur)
 
@@ -221,12 +239,22 @@ class WaterfallEngine:
         n = len(sellable)
         isins      = sellable["isin"].tolist()
         mv         = sellable["market_value_eur"].values.astype(float)
-        adv        = sellable["adv_30d"].values.astype(float)
+        # Profiles built by LiquidityProfiler carry effective_adv =
+        # adv_30d × adv_stress_scalar, so stressed scenarios compress the
+        # waterfall's daily caps consistently with the profiler. Fall back to
+        # adv_30d for hand-built profiles (same pattern as the redemption
+        # simulator).
+        adv_col    = "effective_adv" if "effective_adv" in sellable.columns else "adv_30d"
+        adv        = sellable[adv_col].values.astype(float)
 
+        # Settled-not-traded assets (cash-like T+0) are not sold into a market:
+        # ADV participation caps do not apply, so their full value is available
+        # immediately.
+        settled = np.array([
+            _is_settled_not_traded(ac) for ac in sellable["asset_class"]
+        ], dtype=bool)
         daily_cap  = adv * MAX_ADV_PARTICIPATION
-        # For positions with zero ADV treat daily cap as infinity for LP bounds;
-        # they cannot actually be sold quickly but LP needs a finite bound.
-        lp_cap = np.where(daily_cap > 0, daily_cap, mv)
+        daily_cap  = np.where(settled, np.abs(mv), daily_cap)
 
         net_rate = np.array([
             (1 - ASSET_CLASS_LIQUIDITY.get(ac, {}).get(regime, 0.0)
@@ -258,7 +286,7 @@ class WaterfallEngine:
             impact_bps = ASSET_CLASS_LIQUIDITY.get(ac, {}).get("market_impact_bps", 10)
             impact_cost = sell_gross * impact_bps / 10_000
             net_proceeds = sell_gross * (1 - haircut) - impact_cost
-            days = int(np.ceil(sell_gross / daily_cap[i])) if daily_cap[i] > 0 else 9999
+            days = 0 if settled[i] else (int(np.ceil(sell_gross / daily_cap[i])) if daily_cap[i] > 0 else 9999)
             orders.append(SellOrder(
                 day=days, isin=pos["isin"], name=pos["name"],
                 asset_class=ac, bucket=pos["bucket"],
@@ -304,6 +332,14 @@ class WaterfallEngine:
         bucket: str,
     ) -> SellOrder | None:
         """Compute sell order for a single position."""
+        mv = float(pos["market_value_eur"])
+        # Negative-MV positions (short derivatives, overdrawn cash) are
+        # liabilities: closing them CONSUMES cash, so they can never be a
+        # source of redemption proceeds. Taking abs() here would book phantom
+        # cash from "selling" a liability.
+        if mv <= 0:
+            return None
+
         profile_data = ASSET_CLASS_LIQUIDITY.get(pos["asset_class"], {})
         if "haircut" in pos.index and pd.notna(pos["haircut"]):
             haircut = float(pos["haircut"])
@@ -312,12 +348,23 @@ class WaterfallEngine:
             haircut = profile_data.get(regime, 0.0)
         market_impact_bps = profile_data.get("market_impact_bps", 10)
 
-        # How much can we sell (ADV cap)
-        adv = pos["adv_30d"]
-        daily_capacity = adv * MAX_ADV_PARTICIPATION if adv > 0 else 0.0
+        # How much can we sell (ADV cap). Settled-not-traded assets (cash-like
+        # T+0) are not sold into a market, so ADV participation caps do not
+        # apply: full value is realisable same-day even with adv_30d == 0.
+        settled = _is_settled_not_traded(pos["asset_class"])
+        # Prefer the profiler's stress-scaled effective_adv (adv_30d ×
+        # adv_stress_scalar) so stressed daily caps match the profiler;
+        # fall back to raw adv_30d for hand-built profiles.
+        if "effective_adv" in pos.index and pd.notna(pos["effective_adv"]):
+            adv = pos["effective_adv"]
+        else:
+            adv = pos["adv_30d"]
+        if settled:
+            daily_capacity = mv
+        else:
+            daily_capacity = adv * MAX_ADV_PARTICIPATION if adv > 0 else 0.0
 
-        # Use absolute market value — short derivatives have negative market_value_eur
-        available_value = abs(pos["market_value_eur"]) * (1 - haircut)
+        available_value = mv * (1 - haircut)
 
         # Skip positions that cannot be liquidated: zero ADV (truly illiquid) or
         # zero available value after haircut (e.g. fully impaired).
@@ -325,27 +372,24 @@ class WaterfallEngine:
             return None
 
         # Sell only what is needed, up to the gross amount the market can absorb.
-        # Use abs(market_value) so short positions produce positive sell_gross.
-        mv_abs = abs(pos["market_value_eur"])
         net_rate = 1 - haircut - market_impact_bps / 10_000
         if net_rate > 0:
-            sell_gross = min(mv_abs, remaining / net_rate)
+            sell_gross = min(mv, remaining / net_rate)
         else:
-            sell_gross = mv_abs
-        sell_gross = min(sell_gross, mv_abs)
+            sell_gross = mv
 
         # Skip rounding residuals — floating-point drift after earlier positions have
         # already met the target can leave a near-zero remaining amount.
         if sell_gross < 1.0:
             return None
 
-        days = int(np.ceil(sell_gross / daily_capacity))
+        days = 0 if settled else int(np.ceil(sell_gross / daily_capacity))
 
         impact_cost = sell_gross * market_impact_bps / 10_000
         net_proceeds = sell_gross * (1 - haircut) - impact_cost
         net_proceeds = max(0.0, net_proceeds)
 
-        is_partial = sell_gross < mv_abs
+        is_partial = sell_gross < mv
 
         return SellOrder(
             day          = days,

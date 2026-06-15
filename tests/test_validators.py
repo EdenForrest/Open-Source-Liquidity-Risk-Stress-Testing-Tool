@@ -87,14 +87,17 @@ class TestValidatePortfolio:
 
     def test_strict_raises_on_error(self):
         port = build_sample_portfolio()
-        # Corrupt one position
-        port.positions[0].market_value = -1
+        # Corrupt one position (an equity — negative MV is only legitimate for
+        # shortable asset classes like futures/options/cash)
+        equity = next(p for p in port.positions if p.asset_class == "listed_equity")
+        equity.market_value = -1
         with pytest.raises(ValidationError):
             validate_portfolio(port, strict=True)
 
     def test_non_strict_returns_list(self):
         port = build_sample_portfolio()
-        port.positions[0].market_value = -1
+        equity = next(p for p in port.positions if p.asset_class == "listed_equity")
+        equity.market_value = -1
         errors = validate_portfolio(port, strict=False)
         assert len(errors) >= 1
 

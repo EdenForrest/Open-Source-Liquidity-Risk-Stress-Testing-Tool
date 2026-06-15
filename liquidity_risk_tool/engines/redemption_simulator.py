@@ -12,6 +12,7 @@ Incorporates:
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import List
 
@@ -26,7 +27,8 @@ from ..config.settings import (
     GATE_THRESHOLD as SETTINGS_GATE_THRESHOLD,
     SUSPENSION_THRESHOLD as SETTINGS_SUSPENSION_THRESHOLD,
 )
-from .liquidity_utils import liquidity_at_horizon
+from .liquidity_utils import liquidity_at_horizon, safe_divide
+from .liquidity_profiler import _is_settled_not_traded
 from ..models.position import Portfolio
 
 
@@ -106,6 +108,12 @@ class RedemptionSimulator:
         """Run all redemption scenarios; return a summary DataFrame."""
         if scenarios is None:
             scenarios = REDEMPTION_SCENARIOS
+        for pct in scenarios:
+            if not math.isfinite(pct) or pct < 0:
+                raise ValueError(
+                    f"Redemption scenario percentages must be finite values >= 0 "
+                    f"(got {pct})"
+                )
         profile = self.stress_profile if stress else self.liquid_profile
         results = [self._evaluate_scenario(pct, profile) for pct in scenarios]
         return pd.DataFrame([r.to_dict() for r in results])
@@ -241,9 +249,9 @@ class RedemptionSimulator:
             scenario_pct              = redemption_pct,
             redemption_eur            = redemption_eur,
             liquidity_available_eur   = usable_t7,
-            liquidity_available_pct   = usable_t7 / nav,
+            liquidity_available_pct   = safe_divide(usable_t7, nav),
             shortfall_eur             = shortfall_eur,
-            shortfall_pct             = shortfall_eur / nav,
+            shortfall_pct             = safe_divide(shortfall_eur, nav),
             can_meet_t1               = usable_t1 >= effective_cash_demand,
             can_meet_t3               = usable_t3 >= effective_cash_demand,
             can_meet_t7               = usable_t7 >= effective_cash_demand,
@@ -286,6 +294,12 @@ class RedemptionSimulator:
         adv_col = "effective_adv" if "effective_adv" in sellable.columns else "adv_30d"
         caps = (sellable[adv_col] * MAX_ADV_PARTICIPATION).clip(lower=0).values
         values = sellable["realisable_value"].clip(lower=0).values
+
+        # Settled-not-traded assets (cash-like T+0) are not sold into a market:
+        # ADV caps do not apply, so their full realisable value is available
+        # on day 0 instead of being dropped as "zero ADV".
+        settled = sellable["asset_class"].map(_is_settled_not_traded).values
+        caps = np.where(settled, values, caps)
 
         liquid = caps > 0
         caps, values = caps[liquid], values[liquid]

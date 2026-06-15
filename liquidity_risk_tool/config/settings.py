@@ -152,6 +152,11 @@ CREDIT_SPREAD_BPS_RANGE: tuple = (0, 5000)
 # Acceptable equity beta range
 EQUITY_BETA_RANGE: tuple = (0, 3)
 
+# Asset classes where a negative market value is economically meaningful
+# (short derivatives positions, overdrawn cash accounts). The CSV loader
+# preserves the sign for these; validators must not flag them as errors.
+SHORTABLE_ASSET_CLASSES: frozenset = frozenset({"future", "option", "cash"})
+
 # Duration inference limits for bond positions
 MAX_DURATION_YEARS: float = 15.0
 DEFAULT_DURATION_YEARS: float = 3.0
