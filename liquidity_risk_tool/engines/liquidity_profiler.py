@@ -228,35 +228,33 @@ class LiquidityProfiler:
                 np.inf,
             ),
         )
-        df["_days_to_liq_pre"] = days_to_liq
+        # Vectorised bucketing — equivalent to the previous row-wise get_bucket,
+        # but expressed as column ops so it runs once over the frame rather than
+        # once per row (this method is on the reverse-stress hot path).
+        #
+        # ADV-implied bucket from days_to_liq: thresholds 0 / 1 / 3 / 7.
+        adv_bucket = np.select(
+            [days_to_liq <= 0, days_to_liq <= 1, days_to_liq <= 3, days_to_liq <= 7],
+            ["T+0", "T+1", "T+3", "T+7"],
+            default=">T+7",
+        )
+        # Asset-class settlement bucket: pure dict lookup per class.
+        asset_bucket = df["asset_class"].map(
+            lambda ac: ASSET_CLASS_LIQUIDITY.get(ac, {}).get("bucket", ">T+7")
+        ).to_numpy()
+        # Take the worse (less liquid) of the asset and ADV buckets by rank.
+        rank = np.vectorize(_BUCKET_RANK.get)
+        worst = np.where(rank(adv_bucket) > rank(asset_bucket), adv_bucket, asset_bucket)
 
-        def _days_to_bucket(days: float) -> str:
-            if days <= 0:
-                return "T+0"
-            elif days <= 1:
-                return "T+1"
-            elif days <= 3:
-                return "T+3"
-            elif days <= 7:
-                return "T+7"
-            else:
-                return ">T+7"
-
-        def get_bucket(row):
-            if row["is_locked"]:
-                return ">T+7"
-            if pd.notna(row["bucket_override"]) and row["bucket_override"]:
-                return row["bucket_override"]
-            profile = ASSET_CLASS_LIQUIDITY.get(row["asset_class"], {})
-            asset_bucket = profile.get("bucket", ">T+7")
-            adv_bucket = _days_to_bucket(row["_days_to_liq_pre"])
-            # Take the worse (less liquid) of the two
-            if _BUCKET_RANK[adv_bucket] > _BUCKET_RANK[asset_bucket]:
-                return adv_bucket
-            return asset_bucket
-
-        df["bucket"] = df.apply(get_bucket, axis=1)
-        df.drop(columns=["_days_to_liq_pre"], inplace=True)
+        # Precedence: locked → >T+7; else a valid override wins; else the worst bucket.
+        override = df["bucket_override"]
+        has_override = override.notna().to_numpy() & override.astype(bool).to_numpy()
+        bucket = np.where(
+            df["is_locked"].to_numpy(),
+            ">T+7",
+            np.where(has_override, override.to_numpy(), worst),
+        )
+        df["bucket"] = bucket
         return df
 
     def _apply_haircuts(self, df: pd.DataFrame, nav: float) -> pd.DataFrame:
@@ -277,14 +275,14 @@ class LiquidityProfiler:
             df["realisable_weight"] = pd.Series(dtype=float)
             return df
 
-        def total_haircut(row):
-            profile = ASSET_CLASS_LIQUIDITY.get(row["asset_class"], {})
-            base_haircut = profile.get(regime, 0.0)
-            # Half-spread cost: we pay the spread to cross from mid to bid on exit
-            spread_cost = row["bid_ask_spread_bps"] / 2.0 / 10_000
-            return base_haircut + spread_cost
-
-        df["haircut"] = df.apply(total_haircut, axis=1).clip(lower=0.0, upper=MAX_HAIRCUT)
+        # Vectorised: the per-asset-class base haircut is a pure dict lookup, so
+        # map the column instead of looping rows. Half-spread cost is arithmetic.
+        # (Equivalent to the previous df.apply(total_haircut, axis=1).)
+        base_haircut = df["asset_class"].map(
+            lambda ac: ASSET_CLASS_LIQUIDITY.get(ac, {}).get(regime, 0.0)
+        )
+        spread_cost = df["bid_ask_spread_bps"] / 2.0 / 10_000
+        df["haircut"] = (base_haircut + spread_cost).clip(lower=0.0, upper=MAX_HAIRCUT)
         # Haircut is a realisation COST: it reduces what a long position fetches
         # AND increases what closing a short/overdraft (negative MV) costs.
         # mv * (1 - h) on a negative MV would shrink the liability and overstate

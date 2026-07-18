@@ -207,7 +207,11 @@
       "badge": "Invers",
       "foundBanner": "Verletzungsszenario gefunden (Plausibilitätsdistanz {{distance}}). Den Tabellen unten hinzugefügt.",
       "robustBanner": "Keine Verletzung im plausiblen Bereich erreichbar — das Portfolio ist widerstandsfähig.",
+      "noScenarioBanner": "Kein realistisches inverses Stresstest-Szenario — eine Verletzung ist nur am implausiblen schweren Extrem erreichbar (Liquiditätsabschlag an der Obergrenze von 2,8×). Der Fonds ist praktisch widerstandsfähig.",
       "baselineBanner": "Bereits ohne angewendeten Schock in Verletzung: Die Basis-T0-T1-Liquidität beträgt {{liquid}}%, unter dem Schwellenwert von {{target}}%. Inverser Stress ist nicht anwendbar — der Fonds verletzt die Grenze schon vor jedem Stress.",
+      "ceilingsTitle": "Such-Obergrenzen (schwere Endpunkte)",
+      "ceilingsHint": "Der schwerste Wert, den jeder Treiber in der Suche erreichen kann. Die Standardwerte sind auf die schwer-aber-plausiblen Bereiche von ESMA / AIFMD II kalibriert; erweitern oder verengen Sie sie, um den durchsuchten Bereich neu zu formen.",
+      "ceilingsReset": "Auf Standardwerte zurücksetzen",
       "error": "Inverser Stresstest konnte nicht ausgeführt werden. Bitte versuchen Sie es erneut."
     }
   },

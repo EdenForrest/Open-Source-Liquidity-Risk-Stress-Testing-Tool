@@ -372,8 +372,20 @@ def reverse_stress(run_id: str, body: ReverseStressRequest):
     code = body.portfolio or (codes[0] if codes else None)
     record = store.get(run_id)
 
+    # Map the request's per-axis severe-endpoint overrides onto engine axis names.
+    # Omitted fields stay None and the engine keeps the calibrated default ceiling.
+    ceilings = {
+        "equity_shock": body.equity_shock_severe,
+        "rate_shock_bps": body.rate_shock_bps_severe,
+        "adv_stress_scalar": body.adv_stress_scalar_severe,
+        "liquidity_haircut_multiplier": body.liquidity_haircut_multiplier_severe,
+        "redemption_rate": body.redemption_rate_severe,
+    }
+
     try:
-        return stress_service.run_reverse_stress(record, code)
+        return stress_service.run_reverse_stress(
+            record, code, use_native=body.use_native, ceilings=ceilings
+        )
     except stress_service.PortfolioUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (stress_service.PortfolioLoadError, stress_service.StressRunError) as exc:

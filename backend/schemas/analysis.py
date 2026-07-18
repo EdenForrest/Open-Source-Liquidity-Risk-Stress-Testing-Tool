@@ -95,7 +95,11 @@ class CustomScenarioRequest(BaseModel):
     equity_shock: float = Field(default=0.0, ge=-1.0, le=1.0)
     credit_spread_shock_bps: int = Field(default=0, ge=0, le=10000)
     rate_shock_bps: int = Field(default=0, ge=-10000, le=10000)
-    liquidity_haircut_multiplier: float = Field(default=1.0, ge=1.0, le=20.0)
+    # Bounded by the severe corner of the plausible-shock box (ParameterAxis
+    # severe=2.8 in reverse_stress_engine.py). Custom what-if scenarios must
+    # stay inside the same regulatory plausible box as the reverse-stress
+    # search, so a manual entry cannot exceed the haircut bound it reports.
+    liquidity_haircut_multiplier: float = Field(default=1.0, ge=1.0, le=2.8)
     redemption_rate: float = Field(default=0.05, ge=0.0, le=1.0)
     adv_stress_scalar: float = Field(default=1.0, gt=0.0, le=5.0)
     portfolio: Optional[str] = None
@@ -103,6 +107,22 @@ class CustomScenarioRequest(BaseModel):
 
 class ReverseStressRequest(BaseModel):
     portfolio: Optional[str] = None
+    # Prefer the compiled C++ search core when available. Purely a performance
+    # choice: the native and Python paths are numerically identical, so this
+    # only changes speed. Falls back to Python when the core is not built.
+    use_native: bool = True
+    # Optional user-tunable severe-endpoint ("ceiling") overrides for the five
+    # reverse-stress axes. Each is the value the severity fraction s=1 maps to;
+    # omitting one leaves the calibrated DEFAULT_AXES ceiling in place. Bounds
+    # below keep every override inside a severe-but-plausible envelope so the box
+    # the optimiser searches can never become economically incoherent (e.g. a
+    # positive equity "shock" or a >100% single-period redemption). The fraction
+    # is always clamped to [0, 1], so a lever can only run calm -> ceiling.
+    equity_shock_severe: Optional[float] = Field(default=None, ge=-0.90, le=-0.05)
+    rate_shock_bps_severe: Optional[float] = Field(default=None, ge=50.0, le=800.0)
+    adv_stress_scalar_severe: Optional[float] = Field(default=None, ge=0.05, le=0.95)
+    liquidity_haircut_multiplier_severe: Optional[float] = Field(default=None, ge=1.1, le=5.0)
+    redemption_rate_severe: Optional[float] = Field(default=None, ge=0.05, le=0.60)
 
 
 class WaterfallOptimiseRequest(BaseModel):

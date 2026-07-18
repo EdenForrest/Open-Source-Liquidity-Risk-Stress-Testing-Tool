@@ -160,7 +160,12 @@ def run_custom_scenario(record, portfolio_code, params) -> dict:
     }
 
 
-def run_reverse_stress(record, portfolio_code) -> dict:
+def run_reverse_stress(
+    record,
+    portfolio_code,
+    use_native: bool = True,
+    ceilings: dict | None = None,
+) -> dict:
     """
     Run the multi-parameter reverse stress search and return the least-severe
     joint shock that breaches the liquidity constraint, materialised as a
@@ -170,19 +175,62 @@ def run_reverse_stress(record, portfolio_code) -> dict:
     When the portfolio is robust across the whole plausible box (no breach is
     reachable), ``found`` is False and ``stress_result`` / ``scenario_metadata``
     are null — a meaningful resilience result, not an error.
+
+    ``use_native`` selects the compiled C++ search core when it is available;
+    the native and Python paths are numerically identical, so this is purely a
+    performance choice. The returned ``engine_used`` reports which one actually
+    ran ("native" only when the caller asked for it *and* the core is built).
+
+    ``ceilings`` optionally overrides the severe endpoint of one or more axes
+    (keys are axis names, e.g. ``equity_shock``); omitted axes keep their
+    calibrated defaults. The values are assumed already bounded by the request
+    schema. When supplied, the Python search path is forced — the compiled core
+    is built against the fixed DEFAULT_AXES box and does not honour overrides.
     """
+    from liquidity_risk_tool.engines._reverse_stress_native import native_available
+    from liquidity_risk_tool.engines.reverse_stress_engine import axes_with_ceilings
+
     portfolio = _reload_portfolio(record, portfolio_code)
+
+    overrides = {k: v for k, v in (ceilings or {}).items() if v is not None}
+    axes = axes_with_ceilings(overrides) if overrides else None
+    # The native core hardcodes the default box; only the Python path can search
+    # a user-resized box, so a ceiling override forces Python.
+    if overrides:
+        use_native = False
 
     try:
         stress_engine = StressEngine(portfolio)
-        scenario, scenario_result, reverse_result = ReverseStressEngine(stress_engine).run()
+        engine = ReverseStressEngine(stress_engine, axes=axes, use_native=use_native)
+        scenario, scenario_result, reverse_result = engine.run()
     except Exception as exc:
         raise StressRunError(f"Reverse stress run failed: {exc}") from exc
+
+    engine_used = "native" if (use_native and native_available()) else "python"
 
     if scenario is None or scenario_result is None:
         # Robust across the plausible box — no breach found.
         return {
             "found": False,
+            "engine_used": engine_used,
+            "stress_result": None,
+            "scenario_metadata": None,
+            "reverse_result": _clean_dict(reverse_result.to_dict()),
+        }
+
+    # A "frontier" breach only materialises at (or within a whisker of) the
+    # severe corner of the plausible box — its worst lever being the maximal
+    # liquidity_haircut_multiplier of 2.8. The fund is practically resilient and
+    # this is the implausible extreme, not a realistic scenario to plan around.
+    # Policy: surface a breach only when it can be reached with haircut *under*
+    # the 2.8 ceiling; if the only breach hugs that ceiling, report it as
+    # not-found-frontier so the UI shows "no realistic reverse stress testing
+    # scenario" rather than a misleading corner-of-the-box row.
+    if getattr(reverse_result, "plausibility", None) == "frontier":
+        return {
+            "found": False,
+            "frontier": True,
+            "engine_used": engine_used,
             "stress_result": None,
             "scenario_metadata": None,
             "reverse_result": _clean_dict(reverse_result.to_dict()),
@@ -190,6 +238,7 @@ def run_reverse_stress(record, portfolio_code) -> dict:
 
     return {
         "found": True,
+        "engine_used": engine_used,
         "stress_result": _clean_dict(scenario_result.to_dict()),
         "scenario_metadata": _clean_dict(_scenario_meta(scenario)),
         "reverse_result": _clean_dict(reverse_result.to_dict()),
