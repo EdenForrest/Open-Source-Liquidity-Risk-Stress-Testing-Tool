@@ -33,7 +33,7 @@ from liquidity_risk_tool.models.csv_loader import (
     load_portfolio_from_csv,
     enrich_portfolio_from_market_data,
 )
-from backend.services.pipeline_service import _clean_dict, _clean_records
+from liquidity_risk_tool.analysis.result import _clean_dict, _clean_records
 
 
 # ---------------------------------------------------------------------------
