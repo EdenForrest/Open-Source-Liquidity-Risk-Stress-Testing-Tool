@@ -26,7 +26,17 @@ from liquidity_risk_tool.engines.reverse_stress_engine import (
     DEFAULT_AXES,
     COHERENCE_AUTONOMY,
     SHOCK_CORRELATION,
+    axes_with_ceilings,
 )
+
+# The redemption-failure ("Can-Meet=NO") search below relies on a DEEP-corner
+# breach: the severe corner must drive the book to a redemption failure. Commit
+# 19899a2 deliberately tightened the DEFAULT_AXES ceilings (redemption_rate
+# 0.50->0.30, liquidity_haircut_multiplier 5.0->2.8) for the production oracle,
+# under which this deliberately-fragile test fixture is no longer breachable.
+# These tests characterise the SOLVER, not the calibration, so they pin the
+# pre-19899a2 ceilings explicitly instead of inheriting the production ones.
+_DEEP_CORNER_CEILINGS = {"redemption_rate": 0.50, "liquidity_haircut_multiplier": 5.0}
 from liquidity_risk_tool.config.settings import (
     StressScenario,
     MIN_CASH_BUFFER_PCT,
@@ -243,7 +253,7 @@ class TestReverseStressIsRedemptionFailure:
                 liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
             )
         ])
-        rev = ReverseStressEngine(engine)
+        rev = ReverseStressEngine(engine, axes=axes_with_ceilings(_DEEP_CORNER_CEILINGS))
 
         scenario, scenario_result, reverse_result = rev.run(
             n_starts=4, grid_per_axis=3, max_evaluations=120,
@@ -374,7 +384,7 @@ class TestReverseStressIsRedemptionFailure:
                 liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
             )
         ])
-        rev = ReverseStressEngine(engine)
+        rev = ReverseStressEngine(engine, axes=axes_with_ceilings(_DEEP_CORNER_CEILINGS))
         result = rev.solve(n_starts=6, grid_per_axis=3, max_evaluations=200)
 
         assert result.found is True
@@ -510,7 +520,7 @@ class TestReverseStressCoherence:
                 liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
             )
         ])
-        rev = ReverseStressEngine(engine)
+        rev = ReverseStressEngine(engine, axes=axes_with_ceilings(_DEEP_CORNER_CEILINGS))
 
         result = rev.solve(n_starts=6, grid_per_axis=3, max_evaluations=300)
 
@@ -547,7 +557,7 @@ class TestReverseStressRayBisection:
                 liquidity_haircut_multiplier=1.0, redemption_rate=0.0,
             )
         ])
-        return ReverseStressEngine(host)
+        return ReverseStressEngine(host, axes=axes_with_ceilings(_DEEP_CORNER_CEILINGS))
 
     def test_bisection_reduces_severity_while_preserving_breach_and_coherence(self):
         """Polishing the all-severe corner must yield a STRICTLY less-severe point
@@ -559,7 +569,11 @@ class TestReverseStressRayBisection:
         d_corner = rev._distance(s_corner)
         d_star, s_star = rev._refine_along_ray(s_corner)
 
-        assert rev._is_breach(s_star)            # still a genuine breach
+        # The polish bisects against the fresh, un-quantised redemption test
+        # (_is_breach_forced); within half a 4-dp cache step of the boundary the
+        # cached _is_breach may legitimately disagree, so assert with the oracle
+        # the polish actually converged on.
+        assert rev._is_breach_forced(s_star)     # still a genuine breach
         assert rev._is_coherent(s_star)          # still economically plausible
         assert d_star < d_corner - 1e-9          # strictly easier than the corner
         assert d_star == pytest.approx(rev._distance(s_star))  # reported D is truthful
@@ -575,13 +589,17 @@ class TestReverseStressRayBisection:
         s_corner = np.ones(len(rev.axes))
         _d, s_star = rev._refine_along_ray(s_corner, n_bisect=24)
 
-        assert rev._is_breach(s_star)
+        # Boundary tightness must be stated against the fresh oracle the bisection
+        # uses (_is_breach_forced): at 24 bisections s_star sits well inside half a
+        # 4-dp cache step of the boundary, where the cached _is_breach verdict is
+        # the quantised neighbour's, not the point's own.
+        assert rev._is_breach_forced(s_star)
         # stepping 5% further toward calm along the same ray should drop the breach
         # (the boundary is tight); guard the degenerate case where the corner itself
         # is the only breaching scaling.
         s_inside = 0.95 * s_star
         if not np.allclose(s_inside, 0.0):
-            assert not rev._is_breach(s_inside)
+            assert not rev._is_breach_forced(s_inside)
 
     def test_non_breaching_input_is_returned_unchanged(self):
         """Defensive contract: the polish only ever *shrinks* a known breach. Handed
@@ -601,6 +619,9 @@ class TestReverseStressRayBisection:
         """
         import builtins
         rev = self._breachable_engine()
+        # The native core needs no scipy, so with it enabled the import hook below
+        # never bites and the Python fallback this test guards goes unexercised.
+        rev.use_native = False
         s_corner = np.ones(len(rev.axes))
         d_corner = rev._distance(s_corner)
 

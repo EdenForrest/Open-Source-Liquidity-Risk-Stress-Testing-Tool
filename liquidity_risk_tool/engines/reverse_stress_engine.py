@@ -609,8 +609,13 @@ class ReverseStressEngine:
         descending order of their marginal contribution to ``D(s)`` so the most
         implausible levers are relaxed first.
 
-        Every accepted point is re-checked for breach *and* coherence, so the
-        polish is a pure improvement: it only ever returns a point with
+        Every accepted point is re-checked for breach *and* coherence. The walk
+        itself is greedy on per-axis severity, not on ``D``: under the correlated
+        precision matrix, shrinking one axis of an aligned point can *raise* the
+        Mahalanobis norm (the cross terms lose their correlation discount), so
+        the walk can wander uphill in ``D`` while chasing smaller axis values.
+        The argmin-``D`` accepted state is therefore tracked and returned, which
+        makes the polish a pure improvement: it only ever returns a point with
         ``D ≤ D(s_breach)`` that still breaches and stays plausible. Costs at most
         ``n_passes · dim · n_bisect`` cached evaluations. Returns ``(D(s*), s*)``.
         """
@@ -618,6 +623,7 @@ class ReverseStressEngine:
         if not (self._is_breach_forced(s) and self._is_coherent(s)):
             return self._distance(s), s
 
+        best_d, best_s = self._distance(s), s.copy()
         dim = len(s)
         for _ in range(n_passes):
             improved = False
@@ -639,21 +645,26 @@ class ReverseStressEngine:
                     if abs(s[i]) > 1e-9:
                         improved = True
                     s[i] = 0.0
-                    continue
-                # Otherwise squeeze [lo, hi]: lo non-breach, hi breach.
-                for _ in range(n_bisect):
-                    mid = 0.5 * (lo + hi)
-                    trial[i] = mid
-                    if self._is_breach_forced(trial) and self._is_coherent(trial):
-                        hi = mid
+                else:
+                    # Otherwise squeeze [lo, hi]: lo non-breach, hi breach.
+                    for _ in range(n_bisect):
+                        mid = 0.5 * (lo + hi)
+                        trial[i] = mid
+                        if self._is_breach_forced(trial) and self._is_coherent(trial):
+                            hi = mid
+                        else:
+                            lo = mid
+                    if hi < s[i] - 1e-6:
+                        s[i] = hi
+                        improved = True
                     else:
-                        lo = mid
-                if hi < s[i] - 1e-6:
-                    s[i] = hi
-                    improved = True
+                        continue
+                d_now = self._distance(s)
+                if d_now < best_d - 1e-12:
+                    best_d, best_s = d_now, s.copy()
             if not improved:
                 break
-        return self._distance(s), s
+        return best_d, best_s
 
     # ------------------------------------------------------------------
     # Optimisation
