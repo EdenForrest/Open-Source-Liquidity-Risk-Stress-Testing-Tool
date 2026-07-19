@@ -37,7 +37,7 @@ from ..config.settings import (
     MAX_HAIRCUT,
     StressScenario,
 )
-from .liquidity_utils import liquidity_at_horizon, safe_divide
+from .liquidity_utils import liquidity_at_horizon, realisable_value_np, safe_divide
 from ..models.position import Portfolio
 from .liquidity_profiler import LiquidityProfiler
 from .waterfall_engine import WaterfallEngine
@@ -419,7 +419,7 @@ class StressEngine:
         # mv - |mv|*h, not mv*(1-h): haircuts must gross UP the cost of closing
         # negative-MV positions (shorts, overdrafts), mirroring the profiler.
         mv = profile["market_value_eur"].to_numpy(dtype=float)
-        realisable = mv - np.abs(mv) * new_haircut
+        realisable = realisable_value_np(mv, new_haircut)
         profile["realisable_value"] = realisable
         nav = mv.sum()
         profile["realisable_weight"] = safe_divide(realisable, nav)

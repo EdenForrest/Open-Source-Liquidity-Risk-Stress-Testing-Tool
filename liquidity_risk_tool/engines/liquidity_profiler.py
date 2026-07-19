@@ -33,7 +33,7 @@ from ..config.settings import (
     UCITS_AGGREGATE_BUCKET_SINGLE_CAP,
 )
 from ..models.position import Portfolio
-from .liquidity_utils import safe_divide
+from .liquidity_utils import adv_capped_days, realisable_value, safe_divide
 
 
 _BUCKET_RANK = {"T+0": 0, "T+1": 1, "T+3": 2, "T+7": 3, ">T+7": 4}
@@ -212,21 +212,11 @@ class LiquidityProfiler:
             df["bucket"] = pd.Series(dtype=object)
             return df
 
-        effective_adv = df["adv_30d"] * self.adv_stress_scalar
-        daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
         # Cash-like positions settle same-day regardless of trading volume, so the
         # ADV-implied bucket must not drag them below T+0 (see _is_settled_not_traded).
         settled = df["asset_class"].map(_is_settled_not_traded)
-        # abs() so short positions (negative MV) are bucketed by the time it
-        # takes to buy them back, not treated as instantly liquid.
-        days_to_liq = np.where(
-            settled,
-            0.0,
-            np.where(
-                daily_capacity > 0,
-                np.ceil(df["market_value_eur"].abs() / daily_capacity.replace(0, np.nan)),
-                np.inf,
-            ),
+        days_to_liq = adv_capped_days(
+            df["market_value_eur"], df["adv_30d"], settled, self.adv_stress_scalar
         )
         # Vectorised bucketing — equivalent to the previous row-wise get_bucket,
         # but expressed as column ops so it runs once over the frame rather than
@@ -283,13 +273,7 @@ class LiquidityProfiler:
         )
         spread_cost = df["bid_ask_spread_bps"] / 2.0 / 10_000
         df["haircut"] = (base_haircut + spread_cost).clip(lower=0.0, upper=MAX_HAIRCUT)
-        # Haircut is a realisation COST: it reduces what a long position fetches
-        # AND increases what closing a short/overdraft (negative MV) costs.
-        # mv * (1 - h) on a negative MV would shrink the liability and overstate
-        # liquidity; mv - |mv|*h is conservative for both signs.
-        df["realisable_value"] = (
-            df["market_value_eur"] - df["market_value_eur"].abs() * df["haircut"]
-        )
+        df["realisable_value"] = realisable_value(df["market_value_eur"], df["haircut"])
         df["realisable_weight"] = safe_divide(df["realisable_value"], nav)
         return df
 
@@ -301,23 +285,14 @@ class LiquidityProfiler:
         with a flag indicating they cannot be liquidated quickly.
         """
         effective_adv = df["adv_30d"] * self.adv_stress_scalar
-        daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
         df["effective_adv"] = effective_adv
         # Cash-like, settled-not-traded positions are never ADV-capped: they do
         # not have to be sold into a market, so adv_30d == 0 must NOT mean
         # "cannot liquidate". They are fully realisable same-day.
         settled = df["asset_class"].map(_is_settled_not_traded)
         # Days needed to fully exit the position (0 for cash-like positions).
-        # abs() so short positions get a meaningful horizon: closing a short
-        # means buying back through the same ADV-capped market.
-        df["days_to_liquidate"] = np.where(
-            settled,
-            0.0,
-            np.where(
-                daily_capacity > 0,
-                np.ceil(df["market_value_eur"].abs() / daily_capacity.replace(0, np.nan)),
-                np.inf,
-            ),
+        df["days_to_liquidate"] = adv_capped_days(
+            df["market_value_eur"], df["adv_30d"], settled, self.adv_stress_scalar
         )
         # adv_capped flags positions where the cap BINDS: the ADV-implied exit
         # horizon exceeds the asset class's own settlement bucket, i.e. the
