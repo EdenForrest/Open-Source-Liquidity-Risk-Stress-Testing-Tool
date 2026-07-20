@@ -17,12 +17,13 @@ import math
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from ..config.settings import AIFMD2_PRESELECTED_LMTS, AIFMD2_MIN_LMT_COUNT
+from ..config.settings import AIFMD2_PRESELECTED_LMTS
 from ..engines.liquidity_profiler import LiquidityProfiler
 from ..engines.leverage_engine import LeverageResult
 from ..engines.stress_engine import ScenarioResult
 from ..engines.waterfall_engine import WaterfallResult
 from ..models.position import Portfolio
+from ..regulatory.aifmd import check_lmt_declared
 from ..reporting.risk_metrics import LiquidityMetrics
 
 
@@ -157,7 +158,7 @@ class AnalysisResult:
                 "borrower_breaches": ", ".join(leverage.borrower_breaches),
                 "lmt_preselected": AIFMD2_PRESELECTED_LMTS,
                 "lmt_count": len(AIFMD2_PRESELECTED_LMTS),
-                "lmt_compliant": len(AIFMD2_PRESELECTED_LMTS) >= AIFMD2_MIN_LMT_COUNT,
+                "lmt_compliant": check_lmt_declared(AIFMD2_PRESELECTED_LMTS),
                 "lmt_config_applied": lmt_config or {},
                 "warnings": "; ".join(leverage.warnings),
                 "regulatory_basis": "AIFMD II (Directive (EU) 2024/927), effective 16 April 2026",

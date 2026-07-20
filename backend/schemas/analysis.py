@@ -11,10 +11,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from liquidity_risk_tool.config.settings import (
-    AIFMD2_MIN_LMT_COUNT,
-    SELECTABLE_TOOLS,
-)
+from liquidity_risk_tool.regulatory.aifmd import check_lmt_count
 
 
 class LmtConfig(BaseModel):
@@ -50,13 +47,9 @@ class LmtConfig(BaseModel):
     @model_validator(mode="after")
     def _enforce_aifmd2_rules(self) -> "LmtConfig":
         # Rule 1: at least AIFMD2_MIN_LMT_COUNT *selectable* LMTs must be active.
-        selectable = {t for t in self.active_tools if t in SELECTABLE_TOOLS}
-        if len(selectable) < AIFMD2_MIN_LMT_COUNT:
-            raise ValueError(
-                f"AIFMD II requires at least {AIFMD2_MIN_LMT_COUNT} selectable LMTs "
-                f"active (suspension and side_pockets are always-available and do "
-                f"not count); got {sorted(selectable)} from {self.active_tools}."
-            )
+        ok, msg = check_lmt_count(self.active_tools)
+        if not ok:
+            raise ValueError(msg)
         # Rule 2: swing_pricing and dual_pricing are mutually exclusive.
         if "swing_pricing" in self.active_tools and "dual_pricing" in self.active_tools:
             raise ValueError(

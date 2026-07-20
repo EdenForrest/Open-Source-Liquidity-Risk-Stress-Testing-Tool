@@ -25,14 +25,9 @@ from ..config.settings import (
     MAX_HAIRCUT,
     LIQUIDITY_WARNING_THRESHOLD,
     LIQUIDITY_BREACH_THRESHOLD,
-    GEO_CONCENTRATION_WARNING_SINGLE,
-    GEO_CONCENTRATION_BREACH_NON_EU,
-    EU_COUNTRIES,
-    UCITS_SINGLE_ISSUER_LIMIT,
-    UCITS_AGGREGATE_BUCKET_LIMIT,
-    UCITS_AGGREGATE_BUCKET_SINGLE_CAP,
 )
 from ..models.position import Portfolio
+from ..regulatory import evaluate_geo_concentration, evaluate_ucits_5_10_40
 from .liquidity_utils import adv_capped_days, realisable_value, safe_divide
 
 
@@ -129,63 +124,20 @@ class LiquidityProfiler:
         return immediate / redemption_pct if redemption_pct > 0 else float("inf")
 
     def regulatory_flags(self) -> dict:
+        """Liquidity thresholds plus geo / UCITS concentration evaluations.
+
+        The concentration rules live in ``liquidity_risk_tool.regulatory``;
+        this method just merges their flag dicts over the liquidity flags.
+        """
         liquid_1d = self.liquidity_at_horizon(1)
         flags = {
             "liquid_T0_T1_pct": liquid_1d,
             "warning":  liquid_1d < LIQUIDITY_WARNING_THRESHOLD,
             "breach":   liquid_1d < LIQUIDITY_BREACH_THRESHOLD,
         }
-
-        # Geographical concentration (AIFMD Annex IV / ESMA34-39-897 Section 4.2)
-        if "country" in self._result.columns:
-            geo_df = self._result.dropna(subset=["country"])
-            if not geo_df.empty:
-                total_nav = self._result["market_value_eur"].sum()
-                if total_nav > 0:
-                    geo_groups = geo_df.groupby("country")["market_value_eur"].sum() / total_nav
-                    top_countries = geo_groups.sort_values(ascending=False).head(10).to_dict()
-                    non_eu_pct = float(geo_groups[~geo_groups.index.isin(EU_COUNTRIES)].sum())
-                    max_single = float(geo_groups.max())
-                    geo_top_country = str(geo_groups.idxmax())
-                    flags.update({
-                        "top_countries":      top_countries,
-                        "eu_pct":             1.0 - non_eu_pct,
-                        "non_eu_pct":         non_eu_pct,
-                        "geo_top_country":    geo_top_country,
-                        "geo_top_country_pct": max_single,
-                        "geo_warning_flag":   max_single > GEO_CONCENTRATION_WARNING_SINGLE,
-                        "geo_breach_flag":    non_eu_pct > GEO_CONCENTRATION_BREACH_NON_EU,
-                    })
-
-        # UCITS 5/10/40 issuer concentration rule (Art. 52 UCITS Directive)
-        # Cash positions (ISIN starting with "CASH") are excluded — cash is not
-        # a transferable security and falls outside the Art. 52 issuer limits.
         total_nav = self._result["market_value_eur"].sum()
-        if total_nav > 0:
-            non_cash = self._result[~self._result["isin"].str.startswith("CASH", na=False)]
-            issuer_weights = (
-                non_cash.groupby("isin")["market_value_eur"].sum() / total_nav
-            ).sort_values(ascending=False)
-
-            # Hard breach is >10% (the single-issuer cap); 5-10% holdings are
-            # permitted under Art. 52 subject to the 40% aggregate limit.
-            breaching = issuer_weights[issuer_weights > UCITS_AGGREGATE_BUCKET_SINGLE_CAP]
-            bucket_5_10 = issuer_weights[
-                (issuer_weights > UCITS_SINGLE_ISSUER_LIMIT) &
-                (issuer_weights <= UCITS_AGGREGATE_BUCKET_SINGLE_CAP)
-            ]
-            aggregate_5_10 = float(bucket_5_10.sum())
-            top_issuers = issuer_weights.head(10).to_dict()
-
-            flags.update({
-                "ucits_issuer_weights":       top_issuers,
-                "ucits_breaching_issuers":    breaching.to_dict(),
-                "ucits_aggregate_5_10":       aggregate_5_10,
-                "ucits_single_breach":        bool(len(breaching) > 0),
-                "ucits_aggregate_breach":     aggregate_5_10 > UCITS_AGGREGATE_BUCKET_LIMIT,
-                "ucits_compliant":            len(breaching) == 0 and aggregate_5_10 <= UCITS_AGGREGATE_BUCKET_LIMIT,
-            })
-
+        flags.update(evaluate_geo_concentration(self._result, total_nav))
+        flags.update(evaluate_ucits_5_10_40(self._result, total_nav))
         return flags
 
     # ------------------------------------------------------------------

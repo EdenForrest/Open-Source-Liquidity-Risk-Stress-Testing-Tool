@@ -28,6 +28,7 @@ from ..config.settings import (
     AIFMD2_RISK_RETENTION_MINIMUM,
     AIFMD2_BORROWER_CONCENTRATION_LIMIT,
 )
+from ..regulatory import evaluate_leverage_warnings
 
 # Asset classes treated as originated loans for loan-origination AIF detection
 _LOAN_ASSET_CLASSES = {"originated_loan", "loan"}
@@ -180,22 +181,6 @@ class LeverageEngine:
         is_loan_aif: bool,
         breach: bool,
     ) -> list[str]:
-        msgs = []
-        if breach:
-            msgs.append(
-                f"Leverage breach: gross {gross*100:.1f}% exceeds "
-                f"AIFMD II cap of {cap*100:.0f}% ({self.fund_type})"
-            )
-        if is_loan_aif:
-            msgs.append(
-                f"Loan origination AIF regime applies: {loan_pct*100:.1f}% NAV "
-                "in originated loans (threshold 50%)"
-            )
-        # Threshold of 1.005 avoids false positives on pure long-only books where
-        # floating-point arithmetic lands fractionally above 1.0.
-        if gross > 1.005 and not is_loan_aif:
-            msgs.append(
-                f"Fund uses leverage ({gross*100:.1f}% gross); "
-                "AIFMD II Art.15 disclosure required"
-            )
-        return msgs
+        return evaluate_leverage_warnings(
+            gross, cap, loan_pct, is_loan_aif, breach, self.fund_type
+        )
