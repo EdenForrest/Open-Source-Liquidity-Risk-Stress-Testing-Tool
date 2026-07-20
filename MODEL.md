@@ -3,7 +3,7 @@
 **Version:** 1.5  
 **Last reviewed:** 2026-06-15  
 **Regulatory basis:** ESMA MMFR Article 28 / UCITS LVLR / AIFMD Annex IV / AIFMD II (Directive (EU) 2024/927)  
-**Purpose:** Complete audit trail for every metric displayed in the GUI, its mathematical definition, and the theoretical framework used to derive it.
+**Purpose:** Complete audit trail for every metric displayed in the UI, its mathematical definition, and the theoretical framework used to derive it.
 
 ---
 
@@ -119,7 +119,7 @@ Where $NAV$ is the position-sum NAV (sum of all $MV_i$ across all positions). Th
 
 ## 4. Stressed Liquidity Ladder
 
-**Code:** `gui.py` pipeline thread, lines 1432–1449; source data from `StressEngine._apply_scenario()` — `stress_engine.py`  
+**Code:** `compute_analysis()` stressed-ladder block — `liquidity_risk_tool/analysis/pipeline.py`; source data from `StressEngine._apply_scenario()` — `stress_engine.py`  
 **Displayed:** Charts tab → Liquidity Ladder chart (red bars)
 
 The stressed ladder represents the distribution of portfolio liquidity under the **Severe Combined** scenario — the most adverse scenario defined in the regulatory framework (ESMA MMFR Art.28 Scenario E). It is derived in four stages:
@@ -269,7 +269,7 @@ $$MV_i^* = MV_i \cdot \left(1 - D_i^{\text{mod}} \cdot \Delta y_i + \frac{1}{2} 
 
 ## 8. Stress Test Metrics (Stress Tab)
 
-**Code:** `StressEngine._apply_scenario()`, displayed in `StressTab.populate()` — `gui.py`
+**Code:** `StressEngine._apply_scenario()` — `stress_engine.py`; displayed on the web UI Stress page
 
 ### 8.1 NAV after shock
 
@@ -434,7 +434,7 @@ $$\mathrm{NAVImpact}_{\%} = \frac{NAV_{\text{before}} - NAV_{\text{after}}}{NAV_
 
 $$\min_{x_i} \sum_i \frac{x_i}{c_i} \qquad \text{subject to} \quad \sum_i x_i \cdot r_i \geq T,\quad 0 \leq x_i \leq MV_i$$
 
-Where $c_i = \kappa \cdot ADV_i$ is the daily capacity and $r_i = 1 - h_i - \mu_i$ is the net proceeds rate. The GUI uses the greedy `run()` method (not the LP).
+Where $c_i = \kappa \cdot ADV_i$ is the daily capacity and $r_i = 1 - h_i - \mu_i$ is the net proceeds rate. The pipeline uses the greedy `run()` method by default (LP via the `--lp` flag / `run_lp_waterfall`).
 
 ---
 
@@ -732,7 +732,7 @@ To regenerate all synthetic files with a new random seed:
 python -m liquidity_risk_tool.data.generate_synthetic_data --seed 42 --date 12.05.2026
 ```
 
-The `--seed` parameter ensures full reproducibility. Output files are written to `liquidity_risk_tool/data/synthetic/` and are loaded automatically by the GUI on startup.
+The `--seed` parameter ensures full reproducibility. Output files are written to `liquidity_risk_tool/data/synthetic/` and are used by the demo pipeline (`POST /api/demo`).
 
 ---
 
@@ -773,7 +773,7 @@ All parameters are defined in `settings.py` → `STRESS_SCENARIOS`.
 | Credit-Led Stress +300bps | -5%      | +300 bps     | +75 bps     | 0.60×              | 1.8×                  | 20%            | ESMA MMFR Art.28 Scenario D; AIFMD II Art.16(1)             |
 | Severe Combined        | -20%        | +300 bps     | +100 bps    | **0.50×**          | **2.0×**              | **30%**        | ESMA MMFR Art.28 Scenario E — adverse; AIFMD II Art.16(1) worst-case LMT |
 
-The Severe Combined scenario is the source of the stressed liquidity ladder displayed in the GUI.
+The Severe Combined scenario is the source of the stressed liquidity ladder displayed in the UI.
 
 ---
 

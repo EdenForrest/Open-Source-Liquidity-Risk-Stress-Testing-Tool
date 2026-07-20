@@ -8,18 +8,19 @@ here, returning an ``AnalysisResult`` instead of a serialised dict.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from ..models.csv_loader import (
     load_portfolio_from_csv,
     enrich_portfolio_from_market_data,
 )
 from ..engines.liquidity_profiler import LiquidityProfiler
-from ..engines.stress_engine import StressEngine
+from ..engines.stress_engine import StressEngine, StressScenario
 from ..engines.redemption_simulator import RedemptionSimulator
 from ..engines.waterfall_engine import WaterfallEngine
 from ..engines.leverage_engine import LeverageEngine
-from ..config.settings import BUCKET_ORDER
+from ..engines.validators import validate_portfolio
+from ..config.settings import BUCKET_ORDER, LIQUIDITY_BREACH_THRESHOLD
 from ..reporting.risk_metrics import RiskMetricsBuilder
 
 from .result import AnalysisResult
@@ -33,15 +34,23 @@ def compute_analysis(
     scenario_library: str = "esma",
     lmt_config: Optional[dict] = None,
     *,
+    scenarios: Optional[List[StressScenario]] = None,
     validate: bool = False,
     run_reverse_stress: bool = False,
     run_lp_waterfall: bool = False,
 ) -> AnalysisResult:
     """Run the full analytics pipeline and return an ``AnalysisResult``.
 
+    ``scenarios`` optionally overrides the active scenario list (e.g. a
+    caller-side name-substring filter), taking priority over
+    ``scenario_library`` — see ``StressEngine.__init__``.
+
     ``validate``, ``run_reverse_stress`` and ``run_lp_waterfall`` are internal
-    opt-in flags (not FastAPI-exposed) wired up fully in a later phase; for
-    now they default to False, matching today's pipeline behaviour exactly.
+    opt-in flags (not FastAPI-exposed): they populate ``AnalysisResult``'s
+    opt-in slots (``validation``, ``reverse_stress``) and, for
+    ``run_lp_waterfall``, swap the waterfall computation to the
+    LP-optimised solver. They default to False, matching today's pipeline
+    behaviour exactly.
     """
 
     portfolio = load_portfolio_from_csv(holdings_path, nav_path, portfolio_code=portfolio_code)
@@ -70,7 +79,7 @@ def compute_analysis(
     redemption_normal = redemption_sim.run(stress=False)
     redemption_stress = redemption_sim.run(stress=True)
 
-    stress_engine = StressEngine(portfolio, scenario_library=scenario_library)
+    stress_engine = StressEngine(portfolio, scenarios=scenarios, scenario_library=scenario_library)
     stress_detail = stress_engine.run_detail()
 
     # NOTE: reverse stress testing is intentionally NOT run here by default. It is
@@ -78,10 +87,21 @@ def compute_analysis(
     # times, so running it on every pipeline call (upload / demo) made the /run
     # request hang past the client timeout. It is invoked on demand via
     # POST /run/{run_id}/reverse-stress, or here when run_reverse_stress=True.
+    reverse_stress = None
+    if run_reverse_stress:
+        reverse_stress = stress_engine.run_reverse_stress(target_liquid_pct=LIQUIDITY_BREACH_THRESHOLD)
+
+    validation = None
+    if validate:
+        validation = validate_portfolio(portfolio, strict=False)
 
     worst = max(stress_detail, key=lambda s: abs(s.nav_impact_pct))
     waterfall_target = portfolio.total_nav * worst.redemption_pct
-    waterfall = WaterfallEngine(portfolio, stress_buckets, stress=True).run(waterfall_target)
+    waterfall_engine = WaterfallEngine(portfolio, stress_buckets, stress=True)
+    if run_lp_waterfall:
+        waterfall = waterfall_engine.run_lp_optimised(waterfall_target)
+    else:
+        waterfall = waterfall_engine.run(waterfall_target)
 
     metrics = RiskMetricsBuilder(portfolio).build_liquidity_metrics()
 
@@ -140,5 +160,7 @@ def compute_analysis(
         scenario_metadata=scenario_meta,
         market_data_loaded=market_data_loaded,
         lmt_config=lmt_config,
+        reverse_stress=reverse_stress,
+        validation=validation,
         stress_ladder_df=_stressed_agg,
     )

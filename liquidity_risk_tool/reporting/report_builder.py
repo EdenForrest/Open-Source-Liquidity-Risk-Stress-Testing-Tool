@@ -100,8 +100,8 @@ class ReportBuilder:
 
         # ── Regulatory Flags ─────────────────────────────────────────
         print(f"\n  REGULATORY FLAGS")
-        w = "YES ⚠" if lm.warning_flag else "No"
-        b = "YES 🚨" if lm.breach_flag  else "No"
+        w = "YES (!)" if lm.warning_flag else "No"
+        b = "YES (!!)" if lm.breach_flag  else "No"
         print(f"  {'Liquidity Warning (<10% T0+T1):':<35} {w}")
         print(f"  {'Liquidity Breach  (<5%  T0+T1):':<35} {b}")
 

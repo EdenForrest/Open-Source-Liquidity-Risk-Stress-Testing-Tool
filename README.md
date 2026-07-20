@@ -19,7 +19,7 @@ A Luxembourg ManCo-grade liquidity risk analytics platform for UCITS/AIFMD funds
    - [Redemption Simulator](#6-redemption-simulator--redemption_simulatorpy)
    - [Waterfall Engine](#7-waterfall-engine--waterfall_enginepy)
    - [Risk Metrics & Reporting](#8-risk-metrics--reporting)
-   - [GUI](#9-graphical-user-interface--guipy)
+   - [User Interfaces](#9-user-interfaces)
 4. [Full Pipeline](#full-pipeline)
 5. [Configuration Reference](#configuration-reference)
 6. [Outputs](#outputs)
@@ -59,13 +59,7 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) in your browser. Upload your holdings and NAV CSV files using the sidebar, then click **Run Analysis**.
 
-### 4. Launch the legacy desktop GUI (Tkinter)
-
-```bash
-py gui.py
-```
-
-### 5. Optional CLI flags
+### 4. Optional CLI flags
 
 | Flag | Effect |
 |------|--------|
@@ -92,8 +86,6 @@ liquidity_risk_tool/
 │   │   ├── AnalysisContext.jsx      # Global analysis state
 │   │   └── theme.js                 # Colour tokens for light/dark mode
 │   └── package.json
-├── ui-tk/                           # Legacy Tkinter desktop GUI (6 tabs)
-│   └── gui.py
 ├── liquidity_risk_tool/             # Core analytics engine (Python package)
 │   ├── config/
 │   │   └── settings.py              # All thresholds, haircuts, scenarios, constants
@@ -498,22 +490,7 @@ The primary interface is a browser-based application (FastAPI + React/Vite/Tailw
 
 Supports **light / dark / Bloomberg Terminal** theme toggle. All charts are theme-aware with consistent colour tokens. Tooltips are fully readable in both modes.
 
-#### 9b. Legacy Desktop GUI — `ui-tk/gui.py`
-
-Tkinter desktop application with 6 tabs. The pipeline runs on a background thread to keep the UI responsive.
-
-| Tab | Contents |
-|-----|---------|
-| Dashboard | KPI cards, liquidity ladder table, regulatory flags, positions table |
-| Stress Tests | Per-scenario results table + scenario config panel |
-| Redemption | Coverage matrix across scenarios and time horizons |
-| Waterfall | Day-by-day forced sell schedule |
-| Charts | 7 embedded matplotlib figures |
-| Risk Story | Auto-generated narrative risk summary with copy button |
-
-Key UX: "▶ Run Analysis" becomes "✓ Analysis Complete" (green) after a successful run; a "Re-run ↺" button replaces it for subsequent runs. All pipeline work runs in a `threading.Thread`; UI updates dispatch back to the main thread via `root.after(0, callback)`.
-
-#### 9c. LMT Simulator API Endpoint — `POST /api/run/{run_id}/lmt-simulate`
+#### 9b. LMT Simulator API Endpoint — `POST /api/run/{run_id}/lmt-simulate`
 
 **File:** `backend/routers/analysis.py`
 
