@@ -9,10 +9,7 @@ validator and the pydantic model validator (backend/schemas/analysis.py)
 share one source of truth — these tests are the regression lock that proves
 the extraction preserved message text byte-for-byte.
 """
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
 

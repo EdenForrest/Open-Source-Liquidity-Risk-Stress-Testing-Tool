@@ -9,12 +9,9 @@ byte content (binary formats + embedded timestamps make that brittle) —
 instead they assert structural invariants: sheet names/counts, non-empty
 bytes, well-formed XML with the expected ESMA namespace and element tree.
 """
-import sys
 import xml.etree.ElementTree as ET
 from io import BytesIO
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import openpyxl
 import pytest

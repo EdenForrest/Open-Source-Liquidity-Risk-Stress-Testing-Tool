@@ -2,10 +2,6 @@
 Smoke-test suite — verifies the complete pipeline produces coherent outputs.
 Run with: python -m pytest tests/ -v
 """
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 import pytest
 import pandas as pd
 import numpy as np
