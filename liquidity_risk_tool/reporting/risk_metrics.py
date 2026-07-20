@@ -25,7 +25,7 @@ RedemptionMetrics
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 import pandas as pd
 import numpy as np
@@ -37,6 +37,9 @@ from ..engines.stress_engine import StressEngine
 from ..engines.waterfall_engine import WaterfallEngine
 from ..models.position import Portfolio
 from ..config.settings import REDEMPTION_SCENARIOS
+
+if TYPE_CHECKING:
+    from ..analysis.result import AnalysisResult
 
 
 # ---------------------------------------------------------------------------
@@ -103,14 +106,18 @@ class RiskMetricsBuilder:
     Orchestrates all analytics and packages them into a single report object.
     """
 
-    def __init__(self, portfolio: Portfolio):
+    def __init__(self, portfolio: Portfolio, *, artifacts: "AnalysisResult | None" = None):
         self.portfolio = portfolio
+        self.artifacts = artifacts
 
     # ------------------------------------------------------------------
     # Public
     # ------------------------------------------------------------------
 
     def build_liquidity_metrics(self) -> LiquidityMetrics:
+        if self.artifacts is not None:
+            return self.artifacts.metrics
+
         profiler = LiquidityProfiler(self.portfolio, stress=False).run()
         # Use NAV file value (portfolio.total_nav) as the authoritative NAV for the report.
         # profiler._nav is the position sum used as the ladder denominator; they should agree
@@ -169,22 +176,29 @@ class RiskMetricsBuilder:
         )
 
     def build_stress_summary(self) -> pd.DataFrame:
-        engine = StressEngine(self.portfolio)
-        results = engine.run()
+        if self.artifacts is not None:
+            results = pd.DataFrame([s.to_dict() for s in self.artifacts.stress_detail])
+        else:
+            engine = StressEngine(self.portfolio)
+            results = engine.run()
         results["nav_impact_pct_fmt"] = (results["nav_impact_pct"] * 100).round(2).astype(str) + "%"
         results["liquid_pct_after_fmt"] = (results["liquid_pct_after"] * 100).round(1).astype(str) + "%"
         return results
 
     def build_redemption_summary(self) -> pd.DataFrame:
-        profiler_normal = LiquidityProfiler(self.portfolio, stress=False).run()
-        profiler_stress = LiquidityProfiler(self.portfolio, stress=True).run()
-        sim = RedemptionSimulator(
-            self.portfolio,
-            profiler_normal.position_buckets,
-            profiler_stress.position_buckets,
-        )
-        normal_df = sim.run(stress=False)
-        stress_df = sim.run(stress=True)
+        if self.artifacts is not None:
+            normal_df = self.artifacts.redemption_normal.copy()
+            stress_df = self.artifacts.redemption_stress.copy()
+        else:
+            profiler_normal = LiquidityProfiler(self.portfolio, stress=False).run()
+            profiler_stress = LiquidityProfiler(self.portfolio, stress=True).run()
+            sim = RedemptionSimulator(
+                self.portfolio,
+                profiler_normal.position_buckets,
+                profiler_stress.position_buckets,
+            )
+            normal_df = sim.run(stress=False)
+            stress_df = sim.run(stress=True)
         normal_df["regime"] = "normal"
         stress_df["regime"] = "stress"
         return pd.concat([normal_df, stress_df], ignore_index=True)
