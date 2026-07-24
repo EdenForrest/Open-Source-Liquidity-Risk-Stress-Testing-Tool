@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from liquidity_risk_tool.regulatory.aifmd import check_lmt_declared
+
 _RECON_TOL = 1e-5    # 0.001% — rounding tolerance for NAV reconciliation checks
 _LCR_TOL = 1e-4      # floating-point accumulation only; not a data-quality tolerance
 
@@ -839,7 +841,7 @@ def run_checks(portfolio_results: dict, annex_iv_meta: dict | None = None) -> li
     ))
 
     lmts = aifmd2.get("lmt_preselected") or []
-    lmt_compliant = len(lmts) >= _s.AIFMD2_MIN_LMT_COUNT
+    lmt_compliant = check_lmt_declared(lmts)
     results.append(_check(
         "LMT configuration declared (≥2 tools, AIFMD II Art. 16)", "Annex IV",
         lmt_compliant,

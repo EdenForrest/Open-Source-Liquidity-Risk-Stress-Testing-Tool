@@ -207,7 +207,11 @@
       "badge": "Reverse",
       "foundBanner": "Breach scenario found (plausibility distance {{distance}}). Added to the tables below.",
       "robustBanner": "No breach reachable within the plausible range — the portfolio is resilient.",
+      "noScenarioBanner": "No realistic reverse stress testing scenario — a breach is only reachable at the implausible severe extreme (liquidity haircut at the 2.8× ceiling). The fund is practically resilient.",
       "baselineBanner": "Already in breach with no shock applied: baseline T0-T1 liquidity is {{liquid}}%, below the {{target}}% threshold. Reverse stress is not applicable — the fund breaches before any stress.",
+      "ceilingsTitle": "Search ceilings (severe endpoints)",
+      "ceilingsHint": "The most-severe value each driver can reach in the search. Defaults are calibrated to ESMA / AIFMD II severe-but-plausible ranges; widen or tighten to reshape the searched box.",
+      "ceilingsReset": "Reset to defaults",
       "error": "Could not run reverse stress. Please try again."
     }
   },

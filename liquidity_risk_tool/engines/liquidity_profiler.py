@@ -25,15 +25,10 @@ from ..config.settings import (
     MAX_HAIRCUT,
     LIQUIDITY_WARNING_THRESHOLD,
     LIQUIDITY_BREACH_THRESHOLD,
-    GEO_CONCENTRATION_WARNING_SINGLE,
-    GEO_CONCENTRATION_BREACH_NON_EU,
-    EU_COUNTRIES,
-    UCITS_SINGLE_ISSUER_LIMIT,
-    UCITS_AGGREGATE_BUCKET_LIMIT,
-    UCITS_AGGREGATE_BUCKET_SINGLE_CAP,
 )
 from ..models.position import Portfolio
-from .liquidity_utils import safe_divide
+from ..regulatory import evaluate_geo_concentration, evaluate_ucits_5_10_40
+from .liquidity_utils import adv_capped_days, realisable_value, safe_divide
 
 
 _BUCKET_RANK = {"T+0": 0, "T+1": 1, "T+3": 2, "T+7": 3, ">T+7": 4}
@@ -129,63 +124,20 @@ class LiquidityProfiler:
         return immediate / redemption_pct if redemption_pct > 0 else float("inf")
 
     def regulatory_flags(self) -> dict:
+        """Liquidity thresholds plus geo / UCITS concentration evaluations.
+
+        The concentration rules live in ``liquidity_risk_tool.regulatory``;
+        this method just merges their flag dicts over the liquidity flags.
+        """
         liquid_1d = self.liquidity_at_horizon(1)
         flags = {
             "liquid_T0_T1_pct": liquid_1d,
             "warning":  liquid_1d < LIQUIDITY_WARNING_THRESHOLD,
             "breach":   liquid_1d < LIQUIDITY_BREACH_THRESHOLD,
         }
-
-        # Geographical concentration (AIFMD Annex IV / ESMA34-39-897 Section 4.2)
-        if "country" in self._result.columns:
-            geo_df = self._result.dropna(subset=["country"])
-            if not geo_df.empty:
-                total_nav = self._result["market_value_eur"].sum()
-                if total_nav > 0:
-                    geo_groups = geo_df.groupby("country")["market_value_eur"].sum() / total_nav
-                    top_countries = geo_groups.sort_values(ascending=False).head(10).to_dict()
-                    non_eu_pct = float(geo_groups[~geo_groups.index.isin(EU_COUNTRIES)].sum())
-                    max_single = float(geo_groups.max())
-                    geo_top_country = str(geo_groups.idxmax())
-                    flags.update({
-                        "top_countries":      top_countries,
-                        "eu_pct":             1.0 - non_eu_pct,
-                        "non_eu_pct":         non_eu_pct,
-                        "geo_top_country":    geo_top_country,
-                        "geo_top_country_pct": max_single,
-                        "geo_warning_flag":   max_single > GEO_CONCENTRATION_WARNING_SINGLE,
-                        "geo_breach_flag":    non_eu_pct > GEO_CONCENTRATION_BREACH_NON_EU,
-                    })
-
-        # UCITS 5/10/40 issuer concentration rule (Art. 52 UCITS Directive)
-        # Cash positions (ISIN starting with "CASH") are excluded — cash is not
-        # a transferable security and falls outside the Art. 52 issuer limits.
         total_nav = self._result["market_value_eur"].sum()
-        if total_nav > 0:
-            non_cash = self._result[~self._result["isin"].str.startswith("CASH", na=False)]
-            issuer_weights = (
-                non_cash.groupby("isin")["market_value_eur"].sum() / total_nav
-            ).sort_values(ascending=False)
-
-            # Hard breach is >10% (the single-issuer cap); 5-10% holdings are
-            # permitted under Art. 52 subject to the 40% aggregate limit.
-            breaching = issuer_weights[issuer_weights > UCITS_AGGREGATE_BUCKET_SINGLE_CAP]
-            bucket_5_10 = issuer_weights[
-                (issuer_weights > UCITS_SINGLE_ISSUER_LIMIT) &
-                (issuer_weights <= UCITS_AGGREGATE_BUCKET_SINGLE_CAP)
-            ]
-            aggregate_5_10 = float(bucket_5_10.sum())
-            top_issuers = issuer_weights.head(10).to_dict()
-
-            flags.update({
-                "ucits_issuer_weights":       top_issuers,
-                "ucits_breaching_issuers":    breaching.to_dict(),
-                "ucits_aggregate_5_10":       aggregate_5_10,
-                "ucits_single_breach":        bool(len(breaching) > 0),
-                "ucits_aggregate_breach":     aggregate_5_10 > UCITS_AGGREGATE_BUCKET_LIMIT,
-                "ucits_compliant":            len(breaching) == 0 and aggregate_5_10 <= UCITS_AGGREGATE_BUCKET_LIMIT,
-            })
-
+        flags.update(evaluate_geo_concentration(self._result, total_nav))
+        flags.update(evaluate_ucits_5_10_40(self._result, total_nav))
         return flags
 
     # ------------------------------------------------------------------
@@ -212,51 +164,39 @@ class LiquidityProfiler:
             df["bucket"] = pd.Series(dtype=object)
             return df
 
-        effective_adv = df["adv_30d"] * self.adv_stress_scalar
-        daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
         # Cash-like positions settle same-day regardless of trading volume, so the
         # ADV-implied bucket must not drag them below T+0 (see _is_settled_not_traded).
         settled = df["asset_class"].map(_is_settled_not_traded)
-        # abs() so short positions (negative MV) are bucketed by the time it
-        # takes to buy them back, not treated as instantly liquid.
-        days_to_liq = np.where(
-            settled,
-            0.0,
-            np.where(
-                daily_capacity > 0,
-                np.ceil(df["market_value_eur"].abs() / daily_capacity.replace(0, np.nan)),
-                np.inf,
-            ),
+        days_to_liq = adv_capped_days(
+            df["market_value_eur"], df["adv_30d"], settled, self.adv_stress_scalar
         )
-        df["_days_to_liq_pre"] = days_to_liq
+        # Vectorised bucketing — equivalent to the previous row-wise get_bucket,
+        # but expressed as column ops so it runs once over the frame rather than
+        # once per row (this method is on the reverse-stress hot path).
+        #
+        # ADV-implied bucket from days_to_liq: thresholds 0 / 1 / 3 / 7.
+        adv_bucket = np.select(
+            [days_to_liq <= 0, days_to_liq <= 1, days_to_liq <= 3, days_to_liq <= 7],
+            ["T+0", "T+1", "T+3", "T+7"],
+            default=">T+7",
+        )
+        # Asset-class settlement bucket: pure dict lookup per class.
+        asset_bucket = df["asset_class"].map(
+            lambda ac: ASSET_CLASS_LIQUIDITY.get(ac, {}).get("bucket", ">T+7")
+        ).to_numpy()
+        # Take the worse (less liquid) of the asset and ADV buckets by rank.
+        rank = np.vectorize(_BUCKET_RANK.get)
+        worst = np.where(rank(adv_bucket) > rank(asset_bucket), adv_bucket, asset_bucket)
 
-        def _days_to_bucket(days: float) -> str:
-            if days <= 0:
-                return "T+0"
-            elif days <= 1:
-                return "T+1"
-            elif days <= 3:
-                return "T+3"
-            elif days <= 7:
-                return "T+7"
-            else:
-                return ">T+7"
-
-        def get_bucket(row):
-            if row["is_locked"]:
-                return ">T+7"
-            if pd.notna(row["bucket_override"]) and row["bucket_override"]:
-                return row["bucket_override"]
-            profile = ASSET_CLASS_LIQUIDITY.get(row["asset_class"], {})
-            asset_bucket = profile.get("bucket", ">T+7")
-            adv_bucket = _days_to_bucket(row["_days_to_liq_pre"])
-            # Take the worse (less liquid) of the two
-            if _BUCKET_RANK[adv_bucket] > _BUCKET_RANK[asset_bucket]:
-                return adv_bucket
-            return asset_bucket
-
-        df["bucket"] = df.apply(get_bucket, axis=1)
-        df.drop(columns=["_days_to_liq_pre"], inplace=True)
+        # Precedence: locked → >T+7; else a valid override wins; else the worst bucket.
+        override = df["bucket_override"]
+        has_override = override.notna().to_numpy() & override.astype(bool).to_numpy()
+        bucket = np.where(
+            df["is_locked"].to_numpy(),
+            ">T+7",
+            np.where(has_override, override.to_numpy(), worst),
+        )
+        df["bucket"] = bucket
         return df
 
     def _apply_haircuts(self, df: pd.DataFrame, nav: float) -> pd.DataFrame:
@@ -277,21 +217,15 @@ class LiquidityProfiler:
             df["realisable_weight"] = pd.Series(dtype=float)
             return df
 
-        def total_haircut(row):
-            profile = ASSET_CLASS_LIQUIDITY.get(row["asset_class"], {})
-            base_haircut = profile.get(regime, 0.0)
-            # Half-spread cost: we pay the spread to cross from mid to bid on exit
-            spread_cost = row["bid_ask_spread_bps"] / 2.0 / 10_000
-            return base_haircut + spread_cost
-
-        df["haircut"] = df.apply(total_haircut, axis=1).clip(lower=0.0, upper=MAX_HAIRCUT)
-        # Haircut is a realisation COST: it reduces what a long position fetches
-        # AND increases what closing a short/overdraft (negative MV) costs.
-        # mv * (1 - h) on a negative MV would shrink the liability and overstate
-        # liquidity; mv - |mv|*h is conservative for both signs.
-        df["realisable_value"] = (
-            df["market_value_eur"] - df["market_value_eur"].abs() * df["haircut"]
+        # Vectorised: the per-asset-class base haircut is a pure dict lookup, so
+        # map the column instead of looping rows. Half-spread cost is arithmetic.
+        # (Equivalent to the previous df.apply(total_haircut, axis=1).)
+        base_haircut = df["asset_class"].map(
+            lambda ac: ASSET_CLASS_LIQUIDITY.get(ac, {}).get(regime, 0.0)
         )
+        spread_cost = df["bid_ask_spread_bps"] / 2.0 / 10_000
+        df["haircut"] = (base_haircut + spread_cost).clip(lower=0.0, upper=MAX_HAIRCUT)
+        df["realisable_value"] = realisable_value(df["market_value_eur"], df["haircut"])
         df["realisable_weight"] = safe_divide(df["realisable_value"], nav)
         return df
 
@@ -303,23 +237,14 @@ class LiquidityProfiler:
         with a flag indicating they cannot be liquidated quickly.
         """
         effective_adv = df["adv_30d"] * self.adv_stress_scalar
-        daily_capacity = effective_adv * MAX_ADV_PARTICIPATION
         df["effective_adv"] = effective_adv
         # Cash-like, settled-not-traded positions are never ADV-capped: they do
         # not have to be sold into a market, so adv_30d == 0 must NOT mean
         # "cannot liquidate". They are fully realisable same-day.
         settled = df["asset_class"].map(_is_settled_not_traded)
         # Days needed to fully exit the position (0 for cash-like positions).
-        # abs() so short positions get a meaningful horizon: closing a short
-        # means buying back through the same ADV-capped market.
-        df["days_to_liquidate"] = np.where(
-            settled,
-            0.0,
-            np.where(
-                daily_capacity > 0,
-                np.ceil(df["market_value_eur"].abs() / daily_capacity.replace(0, np.nan)),
-                np.inf,
-            ),
+        df["days_to_liquidate"] = adv_capped_days(
+            df["market_value_eur"], df["adv_30d"], settled, self.adv_stress_scalar
         )
         # adv_capped flags positions where the cap BINDS: the ADV-implied exit
         # horizon exceeds the asset class's own settlement bucket, i.e. the

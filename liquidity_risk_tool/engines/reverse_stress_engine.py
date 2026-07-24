@@ -58,13 +58,14 @@ the host :class:`StressEngine` so it slots into the same ``stress_results`` /
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import product
 from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
 from ..config.settings import LIQUIDITY_BREACH_THRESHOLD, StressScenario
+from ._reverse_stress_native import native_solve
 
 logger = logging.getLogger(__name__)
 
@@ -104,15 +105,45 @@ class ParameterAxis:
 #   equity_shock                 : 0%  ->  -60%   (deeper than 2008 single-name beta-1)
 #   rate_shock_bps               : 0   ->  +400bps (sharp parallel hiking shock)
 #   adv_stress_scalar            : 1.0 ->   0.20  (ADV collapses to 20% of normal)
-#   liquidity_haircut_multiplier : 1.0 ->   5.0   (bid/ask & haircut blow-out)
-#   redemption_rate              : 0%  ->   50%   (severe run on the fund)
+#   liquidity_haircut_multiplier : 1.0 ->   2.8   (bid/ask & haircut blow-out)
+#   redemption_rate              : 0%  ->   30%   (severe run on the fund)
+# The redemption ceiling is 30%, not 50%: a single-period 30% outflow is already
+# at the severe end of observed open-ended-fund runs (ESMA / AIFMD II reverse-
+# stress practice), whereas 50% is a near-liquidation event that swamps every
+# other lever and produced implausible "of course it breaches" corners. The
+# severity fraction is clamped to [0, 1] on every probe (see ParameterAxis.value
+# and _clip_box), so redemption can only range 0% -> +30%, never negative.
 DEFAULT_AXES: Tuple[ParameterAxis, ...] = (
     ParameterAxis("equity_shock",                 calm=0.0, severe=-0.60, weight=1.0),
     ParameterAxis("rate_shock_bps",               calm=0.0, severe=400.0, weight=1.0, is_int=True),
     ParameterAxis("adv_stress_scalar",            calm=1.0, severe=0.20,  weight=0.8),
-    ParameterAxis("liquidity_haircut_multiplier", calm=1.0, severe=5.0,   weight=0.8),
-    ParameterAxis("redemption_rate",              calm=0.0, severe=0.50,  weight=1.2),
+    ParameterAxis("liquidity_haircut_multiplier", calm=1.0, severe=2.8,   weight=0.8),
+    ParameterAxis("redemption_rate",              calm=0.0, severe=0.30,  weight=1.2),
 )
+
+
+def axes_with_ceilings(
+    overrides: Optional[Dict[str, float]] = None,
+) -> Tuple[ParameterAxis, ...]:
+    """Return DEFAULT_AXES with the ``severe`` endpoint of named axes overridden.
+
+    ``overrides`` maps an axis name to the value its severity fraction s=1 should
+    map to (its "ceiling"). Only ``severe`` is changed; ``calm``, ``weight`` and
+    ``is_int`` are preserved so the Mahalanobis severity norm and the calm anchor
+    are unchanged — the box the optimiser searches simply grows or shrinks along
+    the overridden axes. Unknown names and ``None`` values are ignored. Callers
+    are responsible for bounding the values (see ``ReverseStressRequest``); the
+    severity fraction is clamped to [0, 1] regardless, so a lever can only ever
+    run from ``calm`` to its (possibly overridden) ``severe`` ceiling.
+    """
+    if not overrides:
+        return DEFAULT_AXES
+    return tuple(
+        replace(axis, severe=float(overrides[axis.name]))
+        if overrides.get(axis.name) is not None
+        else axis
+        for axis in DEFAULT_AXES
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -273,8 +304,14 @@ class ReverseStressEngine:
         stress_engine,
         axes: Optional[Tuple[ParameterAxis, ...]] = None,
         target_liquid_pct: Optional[float] = None,
+        use_native: bool = True,
     ):
         self.stress_engine = stress_engine
+        # Prefer the compiled C++ search core when it is built and importable.
+        # Purely an optimisation: when False (or the module is absent) the search
+        # runs the identical pure-Python routines below. Set False to force the
+        # Python path (e.g. for cross-checking the two against each other).
+        self.use_native = use_native
         self.axes: Tuple[ParameterAxis, ...] = tuple(axes) if axes else DEFAULT_AXES
         self.target_liquid_pct = (
             LIQUIDITY_BREACH_THRESHOLD if target_liquid_pct is None else target_liquid_pct
@@ -309,7 +346,9 @@ class ReverseStressEngine:
             rate_shock_bps=int(params.get("rate_shock_bps", 0)),
         )
 
-    def _evaluate(self, s: np.ndarray, force: bool = False) -> Tuple[float, bool]:
+    def _evaluate(
+        self, s: np.ndarray, force: bool = False, fresh: bool = False
+    ) -> Tuple[float, bool]:
         """Return (liquid_pct_after, can_meet_redemption) for severity vector ``s``.
 
         Cached and clipped to the unit box. This is the single expensive call —
@@ -320,9 +359,21 @@ class ReverseStressEngine:
         reported to the user (and drives the ``Can Meet`` cell) must be the real
         repricing, never the budget sentinel — otherwise an exhausted budget could
         mislabel a genuine breach as ``Can Meet = YES``.
+
+        ``fresh=True`` additionally bypasses the 4-decimal cache key and reprices
+        the *exact* ``s`` (clipped but un-rounded). The cache quantises severity to
+        4 dp so the optimiser's revisits coincide, but the ``can_meet`` boundary
+        can be finer than that grid: two points that round to the same key — one
+        just inside the breach, one just outside — share a cache slot, so a forced
+        reprice of the chosen winner could pick up a neighbour's verdict. The final
+        materialisation must reflect the winner's *own* repricing, so it asks for a
+        fresh, un-quantised evaluation; the result is not cached (its key would
+        otherwise poison later rounded lookups). Everywhere else the 4 dp grid is
+        the intended search resolution.
         """
-        key = tuple(round(float(x), 4) for x in np.clip(s, 0.0, 1.0))
-        if key in self._cache:
+        clipped = np.clip(s, 0.0, 1.0)
+        key = tuple(round(float(x), 4) for x in clipped)
+        if not fresh and key in self._cache:
             return self._cache[key]
         # Budget guard: once the fresh-evaluation budget is spent, stop repricing.
         # Returning a non-breaching sentinel makes the constraint look unsatisfied,
@@ -330,15 +381,44 @@ class ReverseStressEngine:
         # found (or the severe corner). This bounds wall-clock time hard.
         if not force and self._eval_budget is not None and self._n_eval >= self._eval_budget:
             return (1.0, True)
-        scenario = self._scenario_from_fractions(np.asarray(key), name="__reverse_probe__")
+        probe = clipped if fresh else np.asarray(key)
+        scenario = self._scenario_from_fractions(probe, name="__reverse_probe__")
         result = self.stress_engine._apply_scenario(scenario)
         self._n_eval += 1
         out = (float(result.liquid_pct_after), bool(result.can_meet_redemption))
-        self._cache[key] = out
+        if not fresh:
+            self._cache[key] = out
         return out
 
     def _liquid_after(self, s: np.ndarray) -> float:
         return self._evaluate(s)[0]
+
+    def _is_breach_forced(self, s: np.ndarray) -> bool:
+        """Breach test that bypasses the evaluation-budget guard.
+
+        Used inside the boundary polish (:meth:`_refine_along_ray`,
+        :meth:`_refine_coordinate`), where a budget sentinel would be poison: the
+        polish bisects toward calm and accepts a smaller point only if it still
+        breaches, so a sentinel ``(1.0, True)`` (non-breach) for a point the fund
+        *cannot* actually survive makes the bisection abandon a genuine, closer
+        breach and keep the over-severe seed. The grid + SLSQP phase routinely
+        exhausts the budget before the polish runs, so without this the polish
+        silently no-ops and returns the severe corner at full strength. The polish
+        probes only a small, bounded number of points (≈ ``n_bisect`` per ray,
+        ``n_passes·dim·n_bisect`` per coordinate walk), so forcing them is cheap and
+        keeps the search faithful — the same reason the final materialisation forces
+        its reprice.
+
+        ``fresh=True`` is essential, not an optimisation knob: :meth:`_evaluate`
+        caches by a 4-dp quantised key, so the cached boundary and the
+        un-quantised redemption test disagree by up to half a grid step right at
+        the knife-edge. :meth:`_materialise` re-checks the polished winner with
+        ``fresh=True``; if the polish bisected against the *quantised* boundary it
+        would accept a point a hair on the wrong side, materialisation would then
+        reprice it as Can-Meet=YES, and the whole polish would be discarded for
+        the raw corner (the frac=1.0 degeneration). Bisecting on the same
+        un-quantised boundary materialisation uses keeps the two in lockstep."""
+        return not self._evaluate(s, force=True, fresh=True)[1]
 
     def _is_breach(self, s: np.ndarray) -> bool:
         """A reverse-stress *breach* is — by definition — a scenario the fund
@@ -490,7 +570,7 @@ class ReverseStressEngine:
         even ``t = 1`` look non-breaching, we return it unchanged rather than fail.
         """
         s_breach = np.clip(np.asarray(s_breach, dtype=float), 0.0, 1.0)
-        if not self._is_breach(s_breach):
+        if not self._is_breach_forced(s_breach):
             return self._distance(s_breach), s_breach
 
         lo, hi = 0.0, 1.0          # lo: known non-breach (calm), hi: known breach
@@ -499,7 +579,9 @@ class ReverseStressEngine:
             s_mid = mid * s_breach
             # Coherence holds by construction under scaling, but re-check cheaply so
             # a custom-axis configuration (guardrail inactive) can never regress.
-            if self._is_coherent(s_mid) and self._is_breach(s_mid):
+            # Forced eval: a budget sentinel here would falsely report no breach and
+            # abandon a genuinely closer point (see _is_breach_forced).
+            if self._is_coherent(s_mid) and self._is_breach_forced(s_mid):
                 hi = mid           # still breaches → push the boundary lower
             else:
                 lo = mid           # no longer breaches → boundary is above mid
@@ -527,15 +609,21 @@ class ReverseStressEngine:
         descending order of their marginal contribution to ``D(s)`` so the most
         implausible levers are relaxed first.
 
-        Every accepted point is re-checked for breach *and* coherence, so the
-        polish is a pure improvement: it only ever returns a point with
+        Every accepted point is re-checked for breach *and* coherence. The walk
+        itself is greedy on per-axis severity, not on ``D``: under the correlated
+        precision matrix, shrinking one axis of an aligned point can *raise* the
+        Mahalanobis norm (the cross terms lose their correlation discount), so
+        the walk can wander uphill in ``D`` while chasing smaller axis values.
+        The argmin-``D`` accepted state is therefore tracked and returned, which
+        makes the polish a pure improvement: it only ever returns a point with
         ``D ≤ D(s_breach)`` that still breaches and stays plausible. Costs at most
         ``n_passes · dim · n_bisect`` cached evaluations. Returns ``(D(s*), s*)``.
         """
         s = np.clip(np.asarray(s_breach, dtype=float), 0.0, 1.0).copy()
-        if not (self._is_breach(s) and self._is_coherent(s)):
+        if not (self._is_breach_forced(s) and self._is_coherent(s)):
             return self._distance(s), s
 
+        best_d, best_s = self._distance(s), s.copy()
         dim = len(s)
         for _ in range(n_passes):
             improved = False
@@ -551,25 +639,32 @@ class ReverseStressEngine:
                 trial = s.copy()
                 trial[i] = lo
                 # If dropping the axis to 0 still breaches coherently, take it whole.
-                if self._is_breach(trial) and self._is_coherent(trial):
+                # Forced evals throughout: a budget sentinel would falsely clear the
+                # breach and freeze the axis at full severity (see _is_breach_forced).
+                if self._is_breach_forced(trial) and self._is_coherent(trial):
                     if abs(s[i]) > 1e-9:
                         improved = True
                     s[i] = 0.0
-                    continue
-                # Otherwise squeeze [lo, hi]: lo non-breach, hi breach.
-                for _ in range(n_bisect):
-                    mid = 0.5 * (lo + hi)
-                    trial[i] = mid
-                    if self._is_breach(trial) and self._is_coherent(trial):
-                        hi = mid
+                else:
+                    # Otherwise squeeze [lo, hi]: lo non-breach, hi breach.
+                    for _ in range(n_bisect):
+                        mid = 0.5 * (lo + hi)
+                        trial[i] = mid
+                        if self._is_breach_forced(trial) and self._is_coherent(trial):
+                            hi = mid
+                        else:
+                            lo = mid
+                    if hi < s[i] - 1e-6:
+                        s[i] = hi
+                        improved = True
                     else:
-                        lo = mid
-                if hi < s[i] - 1e-6:
-                    s[i] = hi
-                    improved = True
+                        continue
+                d_now = self._distance(s)
+                if d_now < best_d - 1e-12:
+                    best_d, best_s = d_now, s.copy()
             if not improved:
                 break
-        return self._distance(s), s
+        return best_d, best_s
 
     # ------------------------------------------------------------------
     # Optimisation
@@ -609,6 +704,65 @@ class ReverseStressEngine:
         self._cache.clear()
         self._eval_budget = max_evaluations
         dim = len(self.axes)
+        s_max = np.ones(dim)
+
+        # ---- Native fast path -------------------------------------------------
+        # When the compiled C++ search core is available, run the deterministic
+        # search (grid + boundary refinement, ray bisection, coordinate walk) there,
+        # using self._evaluate as the breach oracle so caching, the evaluation budget
+        # and the 4-dp cache key are byte-for-byte identical to the Python path. The
+        # core mirrors the Python routines, so the located breach point matches; we
+        # then run the SAME materialisation (step 4) below. Any failure / absence
+        # returns None and we fall through to the pure-Python search unchanged.
+        native = None
+        if self.use_native:
+            native = native_solve(
+                precision=self._precision,
+                axis_names=[a.name for a in self.axes],
+                coherence_autonomy=COHERENCE_AUTONOMY,
+                target_liquid_pct=self.target_liquid_pct,
+                oracle=lambda s: self._evaluate(np.asarray(s, dtype=float)),
+                grid_per_axis=grid_per_axis,
+                eval_budget=max_evaluations,
+            )
+
+        if native is not None:
+            status = native.get("status")
+            liquid_zero = native.get("baseline_liquid_pct")
+            if status == "baseline-breach":
+                _, can_meet_zero = self._evaluate(np.zeros(dim), force=True)
+                return ReverseStressResult(
+                    found=False,
+                    target_liquid_pct=self.target_liquid_pct,
+                    severity_distance=0.0,
+                    liquid_pct_at_breach=liquid_zero,
+                    can_meet_redemption_at_breach=can_meet_zero,
+                    margin_to_breach=liquid_zero - self.target_liquid_pct,
+                    breached_at_baseline=True,
+                    baseline_liquid_pct=liquid_zero,
+                    n_evaluations=self._n_eval,
+                    method="baseline-breach",
+                )
+            if status == "infeasible":
+                liquid_max, _ = self._evaluate(s_max, force=True)
+                return ReverseStressResult(
+                    found=False,
+                    target_liquid_pct=self.target_liquid_pct,
+                    severity_distance=None,
+                    liquid_pct_at_breach=None,
+                    margin_to_breach=liquid_max - self.target_liquid_pct,
+                    baseline_liquid_pct=liquid_zero,
+                    n_evaluations=self._n_eval,
+                    method="infeasible",
+                )
+            if status == "found":
+                best = (float(native["distance"]), np.asarray(native["s"], dtype=float))
+                method = native.get("method", "grid")
+                corner_distance = float(native["corner_distance"])
+                return self._materialise(
+                    best, method, corner_distance, liquid_zero, s_max
+                )
+            # Unrecognised status — fall through to the Python search.
 
         # ---- 0. Calm-corner check: already in breach with no shock? ------------
         # If the unstressed portfolio (s = 0) is already below the liquidity target,
@@ -632,7 +786,6 @@ class ReverseStressEngine:
             )
 
         # ---- 1. Feasibility at the severe corner -------------------------------
-        s_max = np.ones(dim)
         corner_distance = self._distance(s_max)  # yardstick for the plausibility verdict
         if not self._is_breach(s_max):
             # No breach (redemption failure) is reachable within the plausible
@@ -807,7 +960,7 @@ class ReverseStressEngine:
         # entire search when scipy is absent, so the grid winner (or corner) is never
         # returned at full severity. It costs only a handful of cached evaluations.
         d_polished, s_polished = self._refine_along_ray(best[1])
-        if self._is_breach(s_polished) and self._is_coherent(s_polished):
+        if self._is_breach_forced(s_polished) and self._is_coherent(s_polished):
             if d_polished < best[0] - 1e-9:
                 best = (d_polished, s_polished)
                 method = "ray-bisection" if method == "grid" else f"{method}+ray"
@@ -826,7 +979,7 @@ class ReverseStressEngine:
         # so it refines the genuinely closest point found so far, at a cost of at most
         # a few cached evaluations per axis.
         d_walk, s_walk = self._refine_coordinate(best[1])
-        if self._is_breach(s_walk) and self._is_coherent(s_walk) and d_walk < best[0] - 1e-9:
+        if self._is_breach_forced(s_walk) and self._is_coherent(s_walk) and d_walk < best[0] - 1e-9:
             best = (d_walk, s_walk)
             if not method.endswith("ray") and "coord" not in method:
                 method = f"{method}+coord" if method != "grid" else "coordinate-walk"
@@ -834,18 +987,91 @@ class ReverseStressEngine:
                 method = f"{method}+coord"
 
         # ---- 4. Materialise the winning breach point --------------------------
-        # Force a real repricing of the winner (bypassing the budget guard): the
-        # reported result must be truthful, never the budget sentinel. Then enforce
-        # the invariant — a reverse-stress scenario must, by definition, fail to
-        # meet redemptions. If the chosen point somehow does not (e.g. budget
-        # exhaustion let a sentinel-seeded point through), fall back to the severe
-        # corner, which step 1 proved is a genuine breach.
+        return self._materialise(best, method, corner_distance, liquid_zero, s_max)
+
+    def _materialise(
+        self,
+        best: "tuple[float, np.ndarray]",
+        method: str,
+        corner_distance: float,
+        liquid_zero: float,
+        s_max: np.ndarray,
+    ) -> ReverseStressResult:
+        """Force a truthful repricing of the winning point and build the result.
+
+        Shared by both the native-core ("found") path and the pure-Python search
+        so the final scenario is materialised identically regardless of which
+        engine located the breach.
+
+        Force a real repricing of the winner (bypassing the budget guard): the
+        reported result must be truthful, never the budget sentinel. Then enforce
+        the invariant — a reverse-stress scenario must, by definition, fail to
+        meet redemptions. If the chosen point somehow does not (e.g. budget
+        exhaustion let a sentinel-seeded point through), fall back to the severe
+        corner, which step 1 proved is a genuine breach.
+        """
         s_star = best[1]
-        liquid_star, can_meet_star = self._evaluate(s_star, force=True)
+
+        # Final fresh-consistent polish — applied to EVERY breaching winner, not
+        # just the corner fallback. The native C++ core runs its own ray/coordinate
+        # polish, but its breach oracle is the 4-dp *cached* evaluation, so it
+        # settles against the quantised boundary and can stop a fraction short of
+        # the true (un-quantised) one. The Python path already polishes with the
+        # fresh boundary (_is_breach_forced now forces fresh=True), so without this
+        # the two paths diverge: native reports a slightly over-severe breach that
+        # Python beats. Re-running the polish here with the fresh boundary pulls the
+        # native winner down to the same boundary Python reaches, and is idempotent
+        # for an already-polished Python winner (it only ever accepts a *closer*
+        # point that still breaches). If the winner does not breach at all we skip
+        # straight to the corner-fallback block below, which rebuilds from s_max.
+        if not self._evaluate(s_star, force=True, fresh=True)[1]:
+            _d_ray, s_ray = self._refine_along_ray(s_star)
+            d_coord, s_coord = self._refine_coordinate(s_ray)
+            if d_coord < best[0] and not self._evaluate(s_coord, force=True, fresh=True)[1]:
+                s_star = s_coord
+                best = (d_coord, s_star)
+                if "+polish" not in method and "corner" not in method:
+                    method = (method or "grid") + "+polish"
+
+        # Reprice the *exact* winner (fresh=True): bypass both the budget guard and
+        # the 4-dp cache. The cache quantises severity to 4 dp, but the can_meet
+        # boundary can be finer than that grid — a neighbour that rounds to the same
+        # key may sit on the other side of the breach line, so a cached verdict can
+        # be the neighbour's, not the winner's. The reported Can Meet must be the
+        # winner's own repricing.
+        liquid_star, can_meet_star = self._evaluate(s_star, force=True, fresh=True)
         if can_meet_star:
-            s_star = s_max
-            liquid_star, can_meet_star = self._evaluate(s_star, force=True)
-            method = method or "grid"
+            # The winner does not actually breach (e.g. the search settled just
+            # outside the boundary, or a cache collision let a non-breaching point
+            # through). Fall back to the severe corner, which step 1 proved is a
+            # genuine breach — but DO NOT report it raw at full severity. The corner
+            # is the most-severe breach, not the least-severe one; returning it as-is
+            # is the degeneration that makes the result look static (frac=1.0 on
+            # every axis). Re-run the two-phase polish from the corner so the
+            # reported scenario is the genuinely least-severe coherent breach on the
+            # boundary, exactly as the search would have produced had its own winner
+            # actually breached. The polish accepts a closer point only if it *still*
+            # fails the real redemption test (_is_breach_forced), so the invariant
+            # "a materialised reverse-stress scenario is Can Meet = NO" is preserved.
+            _d_ray, s_ray = self._refine_along_ray(s_max)
+            d_corner, s_corner = self._refine_coordinate(s_ray)
+            s_star = s_corner
+            liquid_star, can_meet_star = self._evaluate(s_star, force=True, fresh=True)
+            if can_meet_star:
+                # Polish landed a hair outside the true boundary (the smooth bisection
+                # boundary need not coincide with the fresh, un-quantised redemption
+                # test). Retreat to the proven corner so the reported result still
+                # genuinely breaches; severity is the only thing lost, never truth.
+                s_star = s_max
+                liquid_star, can_meet_star = self._evaluate(s_star, force=True, fresh=True)
+                best = (self._distance(s_max), s_star)
+                method = (method or "grid") + "+corner-fallback"
+            else:
+                # Recompute the distance for the polished corner so severity_distance
+                # and the plausibility verdict reflect the least-severe breach, not
+                # the raw corner. best[0] is stale here (it was the discarded winner).
+                best = (d_corner, s_star)
+                method = (method or "grid") + "+corner-polish"
         breach_params = {
             axis.name: axis.value(float(s_star[i])) for i, axis in enumerate(self.axes)
         }

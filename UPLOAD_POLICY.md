@@ -14,7 +14,6 @@ repository for the Liquidity Risk & Stress Testing Tool.
 | Reporting and visualization | `liquidity_risk_tool/reporting/*.py`, `liquidity_risk_tool/visualization/*.py` |
 | Configuration (no secrets) | `liquidity_risk_tool/config/settings.py` |
 | CLI entry point | `main.py` |
-| Tkinter GUI | `ui-tk/gui.py` |
 | FastAPI backend | `backend/` |
 | React frontend source | `frontend/src/` |
 | Refinitiv extractor **code** | `integrations/refinitiv/fetch_market_data.py` |

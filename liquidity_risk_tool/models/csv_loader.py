@@ -259,6 +259,7 @@ def load_portfolio_from_csv(
     holdings_path: str | Path,
     nav_path: str | Path,
     portfolio_code: Optional[str] = None,
+    as_of_date: Optional[object] = None,
 ) -> Portfolio:
     """Load a Portfolio from daily holdings and NAV CSV files.
 
@@ -271,9 +272,25 @@ def load_portfolio_from_csv(
     portfolio_code:
         Which portfolio to load (e.g. "SYN-EQUITY", "SYN-GOVBOND"). If None,
         uses the first portfolio code found in the file.
+    as_of_date:
+        Optional reporting date to pin the snapshot to (``'DD.MM.YYYY'`` string,
+        ``datetime.date``/``datetime`` or ``pandas.Timestamp``). When provided,
+        both the holdings rows and the NAV row are filtered to this date, so a
+        consolidated multi-date NAV file (or a multi-date holdings file) yields
+        the snapshot for exactly this day. Default ``None`` keeps the historic
+        behaviour: all holdings rows are used and the latest NAV row per
+        portfolio is taken.
     """
     holdings_path = Path(holdings_path)
     nav_path      = Path(nav_path)
+
+    # Normalise as_of_date to a date-only pandas Timestamp for comparison.
+    as_of_ts = None
+    if as_of_date is not None:
+        as_of_ts = pd.to_datetime(as_of_date, dayfirst=True, errors="coerce")
+        if pd.isna(as_of_ts):
+            raise ValidationError(f"Cannot parse as_of_date '{as_of_date}'.")
+        as_of_ts = as_of_ts.normalize()
 
     # ── 1. NAV file ─────────────────────────────────────────────────────────
     try:
@@ -320,6 +337,10 @@ def load_portfolio_from_csv(
             nav_df[_nav_date_col].str.strip().str.strip('"'),
             dayfirst=True, errors="coerce"
         )
+        if as_of_ts is not None:
+            _on_date = nav_df[nav_df[_nav_date_col].dt.normalize() == as_of_ts]
+            if not _on_date.empty:
+                nav_df = _on_date
         nav_df = (
             nav_df.sort_values(_nav_date_col)
                   .groupby(nav_df[_nav_code_col].str.strip().str.strip('"'), as_index=False)
@@ -359,6 +380,13 @@ def load_portfolio_from_csv(
     rows = holdings_df[holdings_df["Portfolio Code"] == portfolio_code].copy()
     if rows.empty:
         raise ValueError(f"No holdings for portfolio '{portfolio_code}'.")
+
+    # Pin to a single reporting date when the holdings file spans several dates.
+    if as_of_ts is not None and "Date" in rows.columns:
+        _row_dates = pd.to_datetime(rows["Date"], dayfirst=True, errors="coerce").dt.normalize()
+        _on_date = rows[_row_dates == as_of_ts]
+        if not _on_date.empty:
+            rows = _on_date.copy()
 
     # ── 3. Reporting date ────────────────────────────────────────────────────
     raw_date = rows["Date"].iloc[0]
@@ -679,3 +707,107 @@ def available_portfolio_codes(mvhol_path: str | Path) -> list[str]:
             f"(expected a semicolon-delimited file with a 'Portfolio Code' column): {exc}"
         ) from exc
     return sorted(df["Portfolio Code"].dropna().unique().tolist())
+
+
+# ---------------------------------------------------------------------------
+# Historical time-series ingestion
+# ---------------------------------------------------------------------------
+
+def load_portfolio_history(
+    history_dir: str | Path,
+    portfolio_code: Optional[str] = None,
+    nav_filename: str = "NAV.csv",
+    start: Optional[object] = None,
+    end: Optional[object] = None,
+) -> list[tuple["pd.Timestamp", "Portfolio"]]:
+    """Load a historical time series produced by ``generate_timeseries``.
+
+    Discovers the per-date snapshot files in *history_dir* (via ``manifest.json``
+    when present, otherwise by globbing ``HOLDINGS_*.csv``), loads each date into
+    an enriched :class:`Portfolio` (holdings pinned to that date via
+    ``as_of_date`` against the consolidated NAV file, then market-data enriched
+    from that date's ``market_data_ALL_<iso>.csv``), and returns them in
+    chronological order.
+
+    Parameters
+    ----------
+    history_dir : directory containing the series (``.../history``).
+    portfolio_code : which portfolio to reconstruct across time. If ``None``,
+        the first portfolio found in the earliest snapshot is used.
+    nav_filename : consolidated multi-date NAV file name (default ``NAV.csv``).
+    start, end : optional inclusive date bounds (any format accepted by
+        ``pandas.to_datetime``) to load only part of the series.
+
+    Returns
+    -------
+    list of ``(reporting_date, Portfolio)`` tuples, sorted ascending by date.
+    """
+    import json
+
+    history_dir = Path(history_dir)
+    if not history_dir.is_dir():
+        raise FileNotFoundError(f"History directory not found: {history_dir}")
+
+    nav_path = history_dir / nav_filename
+    if not nav_path.exists():
+        raise FileNotFoundError(
+            f"Consolidated NAV file '{nav_filename}' not found in {history_dir}"
+        )
+
+    # ── Discover snapshots ───────────────────────────────────────────────────
+    snapshots: list[dict] = []
+    manifest_path = history_dir / "manifest.json"
+    if manifest_path.exists():
+        with manifest_path.open("r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        for snap in manifest.get("snapshots", []):
+            snapshots.append({
+                "date": pd.to_datetime(snap["date"]).normalize(),
+                "holdings": history_dir / snap["holdings"],
+                "market_data": history_dir / snap.get("market_data", ""),
+            })
+    else:
+        # Fall back to globbing: derive date from each holdings file's first row.
+        for h in sorted(history_dir.glob("HOLDINGS_*.csv")):
+            try:
+                d = pd.read_csv(h, sep=";", dtype=str, nrows=1)["Date"].iloc[0]
+            except Exception:
+                continue
+            ts = pd.to_datetime(d, dayfirst=True, errors="coerce")
+            if pd.isna(ts):
+                continue
+            iso = ts.strftime("%Y-%m-%d")
+            snapshots.append({
+                "date": ts.normalize(),
+                "holdings": h,
+                "market_data": history_dir / f"market_data_ALL_{iso}.csv",
+            })
+
+    if not snapshots:
+        raise FileNotFoundError(f"No holdings snapshots found in {history_dir}")
+
+    # ── Apply optional date bounds ───────────────────────────────────────────
+    if start is not None:
+        start_ts = pd.to_datetime(start, dayfirst=True).normalize()
+        snapshots = [s for s in snapshots if s["date"] >= start_ts]
+    if end is not None:
+        end_ts = pd.to_datetime(end, dayfirst=True).normalize()
+        snapshots = [s for s in snapshots if s["date"] <= end_ts]
+
+    snapshots.sort(key=lambda s: s["date"])
+
+    # ── Load each snapshot ───────────────────────────────────────────────────
+    series: list[tuple[pd.Timestamp, Portfolio]] = []
+    for snap in snapshots:
+        pf = load_portfolio_from_csv(
+            holdings_path=snap["holdings"],
+            nav_path=nav_path,
+            portfolio_code=portfolio_code,
+            as_of_date=snap["date"],
+        )
+        md = snap.get("market_data")
+        if md and Path(md).exists():
+            pf = enrich_portfolio_from_market_data(pf, md)
+        series.append((snap["date"], pf))
+
+    return series

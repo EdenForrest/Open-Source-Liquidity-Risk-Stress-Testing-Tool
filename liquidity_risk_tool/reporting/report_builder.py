@@ -21,14 +21,19 @@ from .risk_metrics import RiskMetricsBuilder, LiquidityMetrics
 from ..models.position import Portfolio
 from ..config.settings import STRESS_SCENARIOS
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..analysis.result import AnalysisResult
+
 
 class ReportBuilder:
 
-    def __init__(self, portfolio: Portfolio, output_dir: str = "output"):
+    def __init__(self, portfolio: Portfolio, output_dir: str = "output", artifacts: "AnalysisResult | None" = None):
         self.portfolio   = portfolio
         self.output_dir  = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-        self._builder    = RiskMetricsBuilder(portfolio)
+        self._builder    = RiskMetricsBuilder(portfolio, artifacts=artifacts)
         self._report: Optional[dict] = None
 
     def build(self) -> "ReportBuilder":
@@ -95,8 +100,8 @@ class ReportBuilder:
 
         # ── Regulatory Flags ─────────────────────────────────────────
         print(f"\n  REGULATORY FLAGS")
-        w = "YES ⚠" if lm.warning_flag else "No"
-        b = "YES 🚨" if lm.breach_flag  else "No"
+        w = "YES (!)" if lm.warning_flag else "No"
+        b = "YES (!!)" if lm.breach_flag  else "No"
         print(f"  {'Liquidity Warning (<10% T0+T1):':<35} {w}")
         print(f"  {'Liquidity Breach  (<5%  T0+T1):':<35} {b}")
 

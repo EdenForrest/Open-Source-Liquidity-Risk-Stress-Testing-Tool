@@ -1,0 +1,9 @@
+[project]
+name = "liquidity-risk-tool"
+version = "0.1.0"
+description = "Liquidity risk analytics engine for open-ended funds (AIFMD II / UCITS)."
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

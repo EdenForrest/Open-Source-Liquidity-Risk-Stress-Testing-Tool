@@ -37,7 +37,7 @@ from ..config.settings import (
     MAX_HAIRCUT,
     StressScenario,
 )
-from .liquidity_utils import liquidity_at_horizon, safe_divide
+from .liquidity_utils import liquidity_at_horizon, realisable_value_np, safe_divide
 from ..models.position import Portfolio
 from .liquidity_profiler import LiquidityProfiler
 from .waterfall_engine import WaterfallEngine
@@ -115,6 +115,12 @@ class StressEngine:
         scenario_library: str = "esma",
     ):
         self.portfolio = portfolio
+        # Pre-shock T0-T1 realisable EUR is scenario-independent (original
+        # portfolio, no stress, ADV scalar 1.0), so it is identical on every
+        # _apply_scenario call. Computing it once and caching avoids a redundant
+        # full LiquidityProfiler.run per scenario — the dominant repeated cost on
+        # the reverse-stress hot path. Lazily filled on first use.
+        self._liquid_eur_before_cache: Optional[float] = None
         if scenarios is not None:
             self.scenarios = scenarios
         elif scenario_library == "revolution":
@@ -178,12 +184,18 @@ class StressEngine:
         )
         liquidity_loss = stressed_profile["realisable_value"].sum() - mv_before_haircut
 
-        # liquid_before: original portfolio under normal conditions (pre-shock, normal ADV)
-        profiler_pre = LiquidityProfiler(
-            self.portfolio, stress=False, adv_stress_scalar=1.0
-        ).run()
-        # Absolute realisable EUR in the T0-T1 horizon — the like-for-like basis.
-        liquid_eur_before = liquidity_at_horizon(profiler_pre.position_buckets, 1)
+        # liquid_before: original portfolio under normal conditions (pre-shock,
+        # normal ADV). This is scenario-independent, so compute it once and reuse
+        # the cached value on subsequent scenarios (see __init__).
+        if self._liquid_eur_before_cache is None:
+            profiler_pre = LiquidityProfiler(
+                self.portfolio, stress=False, adv_stress_scalar=1.0
+            ).run()
+            # Absolute realisable EUR in the T0-T1 horizon — the like-for-like basis.
+            self._liquid_eur_before_cache = liquidity_at_horizon(
+                profiler_pre.position_buckets, 1
+            )
+        liquid_eur_before = self._liquid_eur_before_cache
         liquid_eur_after  = liquidity_at_horizon(stressed_profile, 1)
         liquid_before = safe_divide(liquid_eur_before, nav_before)
         # liquid_after: shocked portfolio under stressed conditions (post-shock, compressed ADV + multiplied haircuts).
@@ -241,14 +253,22 @@ class StressEngine:
         # Cast to float: integer market values would give shocked_mv an int64
         # dtype, and assigning float shocks into an int column truncates (and
         # is deprecated by pandas).
-        df["shocked_mv"] = df["market_value_eur"].astype(float)
-        mask = df["asset_class"].isin(self.EQUITY_ASSET_CLASSES)
+        #
+        # NumPy fast-path: this runs once per scenario in the reverse-stress
+        # oracle, where pandas .loc masked-assignment overhead dominated the
+        # trivial arithmetic. Computed on raw arrays, written back once. The
+        # result is identical to the masked Series version.
+        mv = df["market_value_eur"].to_numpy(dtype=float)
+        shocked = mv.copy()
+        mask = df["asset_class"].isin(self.EQUITY_ASSET_CLASSES).to_numpy()
         if mask.any():
             # to_numeric first: beta defaults to None, so the column can be
-            # object-dtype, where fillna would emit a downcasting FutureWarning.
-            beta = pd.to_numeric(df.loc[mask, "beta"], errors="coerce").fillna(1.0)
-            price_return = (shock * beta).clip(lower=-EQUITY_SHOCK_MAX_LOSS)
-            df.loc[mask, "shocked_mv"] = df.loc[mask, "market_value_eur"] * (1 + price_return)
+            # object-dtype, where a NaN coercion would otherwise propagate.
+            beta = pd.to_numeric(df["beta"], errors="coerce").to_numpy(dtype=float)
+            beta = np.where(np.isnan(beta), 1.0, beta)
+            price_return = np.maximum(shock * beta, -EQUITY_SHOCK_MAX_LOSS)
+            shocked = np.where(mask, mv * (1.0 + price_return), shocked)
+        df["shocked_mv"] = shocked
         return df
 
     def _shock_credit(
@@ -273,42 +293,62 @@ class StressEngine:
         total_credit_loss = 0.0
         total_rate_loss = 0.0
 
-        # Government bonds: rate shock only
-        for ac in self.GOVERNMENT_BOND_CLASSES:
-            mask = df["asset_class"] == ac
-            if not mask.any():
-                continue
-            dur = pd.to_numeric(df.loc[mask, "duration"], errors="coerce").fillna(
-                DURATION_BY_ASSET_CLASS.get(ac, 3.0))
-            cvx = pd.to_numeric(df.loc[mask, "effective_convexity"],
-                                errors="coerce").fillna(0.0)
+        # NumPy fast-path. The original per-asset-class loop applied identical
+        # repricing within each government / credit class, differing only in the
+        # per-class duration default. We build duration/convexity arrays once and
+        # operate on whole-class masks, reading and writing shocked_mv via raw
+        # arrays — eliminating the repeated pandas .loc indexing that dominated
+        # this function in the reverse-stress oracle. Numerically identical.
+        asset_class = df["asset_class"].to_numpy()
+        shocked = df["shocked_mv"].to_numpy(dtype=float).copy()
+        dur_raw = pd.to_numeric(df["duration"], errors="coerce").to_numpy(dtype=float)
+        cvx = pd.to_numeric(df["effective_convexity"], errors="coerce").to_numpy(dtype=float)
+        cvx = np.where(np.isnan(cvx), 0.0, cvx)
+
+        def _class_mask(classes) -> np.ndarray:
+            return np.isin(asset_class, list(classes))
+
+        def _duration_with_defaults(mask: np.ndarray) -> np.ndarray:
+            # Per-row duration default depends on the row's asset class, matching
+            # the original DURATION_BY_ASSET_CLASS.get(ac, 3.0) fallback.
+            dur = dur_raw.copy()
+            nan = np.isnan(dur)
+            if nan.any():
+                for ac in np.unique(asset_class[mask & nan]):
+                    default = DURATION_BY_ASSET_CLASS.get(ac, 3.0)
+                    dur = np.where((asset_class == ac) & nan, default, dur)
+            return dur
+
+        # Government bonds: rate shock only.
+        gov_mask = _class_mask(self.GOVERNMENT_BOND_CLASSES)
+        if gov_mask.any():
+            dur = _duration_with_defaults(gov_mask)
             dy = rate_dy
             price_change_pct = -dur * dy + 0.5 * cvx * (dy ** 2)
-            mv_before = df.loc[mask, "shocked_mv"].copy()
-            df.loc[mask, "shocked_mv"] = mv_before * (1 + price_change_pct)
-            total_rate_loss += (df.loc[mask, "shocked_mv"] - mv_before).sum()
+            mv_before = shocked.copy()
+            new_mv = mv_before * (1 + price_change_pct)
+            total_rate_loss += float(((new_mv - mv_before) * gov_mask).sum())
+            shocked = np.where(gov_mask, new_mv, shocked)
 
         # Credit bonds: rate shock + spread shock. The MV reprices on the
         # combined move; for attribution, the rate-only repricing books to
         # rate loss and the incremental spread effect (including the
         # rate×spread convexity cross-term) books to credit loss, so the two
         # components sum exactly to the total ΔMV.
-        for ac in self.CREDIT_BOND_CLASSES:
-            mask = df["asset_class"] == ac
-            if not mask.any():
-                continue
-            dur = pd.to_numeric(df.loc[mask, "duration"], errors="coerce").fillna(
-                DURATION_BY_ASSET_CLASS.get(ac, 3.0))
-            cvx = pd.to_numeric(df.loc[mask, "effective_convexity"],
-                                errors="coerce").fillna(0.0)
+        credit_mask = _class_mask(self.CREDIT_BOND_CLASSES)
+        if credit_mask.any():
+            dur = _duration_with_defaults(credit_mask)
             dy = rate_dy + spread_dy
             price_change_pct = -dur * dy + 0.5 * cvx * (dy ** 2)
             rate_only_pct = -dur * rate_dy + 0.5 * cvx * (rate_dy ** 2)
-            mv_before = df.loc[mask, "shocked_mv"].copy()
-            df.loc[mask, "shocked_mv"] = mv_before * (1 + price_change_pct)
-            total_rate_loss += (mv_before * rate_only_pct).sum()
-            total_credit_loss += (mv_before * (price_change_pct - rate_only_pct)).sum()
+            mv_before = shocked.copy()
+            total_rate_loss += float((mv_before * rate_only_pct * credit_mask).sum())
+            total_credit_loss += float(
+                (mv_before * (price_change_pct - rate_only_pct) * credit_mask).sum()
+            )
+            shocked = np.where(credit_mask, mv_before * (1 + price_change_pct), shocked)
 
+        df["shocked_mv"] = shocked
         return df, total_credit_loss, total_rate_loss
 
     def _shock_derivatives(
@@ -332,19 +372,25 @@ class StressEngine:
         if "shocked_mv" not in df.columns:
             df["shocked_mv"] = df["market_value_eur"].astype(float)
 
-        mask = df["asset_class"].isin(self.DERIVATIVE_ASSET_CLASSES)
+        mask = df["asset_class"].isin(self.DERIVATIVE_ASSET_CLASSES).to_numpy()
         if not mask.any():
             return df, 0.0
 
-        exp = pd.to_numeric(df.loc[mask, "exposure_base"], errors="coerce")
-        mv = df.loc[mask, "market_value_eur"].astype(float)
+        # NumPy fast-path over the masked rows (see _shock_equities). Identical
+        # arithmetic, without the per-call pandas .loc indexing overhead.
+        mv_all = df["market_value_eur"].to_numpy(dtype=float)
+        exp = pd.to_numeric(df["exposure_base"], errors="coerce").to_numpy(dtype=float)
         # Economic notional: exposure_base where populated and non-zero, else MV.
-        exposure = exp.where(exp.notna() & (exp.abs() > 0), mv)
-        beta = pd.to_numeric(df.loc[mask, "beta"], errors="coerce").fillna(1.0)
-        price_return = (equity_shock * beta).clip(lower=-EQUITY_SHOCK_MAX_LOSS)
+        use_exp = (~np.isnan(exp)) & (np.abs(exp) > 0)
+        exposure = np.where(use_exp, exp, mv_all)
+        beta = pd.to_numeric(df["beta"], errors="coerce").to_numpy(dtype=float)
+        beta = np.where(np.isnan(beta), 1.0, beta)
+        price_return = np.maximum(equity_shock * beta, -EQUITY_SHOCK_MAX_LOSS)
         loss = exposure * price_return
-        df.loc[mask, "shocked_mv"] = mv + loss
-        return df, float(loss.sum())
+        shocked = df["shocked_mv"].to_numpy(dtype=float).copy()
+        shocked = np.where(mask, mv_all + loss, shocked)
+        df["shocked_mv"] = shocked
+        return df, float((loss * mask).sum())
 
     def _apply_haircut_multiplier(
         self, profile: pd.DataFrame, multiplier: float
@@ -355,25 +401,44 @@ class StressEngine:
         # stress haircuts"). The bid-ask half-spread component is an observed
         # transaction cost, not a regime haircut, so it passes through
         # unscaled.
+        #
+        # Computed on raw NumPy arrays rather than chained pandas Series: this
+        # runs once per scenario in the reverse-stress oracle (hundreds of
+        # repricings), where per-Series construction/clip overhead dominated.
+        # The arithmetic is identical.
         if "bid_ask_spread_bps" in profile.columns:
-            spread_cost = (profile["bid_ask_spread_bps"] / 2.0 / 10_000).clip(lower=0.0)
+            spread_cost = np.maximum(
+                profile["bid_ask_spread_bps"].to_numpy(dtype=float) / 2.0 / 10_000, 0.0
+            )
         else:
             spread_cost = 0.0
-        base = (profile["haircut"] - spread_cost).clip(lower=0.0)
-        profile["haircut"] = (base * multiplier + spread_cost).clip(lower=0.0, upper=MAX_HAIRCUT)
+        haircut = profile["haircut"].to_numpy(dtype=float)
+        base = np.maximum(haircut - spread_cost, 0.0)
+        new_haircut = np.clip(base * multiplier + spread_cost, 0.0, MAX_HAIRCUT)
+        profile["haircut"] = new_haircut
         # mv - |mv|*h, not mv*(1-h): haircuts must gross UP the cost of closing
         # negative-MV positions (shorts, overdrafts), mirroring the profiler.
-        profile["realisable_value"] = (
-            profile["market_value_eur"]
-            - profile["market_value_eur"].abs() * profile["haircut"]
-        )
-        nav = profile["market_value_eur"].sum()
-        profile["realisable_weight"] = safe_divide(profile["realisable_value"], nav)
+        mv = profile["market_value_eur"].to_numpy(dtype=float)
+        realisable = realisable_value_np(mv, new_haircut)
+        profile["realisable_value"] = realisable
+        nav = mv.sum()
+        profile["realisable_weight"] = safe_divide(realisable, nav)
         return profile
 
     def _build_shocked_portfolio(self, df: pd.DataFrame) -> Portfolio:
-        """Shallow copy of portfolio with shocked market values."""
-        shocked = copy.deepcopy(self.portfolio)
+        """Copy of the portfolio with shocked market values.
+
+        Only ``market_value`` (and the derived weights / df cache) is mutated,
+        so a full ``deepcopy`` of the object graph is wasteful — it recursively
+        clones the cached ``positions_df`` and every scalar field on the reverse-
+        stress hot path. Instead shallow-copy the Portfolio (sharing the never-
+        mutated ``share_classes``) and shallow-copy each flat ``Position`` so the
+        originals are untouched. ``Position`` holds only scalars/Optionals, so a
+        shallow copy is equivalent to a deep one here.
+        """
+        shocked = copy.copy(self.portfolio)
+        shocked.positions = [copy.copy(pos) for pos in self.portfolio.positions]
+        shocked._positions_df_cache = None
         # positions_df builds rows in self.positions order and the shock helpers
         # never reorder df, so the shocked_mv column aligns positionally with
         # shocked.positions. Mapping by ISIN instead would collapse duplicate

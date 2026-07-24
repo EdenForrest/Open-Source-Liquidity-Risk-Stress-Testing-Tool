@@ -25,17 +25,21 @@ RedemptionMetrics
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 import pandas as pd
 import numpy as np
 
 from ..engines.liquidity_profiler import LiquidityProfiler
+from ..engines.liquidity_utils import days_to_liquidate_pct
 from ..engines.redemption_simulator import RedemptionSimulator
 from ..engines.stress_engine import StressEngine
 from ..engines.waterfall_engine import WaterfallEngine
 from ..models.position import Portfolio
-from ..config.settings import REDEMPTION_SCENARIOS, MAX_ADV_PARTICIPATION
+from ..config.settings import REDEMPTION_SCENARIOS
+
+if TYPE_CHECKING:
+    from ..analysis.result import AnalysisResult
 
 
 # ---------------------------------------------------------------------------
@@ -102,14 +106,18 @@ class RiskMetricsBuilder:
     Orchestrates all analytics and packages them into a single report object.
     """
 
-    def __init__(self, portfolio: Portfolio):
+    def __init__(self, portfolio: Portfolio, *, artifacts: "AnalysisResult | None" = None):
         self.portfolio = portfolio
+        self.artifacts = artifacts
 
     # ------------------------------------------------------------------
     # Public
     # ------------------------------------------------------------------
 
     def build_liquidity_metrics(self) -> LiquidityMetrics:
+        if self.artifacts is not None:
+            return self.artifacts.metrics
+
         profiler = LiquidityProfiler(self.portfolio, stress=False).run()
         # Use NAV file value (portfolio.total_nav) as the authoritative NAV for the report.
         # profiler._nav is the position sum used as the ladder denominator; they should agree
@@ -130,9 +138,9 @@ class RiskMetricsBuilder:
 
         # Days to liquidate percentiles
         profile_df = profiler.position_buckets
-        d50 = self._days_to_liquidate_pct(profile_df, 0.50, nav)
-        d75 = self._days_to_liquidate_pct(profile_df, 0.75, nav)
-        d90 = self._days_to_liquidate_pct(profile_df, 0.90, nav)
+        d50 = days_to_liquidate_pct(profile_df, 0.50, nav)
+        d75 = days_to_liquidate_pct(profile_df, 0.75, nav)
+        d90 = days_to_liquidate_pct(profile_df, 0.90, nav)
 
         return LiquidityMetrics(
             fund_name              = self.portfolio.fund_name,
@@ -168,22 +176,29 @@ class RiskMetricsBuilder:
         )
 
     def build_stress_summary(self) -> pd.DataFrame:
-        engine = StressEngine(self.portfolio)
-        results = engine.run()
+        if self.artifacts is not None:
+            results = pd.DataFrame([s.to_dict() for s in self.artifacts.stress_detail])
+        else:
+            engine = StressEngine(self.portfolio)
+            results = engine.run()
         results["nav_impact_pct_fmt"] = (results["nav_impact_pct"] * 100).round(2).astype(str) + "%"
         results["liquid_pct_after_fmt"] = (results["liquid_pct_after"] * 100).round(1).astype(str) + "%"
         return results
 
     def build_redemption_summary(self) -> pd.DataFrame:
-        profiler_normal = LiquidityProfiler(self.portfolio, stress=False).run()
-        profiler_stress = LiquidityProfiler(self.portfolio, stress=True).run()
-        sim = RedemptionSimulator(
-            self.portfolio,
-            profiler_normal.position_buckets,
-            profiler_stress.position_buckets,
-        )
-        normal_df = sim.run(stress=False)
-        stress_df = sim.run(stress=True)
+        if self.artifacts is not None:
+            normal_df = self.artifacts.redemption_normal.copy()
+            stress_df = self.artifacts.redemption_stress.copy()
+        else:
+            profiler_normal = LiquidityProfiler(self.portfolio, stress=False).run()
+            profiler_stress = LiquidityProfiler(self.portfolio, stress=True).run()
+            sim = RedemptionSimulator(
+                self.portfolio,
+                profiler_normal.position_buckets,
+                profiler_stress.position_buckets,
+            )
+            normal_df = sim.run(stress=False)
+            stress_df = sim.run(stress=True)
         normal_df["regime"] = "normal"
         stress_df["regime"] = "stress"
         return pd.concat([normal_df, stress_df], ignore_index=True)
@@ -199,45 +214,5 @@ class RiskMetricsBuilder:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
-
-    def _days_to_liquidate_pct(
-        self, profile: pd.DataFrame, target_pct: float, nav: float
-    ) -> float:
-        """
-        Greedy simulation: sell positions in ADV-capped daily tranches.
-        Returns first day by which cumulative proceeds >= target_pct * nav.
-        Returns float('inf') only when zero sellable positions exist; otherwise
-        returns the maximum days required across all sellable positions even if
-        the liquid portion cannot fully cover the target (illiquid tail).
-        """
-        target_eur = nav * target_pct
-        sellable = (
-            profile[~profile["is_locked"] & (profile["adv_30d"] > 0)]
-            .copy()
-            .sort_values("days_to_liquidate")
-        )
-
-        if sellable.empty:
-            return float("inf")
-
-        cumulative = 0.0
-        max_day = 0.0
-
-        for _, pos in sellable.iterrows():
-            if cumulative >= target_eur:
-                break
-            cap = pos["adv_30d"] * MAX_ADV_PARTICIPATION
-            days = pos["market_value_eur"] / cap if cap > 0 else 0.0
-            max_day = max(max_day, days)
-            cumulative += pos["realisable_value"]
-
-        if cumulative >= target_eur:
-            return max_day
-        # Target unreachable from liquid assets alone — illiquid tail prevents full coverage.
-        # Return the max liquidation days of all sellable positions as a lower-bound estimate.
-        all_sellable_max = sellable.apply(
-            lambda r: r["market_value_eur"] / (r["adv_30d"] * MAX_ADV_PARTICIPATION)
-            if r["adv_30d"] * MAX_ADV_PARTICIPATION > 0 else 0.0,
-            axis=1,
-        ).max()
-        return float("inf") if all_sellable_max == 0.0 else all_sellable_max
+    # _days_to_liquidate_pct moved to liquidity_utils.days_to_liquidate_pct
+    # (single shared implementation, imported above).

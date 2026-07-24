@@ -207,7 +207,11 @@
       "badge": "Inversé",
       "foundBanner": "Scénario de violation trouvé (distance de plausibilité {{distance}}). Ajouté aux tableaux ci-dessous.",
       "robustBanner": "Aucune violation atteignable dans la plage plausible — le portefeuille est résilient.",
+      "noScenarioBanner": "Aucun scénario de stress test inversé réaliste — une violation n'est atteignable qu'à l'extrême sévère implausible (décote de liquidité au plafond de 2,8×). Le fonds est pratiquement résilient.",
       "baselineBanner": "Déjà en violation sans aucun choc appliqué : la liquidité T0-T1 de base est de {{liquid}}%, sous le seuil de {{target}}%. Le stress inversé ne s'applique pas — le fonds est en violation avant tout stress.",
+      "ceilingsTitle": "Plafonds de recherche (points extrêmes sévères)",
+      "ceilingsHint": "La valeur la plus sévère que chaque facteur peut atteindre dans la recherche. Les valeurs par défaut sont calibrées sur les plages sévères mais plausibles d'ESMA / AIFMD II ; élargissez-les ou resserrez-les pour redéfinir l'espace exploré.",
+      "ceilingsReset": "Réinitialiser aux valeurs par défaut",
       "error": "Impossible d'exécuter le stress inversé. Veuillez réessayer."
     }
   },

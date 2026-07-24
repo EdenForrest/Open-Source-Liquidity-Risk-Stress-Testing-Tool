@@ -34,22 +34,20 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from liquidity_risk_tool.models          import (
     build_sample_portfolio,
-    load_portfolio_from_csv,
     find_latest_files,
-    available_portfolio_codes,
     enrich_portfolio_from_market_data,
 )
 from liquidity_risk_tool.engines         import (
     LiquidityProfiler,
     RedemptionSimulator,
-    WaterfallEngine,
     StressEngine,
+    WaterfallEngine,
     validate_portfolio,
-    ValidationError,
 )
+from liquidity_risk_tool.analysis        import compute_analysis
 from liquidity_risk_tool.reporting       import ReportBuilder
 from liquidity_risk_tool.visualization   import ChartPack
-from liquidity_risk_tool.config          import STRESS_SCENARIOS, REDEMPTION_SCENARIOS, LIQUIDITY_BREACH_THRESHOLD
+from liquidity_risk_tool.config          import STRESS_SCENARIOS, LIQUIDITY_BREACH_THRESHOLD
 
 
 # ---------------------------------------------------------------------------
@@ -71,10 +69,44 @@ def run_pipeline(
     print("  Luxembourg ManCo  |  UCITS / AIFMD compliant")
     print("=" * 72)
 
-    # ── 1. Portfolio ─────────────────────────────────────────────────────
+    # ── 1. Portfolio + pipeline ──────────────────────────────────────────
     print("\n[1/7] Loading portfolio...")
+    scenarios = STRESS_SCENARIOS
+    if scenario_filter:
+        scenarios = [s for s in scenarios if scenario_filter.lower() in s.name.lower()]
+
+    _mkt_path = Path(__file__).parent / "data" / "market_data_ALL.csv"
+
     if use_sample:
+        # Sample-mode has no CSV inputs, so it can't go through compute_analysis
+        # (which always loads a portfolio from holdings/NAV CSV paths). Kept as a
+        # separate lightweight path that mirrors compute_analysis's steps directly.
         portfolio = build_sample_portfolio()
+        if _mkt_path.exists():
+            enrich_portfolio_from_market_data(portfolio, _mkt_path)
+            print(f"      Market data: enriched from {_mkt_path.name}")
+        else:
+            print(f"      Market data: {_mkt_path.name} not found — using defaults")
+
+        errors = validate_portfolio(portfolio, strict=False)
+        normal_profiler = LiquidityProfiler(portfolio, stress=False).run()
+        stress_profiler = LiquidityProfiler(portfolio, stress=True).run()
+        sim = RedemptionSimulator(
+            portfolio,
+            normal_profiler.position_buckets,
+            stress_profiler.position_buckets,
+            lmt_config={"active_tools": []},
+        )
+        redemption_normal = sim.run(stress=False)
+        redemption_stress = sim.run(stress=True)
+        engine = StressEngine(portfolio, scenarios)
+        stress_results = engine.run_detail()
+        rev = engine.run_reverse_stress(target_liquid_pct=LIQUIDITY_BREACH_THRESHOLD)
+        worst = max(stress_results, key=lambda s: abs(s.nav_impact_pct))
+        waterfall_engine = WaterfallEngine(portfolio, worst.position_detail, stress=True)
+        target = portfolio.total_nav * 0.30
+        wf_result = waterfall_engine.run_lp_optimised(target) if use_lp else waterfall_engine.run(target)
+        artifacts = None
     else:
         try:
             if mvhol_path and nav_path:
@@ -82,17 +114,38 @@ def run_pipeline(
             else:
                 mv, nv = find_latest_files()
                 print(f"      Auto-discovered: {mv.name} / {nv.name}")
-            portfolio = load_portfolio_from_csv(mv, nv, portfolio_code=portfolio_code)
         except FileNotFoundError as exc:
             print(f"      CSV files not found ({exc}). Falling back to sample portfolio.")
-            portfolio = build_sample_portfolio()
-    # Enrich positions with real market data if available
-    _mkt_path = Path(__file__).parent / "data" / "market_data_ALL.csv"
-    if _mkt_path.exists():
-        enrich_portfolio_from_market_data(portfolio, _mkt_path)
-        print(f"      Market data: enriched from {_mkt_path.name}")
-    else:
-        print(f"      Market data: {_mkt_path.name} not found — using defaults")
+            return run_pipeline(
+                charts=charts, scenario_filter=scenario_filter, use_sample=True, use_lp=use_lp,
+            )
+
+        result = compute_analysis(
+            mv, nv,
+            market_data_path=_mkt_path,
+            portfolio_code=portfolio_code,
+            scenarios=scenarios,
+            validate=True,
+            run_reverse_stress=True,
+            run_lp_waterfall=use_lp,
+        )
+        if result.market_data_loaded:
+            print(f"      Market data: enriched from {_mkt_path.name}")
+        else:
+            print(f"      Market data: {_mkt_path.name} not found — using defaults")
+
+        portfolio = result.portfolio
+        errors = result.validation
+        normal_profiler = result.normal_profiler
+        stress_profiler = result.stress_profiler
+        redemption_normal = result.redemption_normal
+        redemption_stress = result.redemption_stress
+        stress_results = result.stress_detail
+        rev = result.reverse_stress
+        worst = result.worst
+        wf_result = result.waterfall
+        target = portfolio.total_nav * worst.redemption_pct
+        artifacts = result
 
     nav = portfolio.total_nav
     print(f"      Fund : {portfolio.fund_name}")
@@ -100,7 +153,6 @@ def run_pipeline(
     print(f"      NAV  : EUR {nav:,.0f}  ({len(portfolio.positions)} positions)")
 
     # ── 1b. Validation ───────────────────────────────────────────────────
-    errors = validate_portfolio(portfolio, strict=False)
     if errors:
         print(f"      Validation warnings ({len(errors)}):")
         for e in errors:
@@ -110,17 +162,14 @@ def run_pipeline(
 
     # ── 2. Liquidity Profiling ───────────────────────────────────────────
     print("\n[2/7] Running liquidity profiling (normal + stress)...")
-    profiler_normal = LiquidityProfiler(portfolio, stress=False).run()
-    profiler_stress = LiquidityProfiler(portfolio, stress=True).run()
-
-    ladder_normal = profiler_normal.liquidity_ladder()
-    ladder_stress = profiler_stress.liquidity_ladder()
+    ladder_normal = normal_profiler.liquidity_ladder()
+    ladder_stress = stress_profiler.liquidity_ladder()
 
     print("      Normal liquidity ladder:")
     for _, row in ladder_normal.iterrows():
         print(f"        {row['bucket']:<8} {row['nav_pct']*100:5.1f}%  (cumul: {row['cumulative_nav_pct']*100:.1f}%)")
 
-    flags = profiler_normal.regulatory_flags()
+    flags = normal_profiler.regulatory_flags()
     if flags["breach"]:
         print("      *** LIQUIDITY BREACH FLAG RAISED ***")
     elif flags["warning"]:
@@ -128,14 +177,6 @@ def run_pipeline(
 
     # ── 3. Redemption Scenarios ──────────────────────────────────────────
     print("\n[3/7] Simulating redemption scenarios...")
-    sim = RedemptionSimulator(
-        portfolio,
-        profiler_normal.position_buckets,
-        profiler_stress.position_buckets,
-    )
-    redemption_normal = sim.run(stress=False)
-    redemption_stress = sim.run(stress=True)
-
     for _, row in redemption_normal.iterrows():
         pct = int(row["scenario_pct"] * 100)
         status = "OK" if row["can_meet_t7"] else "SHORTFALL"
@@ -143,12 +184,6 @@ def run_pipeline(
 
     # ── 4. Stress Testing ────────────────────────────────────────────────
     print("\n[4/7] Running stress tests...")
-    scenarios = STRESS_SCENARIOS
-    if scenario_filter:
-        scenarios = [s for s in scenarios if scenario_filter.lower() in s.name.lower()]
-    engine = StressEngine(portfolio, scenarios)
-    stress_results = engine.run_detail()
-
     for r in stress_results:
         impact = r.nav_impact_pct * 100
         liquid = r.liquid_pct_after * 100
@@ -162,7 +197,6 @@ def run_pipeline(
 
     # ── 4b. Reverse Stress ───────────────────────────────────────────────
     print("\n      Reverse stress test (min equity shock to breach liquidity threshold):")
-    rev = engine.run_reverse_stress(target_liquid_pct=LIQUIDITY_BREACH_THRESHOLD)
     if rev["found"]:
         print(
             f"      Breach at equity shock = {rev['breach_shock_level']*100:.1f}%  "
@@ -174,14 +208,6 @@ def run_pipeline(
 
     # ── 5. Waterfall (worst-case scenario) ───────────────────────────────
     print("\n[5/7] Running liquidation waterfall (30% NAV redemption, severe stress)...")
-    worst_scenario = next((s for s in stress_results if "Severe" in s.scenario_name), stress_results[-1])
-    waterfall = WaterfallEngine(
-        portfolio,
-        worst_scenario.position_detail,
-        stress=True,
-    )
-    target = nav * 0.30
-    wf_result = waterfall.run_lp_optimised(target) if use_lp else waterfall.run(target)
     if use_lp:
         print("      (LP-optimised sell scheduler)")
 
@@ -195,7 +221,7 @@ def run_pipeline(
 
     # ── 6. Risk Report ───────────────────────────────────────────────────
     print("\n[6/7] Building risk report...")
-    report = ReportBuilder(portfolio, output_dir="output")
+    report = ReportBuilder(portfolio, output_dir="output", artifacts=artifacts)
     report.build()
     report.print_summary()
     report.to_excel("liquidity_risk_report.xlsx")
@@ -219,10 +245,10 @@ def run_pipeline(
         cp.plot_stress_nav_impact(stress_df)
         print("      Chart 3/6: Stress NAV Impact")
 
-        cp.plot_time_to_liquidate(profiler_normal.position_buckets, nav)
+        cp.plot_time_to_liquidate(normal_profiler.position_buckets, nav)
         print("      Chart 4/6: Time-to-Liquidate")
 
-        cp.plot_portfolio_composition(profiler_normal.position_buckets, nav)
+        cp.plot_portfolio_composition(normal_profiler.position_buckets, nav)
         print("      Chart 5/6: Portfolio Composition")
 
         sell_df = wf_result.sell_schedule_df()
