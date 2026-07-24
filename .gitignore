@@ -48,6 +48,8 @@ data/*.xlsx
 data/*.json
 data/real/
 data/cache/
+# Generated historical time-series snapshots (data.generate_timeseries output)
+data/history/
 # Allow the synthetic sample directory (synthetic demo data only — safe to share)
 # Tracks synthetic holdings/NAV and synthetic market data so the download-sample-data
 # button can bundle them off a fresh clone. The yield curve and the fetch-errors log
